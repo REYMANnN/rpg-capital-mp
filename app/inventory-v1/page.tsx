@@ -1,4 +1,5 @@
 import InventoryV1 from './InventoryV1'
+import BarcodeDetectorPolyfill from './BarcodeDetectorPolyfill'
 
 export const metadata = {
   title: 'RPG Inventário V1',
@@ -6,5 +7,10 @@ export const metadata = {
 }
 
 export default function Page() {
-  return <InventoryV1 />
+  return (
+    <>
+      <BarcodeDetectorPolyfill />
+      <InventoryV1 />
+    </>
+  )
 }
