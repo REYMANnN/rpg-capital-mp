@@ -2,6 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Camera, Flashlight, Focus, Minus, Plus, ScanLine, X } from 'lucide-react'
+import {
+  countRecentConfirmations,
+  isPlausibleRetailCode,
+  normalizeBarcode,
+  requiredConfirmations,
+  runBarcodeQualitySelfTest,
+  type BarcodeCandidate,
+  type BarcodeSource,
+} from '@/lib/inventory/barcodeQuality'
 import styles from './QuaggaScanner.module.css'
 
 type ZoomRange = { min: number; max: number; step: number; value: number }
@@ -16,14 +25,24 @@ function friendlyCameraError(error: unknown) {
   if (name === 'NotAllowedError') return 'Permissão da câmera negada. Libere a câmera nas permissões do navegador e tente novamente.'
   if (name === 'NotFoundError') return 'Nenhuma câmera compatível foi encontrada.'
   if (name === 'NotReadableError') return 'A câmera está ocupada por outro aplicativo ou não pôde ser iniciada.'
-  if (name === 'OverconstrainedError') return 'A câmera não aceitou as configurações solicitadas. Vou tentar uma configuração mais simples.'
+  if (name === 'OverconstrainedError') return 'A câmera recusou uma configuração avançada; tentando parâmetros compatíveis.'
   return error instanceof Error ? error.message : 'Não foi possível iniciar a câmera.'
+}
+
+function formatLabel(format?: string) {
+  const value = String(format || '').toLowerCase()
+  if (value.includes('ean13') || value.includes('ean_13')) return 'EAN-13'
+  if (value.includes('ean8') || value.includes('ean_8')) return 'EAN-8'
+  if (value.includes('upca') || value.includes('upc_a')) return 'UPC-A'
+  if (value.includes('upce') || value.includes('upc_e')) return 'UPC-E'
+  if (value.includes('code128') || value.includes('code_128')) return 'Code 128'
+  return format || 'formato 1D'
 }
 
 export default function QuaggaScanner({ onCode, close }: Props) {
   const targetRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState('Abrindo câmera traseira…')
-  const [detail, setDetail] = useState('Preparando detector de código de barras.')
+  const [detail, setDetail] = useState('Preparando localização e decodificação de código de barras.')
   const [zoom, setZoom] = useState<ZoomRange | null>(null)
   const [torch, setTorch] = useState(false)
   const [torchAvailable, setTorchAvailable] = useState(false)
@@ -31,48 +50,67 @@ export default function QuaggaScanner({ onCode, close }: Props) {
   const [frames, setFrames] = useState(0)
   const [located, setLocated] = useState(0)
   const [candidate, setCandidate] = useState('')
+  const [candidateProgress, setCandidateProgress] = useState('')
+  const [rejected, setRejected] = useState(0)
   const [engine, setEngine] = useState('Quagga2')
   const [manual, setManual] = useState('')
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([])
+  const [selectedDeviceId, setSelectedDeviceId] = useState('')
 
   useEffect(() => {
+    const selfTest = runBarcodeQualitySelfTest()
+    if (!selfTest.ok) {
+      setStatus('Falha no teste interno do validador')
+      setDetail('O scanner não será confiado até o teste de checksum interno passar.')
+      return
+    }
+
     let disposed = false
     let Quagga: any
-    let zxingControls: any
-    let zxingReader: any
     let processedCount = 0
     let locatedCount = 0
+    let rejectedCount = 0
     let lastLocatedAt = 0
     let startedAt = Date.now()
-    let lastCandidate = ''
-    let candidateHits = 0
-    let fallbackStarted = false
     let guidanceTimer: number | undefined
+    let wasmTimer: number | undefined
+    let wasmBusy = false
+    let wasmReady = false
+    let wasmCycles = 0
+    const candidateHistory: BarcodeCandidate[] = []
 
-    const accept = (raw: string, source: string) => {
-      const code = String(raw || '').replace(/\s+/g, '').trim()
+    const acceptCandidate = (raw: string, source: BarcodeSource, format?: string) => {
+      const code = normalizeBarcode(raw)
       if (!code || disposed) return
-      if (code.length < 6) {
-        setStatus('Código localizado, mas leitura incompleta')
-        setDetail(`O detector encontrou “${code}”, mas ele é curto demais. Continue apontando a câmera.`)
+
+      if (!isPlausibleRetailCode(code, format)) {
+        rejectedCount += 1
+        setRejected(rejectedCount)
+        setCandidate(code)
+        setCandidateProgress('descartado')
+        setStatus('Leitura descartada — código não passou validação')
+        setDetail(`${source} sugeriu ${code} (${formatLabel(format)}), mas a leitura não passou as regras de integridade/checksum. Continue apontando; ela NÃO será enviada ao caixa.`)
         return
       }
 
-      if (lastCandidate === code) candidateHits += 1
-      else {
-        lastCandidate = code
-        candidateHits = 1
-      }
-      setCandidate(code)
-      setStatus('Código encontrado — confirmando…')
-      setDetail(`${source} leu ${code}. Confirmando a mesma leitura para evitar falso positivo.`)
+      const now = Date.now()
+      const item: BarcodeCandidate = { code, source, format, seenAt: now }
+      candidateHistory.push(item)
+      while (candidateHistory.length > 30 || (candidateHistory[0] && candidateHistory[0].seenAt < now - 3000)) candidateHistory.shift()
 
-      // EAN/UPC têm checksum no próprio decoder. Para qualquer formato, duas leituras iguais
-      // tornam o uso em checkout muito mais seguro sem deixar a leitura perceptivelmente lenta.
-      if (candidateHits >= 2) {
+      const confirmations = countRecentConfirmations(candidateHistory, item)
+      const needed = requiredConfirmations(code, source, format)
+      setCandidate(code)
+      setCandidateProgress(`${confirmations}/${needed}`)
+      setStatus('Código plausível encontrado — confirmando')
+      setDetail(`${source} leu ${code} como ${formatLabel(format)}. Confirmação ${confirmations} de ${needed}; mantendo a câmera parada evita falsos positivos.`)
+
+      if (confirmations >= needed) {
         disposed = true
-        setStatus('Código lido')
-        setDetail(`${code} reconhecido com sucesso por ${source}.`)
-        window.setTimeout(() => onCode(code), 120)
+        setStatus('Código lido e validado')
+        setCandidateProgress('confirmado')
+        setDetail(`${code} foi confirmado ${confirmations} vezes e passou a validação. Enviando ao inventário/caixa.`)
+        window.setTimeout(() => onCode(code), 100)
       }
     }
 
@@ -84,7 +122,7 @@ export default function QuaggaScanner({ onCode, close }: Props) {
 
       const width = settings.width ? `${settings.width}×${settings.height || '?'}` : 'resolução automática'
       setStatus('Câmera pronta — procurando código')
-      setDetail(`Imagem ${width}. Centralize todas as barras dentro da faixa verde.`)
+      setDetail(`Imagem ${width}. Centralize as barras dentro da faixa; Quagga localiza e ZXing-C++ confirma.`)
 
       if (capabilities.zoom) {
         const current = Number((settings as any).zoom ?? capabilities.zoom.min ?? 1)
@@ -94,36 +132,136 @@ export default function QuaggaScanner({ onCode, close }: Props) {
           step: Number(capabilities.zoom.step || 0.1),
           value: current,
         })
+      } else {
+        setZoom(null)
       }
+
       setTorchAvailable(Boolean(capabilities.torch))
       setFocusAvailable(Boolean(capabilities.focusMode || capabilities.focusDistance))
 
       if (Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes('continuous')) {
-        try {
-          await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] })
-        } catch {}
+        try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] }) } catch {}
+      }
+
+      try {
+        const videoInputs = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === 'videoinput')
+        setCameras(videoInputs)
+      } catch {}
+    }
+
+    const startWasmDecoder = async () => {
+      if (disposed || wasmReady) return
+      const video = targetRef.current?.querySelector('video') as HTMLVideoElement | null
+      if (!video) return
+
+      try {
+        const { readBarcodes } = await import('zxing-wasm/reader')
+        wasmReady = true
+        setEngine('Quagga2 + ZXing-C++/WASM')
+        setDetail('Motor C++/WebAssembly carregado. Ele fará leituras de alta precisão em paralelo ao localizador.')
+
+        const canvas = document.createElement('canvas')
+        const context = canvas.getContext('2d', { willReadFrequently: true })
+        if (!context) throw new Error('Canvas 2D indisponível')
+
+        const scanFrame = async () => {
+          if (disposed) return
+          const currentVideo = targetRef.current?.querySelector('video') as HTMLVideoElement | null
+          if (!currentVideo || currentVideo.readyState < 2 || currentVideo.videoWidth < 100 || wasmBusy) {
+            wasmTimer = window.setTimeout(scanFrame, 180)
+            return
+          }
+
+          wasmBusy = true
+          wasmCycles += 1
+          try {
+            const vw = currentVideo.videoWidth
+            const vh = currentVideo.videoHeight
+            const fullFrame = wasmCycles % 4 === 0
+            const sx = fullFrame ? 0 : Math.round(vw * 0.02)
+            const sy = fullFrame ? 0 : Math.round(vh * 0.20)
+            const sw = fullFrame ? vw : Math.round(vw * 0.96)
+            const sh = fullFrame ? vh : Math.round(vh * 0.60)
+            const maxWidth = 1600
+            const scale = Math.min(1, maxWidth / sw)
+            canvas.width = Math.max(320, Math.round(sw * scale))
+            canvas.height = Math.max(180, Math.round(sh * scale))
+            context.drawImage(currentVideo, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+
+            const results: any[] = await readBarcodes(imageData, {
+              tryHarder: true,
+              formats: ['EAN13', 'EAN8', 'UPCA', 'UPCE', 'Code128'],
+              maxNumberOfSymbols: 3,
+            } as any)
+
+            if (results.length) {
+              for (const result of results) {
+                acceptCandidate(result.text || result.bytes?.toString?.() || '', 'ZXing-C++/WASM', result.format)
+              }
+            } else if (lastLocatedAt && Date.now() - lastLocatedAt < 1000) {
+              setStatus('Barras localizadas — decoder C++ tentando')
+              setDetail('A região do código foi encontrada. O decoder de alta precisão ainda não fechou uma leitura válida; mantenha a embalagem estável e nítida.')
+            }
+          } catch (error) {
+            if (!disposed) setDetail(`Decoder C++/WASM encontrou um problema neste frame (${friendlyCameraError(error)}). O scanner continua nos próximos frames.`)
+          } finally {
+            wasmBusy = false
+            if (!disposed) wasmTimer = window.setTimeout(scanFrame, 220)
+          }
+        }
+
+        scanFrame()
+      } catch (error) {
+        if (!disposed) {
+          setEngine('Quagga2')
+          setDetail(`ZXing-C++/WASM não carregou (${friendlyCameraError(error)}). Quagga2 continua ativo, mas a leitura pode ser menos robusta.`)
+        }
       }
     }
 
-    const startZXingFallback = async () => {
-      if (fallbackStarted || disposed || !targetRef.current) return
-      const video = targetRef.current.querySelector('video') as HTMLVideoElement | null
-      if (!video) return
-      fallbackStarted = true
-      setEngine('Quagga2 + ZXing')
-      setDetail('Quagga2 continua localizando; ZXing entrou como segundo decoder sobre a mesma câmera.')
-      try {
-        const { BrowserMultiFormatReader } = await import('@zxing/browser')
-        zxingReader = new BrowserMultiFormatReader(undefined, {
-          delayBetweenScanAttempts: 120,
-          delayBetweenScanSuccess: 200,
-        })
-        zxingControls = await zxingReader.decodeFromVideoElement(video, (result: any) => {
-          if (result?.getText) accept(result.getText(), 'ZXing')
-        })
-      } catch (error) {
-        if (!disposed) setDetail(`Segundo decoder não iniciou: ${friendlyCameraError(error)} Quagga2 continua ativo.`)
-      }
+    const initQuagga = async (advanced: boolean) => {
+      if (!targetRef.current) throw new Error('Área da câmera indisponível')
+      const deviceConstraint = selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : { facingMode: { ideal: 'environment' } }
+      const constraints = advanced
+        ? {
+            ...deviceConstraint,
+            width: { ideal: 1920, min: 960 },
+            height: { ideal: 1080, min: 540 },
+            focusMode: 'continuous',
+          }
+        : {
+            ...deviceConstraint,
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          }
+
+      await new Promise<void>((resolve, reject) => {
+        Quagga.init(
+          {
+            inputStream: {
+              name: 'RPG retail barcode camera',
+              type: 'LiveStream',
+              target: targetRef.current,
+              size: 1280,
+              constraints: constraints as any,
+              area: { top: '22%', right: '2%', left: '2%', bottom: '22%' },
+            },
+            frequency: 10,
+            locate: true,
+            locator: {
+              halfSample: true,
+              patchSize: 'medium',
+            },
+            decoder: {
+              readers: ['ean_reader', 'ean_8_reader', 'upc_reader', 'upc_e_reader', 'code_128_reader'],
+              multiple: false,
+            },
+            numOfWorkers: Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1)),
+          } as any,
+          (error: unknown) => (error ? reject(error) : resolve()),
+        )
+      })
     }
 
     const start = async () => {
@@ -136,77 +274,54 @@ export default function QuaggaScanner({ onCode, close }: Props) {
           if (disposed) return
           processedCount += 1
           if (processedCount % 5 === 0) setFrames(processedCount)
+
           const boxes = result?.boxes?.filter((box: any) => box) || []
           if (boxes.length) {
             locatedCount += 1
             lastLocatedAt = Date.now()
             if (locatedCount % 2 === 0) setLocated(locatedCount)
             if (!result?.codeResult?.code) {
-              setStatus('Código localizado — tentando decodificar')
-              setDetail('As barras foram encontradas. Mantenha a embalagem parada por um instante.')
+              setStatus('Barras localizadas — tentando decodificar')
+              setDetail('As barras estão visíveis. O sistema está tentando transformar o padrão em um EAN/UPC válido; mantenha o produto parado.')
             }
           }
-          if (result?.codeResult?.code) accept(result.codeResult.code, 'Quagga2')
+
+          if (result?.codeResult?.code) {
+            acceptCandidate(result.codeResult.code, 'Quagga2', result.codeResult.format)
+          }
         }
 
         const onDetected = (result: any) => {
-          if (result?.codeResult?.code) accept(result.codeResult.code, 'Quagga2')
+          if (result?.codeResult?.code) acceptCandidate(result.codeResult.code, 'Quagga2', result.codeResult.format)
         }
 
         Quagga.onProcessed(onProcessed)
         Quagga.onDetected(onDetected)
 
-        await new Promise<void>((resolve, reject) => {
-          Quagga.init(
-            {
-              inputStream: {
-                name: 'RPG barcode camera',
-                type: 'LiveStream',
-                target: targetRef.current,
-                size: 1280,
-                constraints: {
-                  facingMode: { ideal: 'environment' },
-                  width: { ideal: 1920, min: 960 },
-                  height: { ideal: 1080, min: 540 },
-                  aspectRatio: { ideal: 16 / 9 },
-                  focusMode: 'continuous',
-                } as any,
-                area: { top: '27%', right: '4%', left: '4%', bottom: '27%' },
-              },
-              frequency: 15,
-              locate: true,
-              locator: {
-                halfSample: true,
-                patchSize: 'medium',
-              },
-              decoder: {
-                readers: ['ean_reader', 'ean_8_reader', 'upc_reader', 'upc_e_reader', 'code_128_reader'],
-                multiple: false,
-              },
-              numOfWorkers: Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1)),
-            } as any,
-            (error: unknown) => (error ? reject(error) : resolve()),
-          )
-        })
+        try {
+          await initQuagga(true)
+        } catch {
+          setStatus('Câmera aceitou apenas modo compatível')
+          setDetail('Configuração avançada de foco/resolução foi recusada; reiniciando sem exigir esses controles.')
+          await initQuagga(false)
+        }
 
         if (disposed) return
         Quagga.start()
         startedAt = Date.now()
         await updateTrackControls()
-
-        // Se o primeiro motor não decodificar rápido, entra um segundo decoder maduro
-        // usando a MESMA câmera, sem nova permissão e sem trocar a imagem do usuário.
-        window.setTimeout(startZXingFallback, 3200)
+        window.setTimeout(startWasmDecoder, 350)
 
         guidanceTimer = window.setInterval(() => {
           if (disposed) return
           const elapsed = Date.now() - startedAt
-          if (elapsed > 8500 && Date.now() - lastLocatedAt > 2500) {
-            setStatus('Ainda procurando as barras')
-            setDetail('Aproxime o código até ocupar boa parte da faixa verde. Evite reflexo e deixe as barras inteiras visíveis.')
-          } else if (elapsed > 6000 && lastLocatedAt) {
-            setStatus('Barras vistas, mas código ainda não fechado')
-            setDetail('O sistema está enxergando o código. Ajuste o zoom ou afaste alguns centímetros para melhorar o foco.')
+          const sinceLocation = Date.now() - lastLocatedAt
+          if (elapsed > 8000 && (!lastLocatedAt || sinceLocation > 3000)) {
+            setStatus('Ainda não encontrei uma região de barras estável')
+            setDetail('Aproxime até o código ocupar cerca de metade da largura da tela. Se ficar borrado, afaste um pouco e use o zoom. Evite reflexos sobre as barras.')
+          } else if (elapsed > 5000 && lastLocatedAt && sinceLocation < 2500 && !candidate) {
+            setStatus('Barras vistas, mas nenhum código válido ainda')
+            setDetail('A câmera está vendo o padrão. Ajuste ligeiramente distância/zoom para deixar as bordas das barras nítidas; o decoder C++ continua tentando.')
           }
         }, 1200)
       } catch (error) {
@@ -221,12 +336,11 @@ export default function QuaggaScanner({ onCode, close }: Props) {
     return () => {
       disposed = true
       if (guidanceTimer) window.clearInterval(guidanceTimer)
-      try { zxingControls?.stop?.() } catch {}
-      try { zxingReader?.reset?.() } catch {}
+      if (wasmTimer) window.clearTimeout(wasmTimer)
       try { Quagga?.stop?.() } catch {}
       try { Quagga?.CameraAccess?.release?.() } catch {}
     }
-  }, [onCode])
+  }, [onCode, selectedDeviceId])
 
   const applyZoom = async (value: number) => {
     setZoom((current) => (current ? { ...current, value } : current))
@@ -235,9 +349,9 @@ export default function QuaggaScanner({ onCode, close }: Props) {
       const Quagga = imported.default || imported
       const track = Quagga.CameraAccess?.getActiveTrack?.() as MediaStreamTrack | undefined
       await track?.applyConstraints?.({ advanced: [{ zoom: value } as any] })
-      setDetail(`Zoom ajustado para ${value.toFixed(1)}×. Mantenha as barras nítidas dentro da faixa.`)
+      setDetail(`Zoom ajustado para ${value.toFixed(1)}×. Pare quando as bordas das barras ficarem mais nítidas.`)
     } catch {
-      setDetail('Este navegador mostrou controle de zoom, mas a câmera recusou o ajuste.')
+      setDetail('A câmera anunciou suporte a zoom, mas recusou este ajuste.')
     }
   }
 
@@ -249,9 +363,9 @@ export default function QuaggaScanner({ onCode, close }: Props) {
       const caps: any = track?.getCapabilities?.() || {}
       if (Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
         await track?.applyConstraints?.({ advanced: [{ focusMode: 'continuous' } as any] })
-        setDetail('Foco contínuo reaplicado. Mova o produto levemente para a câmera refocar.')
+        setDetail('Foco contínuo reaplicado. Mova a embalagem alguns centímetros e pare quando as barras estiverem nítidas.')
       } else {
-        setDetail('Esta câmera não expõe controle de foco ao navegador. Use o zoom ou afaste alguns centímetros.')
+        setDetail('Este navegador não expõe controle direto de foco. Afaste alguns centímetros e ajuste o zoom.')
       }
     } catch {
       setDetail('O navegador não permitiu controlar o foco desta câmera.')
@@ -302,12 +416,23 @@ export default function QuaggaScanner({ onCode, close }: Props) {
           <div className={styles.telemetry}>
             <span>Motor: {engine}</span>
             <span>Frames: {frames}</span>
-            <span>Barras localizadas: {located}</span>
-            {candidate && <span className={styles.candidate}>Candidato: {candidate}</span>}
+            <span>Barras: {located}</span>
+            <span>Descartadas: {rejected}</span>
+            {candidate && <span className={styles.candidate}>Candidato: {candidate} {candidateProgress && `· ${candidateProgress}`}</span>}
           </div>
         </div>
 
         <div className={styles.controls}>
+          {cameras.length > 1 && (
+            <label>
+              <span>Câmera</span>
+              <select value={selectedDeviceId} onChange={(event) => setSelectedDeviceId(event.target.value)}>
+                <option value="">Traseira automática</option>
+                {cameras.map((camera, index) => <option key={camera.deviceId} value={camera.deviceId}>{camera.label || `Câmera ${index + 1}`}</option>)}
+              </select>
+            </label>
+          )}
+
           {zoom ? (
             <div className={styles.zoomControl}>
               <button onClick={() => applyZoom(Math.max(zoom.min, zoom.value - Math.max(zoom.step, 0.2)))} aria-label="Diminuir zoom"><Minus /></button>
