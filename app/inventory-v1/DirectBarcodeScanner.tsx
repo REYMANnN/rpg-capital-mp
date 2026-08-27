@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { BarcodeDetector } from 'barcode-detector/ponyfill'
 import { Check, X } from 'lucide-react'
 import { evaluateDetection } from '@/lib/inventory/scannerPolicy'
 import styles from './DirectBarcodeScanner.module.css'
@@ -10,7 +11,7 @@ type Props = {
   close: () => void
 }
 
-const RETAIL_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']
+const RETAIL_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] as const
 
 function cameraError(error: unknown) {
   if (error instanceof DOMException) {
@@ -24,10 +25,15 @@ function cameraError(error: unknown) {
 export default function DirectBarcodeScanner({ onCode, close }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const detectorRef = useRef<any>(null)
+  const detectorRef = useRef<BarcodeDetector | null>(null)
   const finishedRef = useRef(false)
+  const onCodeRef = useRef(onCode)
   const [status, setStatus] = useState('Abrindo câmera…')
   const [success, setSuccess] = useState(false)
+
+  useEffect(() => {
+    onCodeRef.current = onCode
+  }, [onCode])
 
   useEffect(() => {
     let disposed = false
@@ -55,37 +61,36 @@ export default function DirectBarcodeScanner({ onCode, close }: Props) {
       const video = videoRef.current
       const detector = detectorRef.current
 
-      if (!video || !detector || video.readyState < 2) {
+      if (!video || !detector || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
         scanTimer = window.setTimeout(scan, 80)
         return
       }
 
       try {
+        // Deliberadamente passa o frame de vídeo inteiro ao ZXing-C++.
+        // A moldura da interface NÃO limita ROI, tamanho, cor ou posição do código.
         const results = await detector.detect(video)
         if (disposed || finishedRef.current) return
 
-        if (Array.isArray(results) && results.length > 0) {
-          for (const result of results) {
-            const decision = evaluateDetection({
-              rawValue: result?.rawValue,
-              format: result?.format,
-            })
+        for (const result of results) {
+          const decision = evaluateDetection({
+            rawValue: result.rawValue,
+            format: result.format,
+          })
 
-            if (decision.kind === 'accept') {
-              finishedRef.current = true
-              setSuccess(true)
-              setStatus(`Código lido: ${decision.code}`)
-              navigator.vibrate?.(70)
-              window.setTimeout(() => onCode(decision.code), 120)
-              return
-            }
-
-            if (decision.kind === 'reject') showRejected()
+          if (decision.kind === 'accept') {
+            finishedRef.current = true
+            setSuccess(true)
+            setStatus(`Código lido: ${decision.code}`)
+            navigator.vibrate?.(70)
+            window.setTimeout(() => onCodeRef.current(decision.code), 120)
+            return
           }
+
+          if (decision.kind === 'reject') showRejected()
         }
       } catch {
-        // Igual ao scanner PWA de referência: uma tentativa sem código não é erro.
-        // Continuamos escaneando silenciosamente.
+        // Um frame sem barcode é um miss normal. Não muda UI nem interrompe o loop.
       }
 
       if (!disposed && !finishedRef.current) {
@@ -99,21 +104,9 @@ export default function DirectBarcodeScanner({ onCode, close }: Props) {
           throw new Error('getUserMedia unavailable')
         }
 
-        // Mesmo padrão do georapbox: usa a API nativa quando existe e instala
-        // o polyfill barcode-detector quando o navegador (ex.: Safari/iPhone) não oferece.
-        if (!('BarcodeDetector' in window)) {
-          await import('barcode-detector')
-        }
-        if (disposed) return
-
-        const Detector = (window as any).BarcodeDetector
-        if (!Detector) throw new Error('BarcodeDetector unavailable')
-
-        const supported: string[] = typeof Detector.getSupportedFormats === 'function'
-          ? await Detector.getSupportedFormats()
-          : RETAIL_FORMATS
-        const formats = RETAIL_FORMATS.filter((format) => supported.includes(format))
-        detectorRef.current = new Detector({ formats: formats.length ? formats : RETAIL_FORMATS })
+        // IMPORTANTE: usamos explicitamente o ponyfill ZXing-C++/WASM.
+        // Não usamos window.BarcodeDetector, API nativa ou qualquer shim legado.
+        detectorRef.current = new BarcodeDetector({ formats: [...RETAIL_FORMATS] })
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
@@ -136,8 +129,6 @@ export default function DirectBarcodeScanner({ onCode, close }: Props) {
         video.playsInline = true
         await video.play()
 
-        // Sem controle na interface: se a câmera expõe zoom, usamos um leve zoom
-        // automaticamente para favorecer EAN de embalagem sem obrigar o usuário a ajustar nada.
         const track = stream.getVideoTracks()[0]
         const capabilities: any = track?.getCapabilities?.() || {}
         if (capabilities.zoom) {
@@ -159,7 +150,7 @@ export default function DirectBarcodeScanner({ onCode, close }: Props) {
       disposed = true
       stop()
     }
-  }, [onCode])
+  }, [])
 
   return (
     <div className={styles.overlay} role="dialog" aria-modal="true" aria-label="Leitor de código de barras">
