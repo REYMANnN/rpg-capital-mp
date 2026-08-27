@@ -2,11 +2,22 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
+  const protectedPaths = ['/u', '/app']
+  const isProtected = protectedPaths.some(p => request.nextUrl.pathname.startsWith(p))
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
 
+  // The inventory preview is intentionally local-first and does not require Supabase.
+  // If the legacy app has no Supabase environment yet, keep public routes usable.
+  if (!supabaseUrl || !supabaseAnonKey) {
+    if (isProtected) return NextResponse.redirect(new URL('/cadastro', request.url))
+    return NextResponse.next({ request })
+  }
+
+  let supabaseResponse = NextResponse.next({ request })
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.trim(),
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() { return request.cookies.getAll() },
@@ -22,10 +33,6 @@ export async function proxy(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
-
-  const protectedPaths = ['/u', '/app']
-  const isProtected = protectedPaths.some(p => request.nextUrl.pathname.startsWith(p))
-
   if (isProtected && !user) {
     return NextResponse.redirect(new URL('/cadastro', request.url))
   }
