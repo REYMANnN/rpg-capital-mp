@@ -59,7 +59,23 @@ export function requiredConfirmations(code: string, source: BarcodeSource, forma
 
 export function countRecentConfirmations(history: BarcodeCandidate[], candidate: BarcodeCandidate, windowMs = 2200) {
   const cutoff = candidate.seenAt - windowMs
-  return history.filter((item) => item.code === candidate.code && item.seenAt >= cutoff).length
+  const matching = history
+    .filter((item) => item.code === candidate.code && item.seenAt >= cutoff)
+    .sort((a, b) => a.seenAt - b.seenAt)
+
+  // Quagga can report the same physical frame through onProcessed and onDetected.
+  // Count those as one observation, while still allowing independent engines to
+  // corroborate the same code at the same instant.
+  const lastBySource = new Map<BarcodeSource, number>()
+  let confirmations = 0
+  for (const item of matching) {
+    const last = lastBySource.get(item.source)
+    if (last === undefined || item.seenAt - last >= 75) {
+      confirmations += 1
+      lastBySource.set(item.source, item.seenAt)
+    }
+  }
+  return confirmations
 }
 
 export function runBarcodeQualitySelfTest() {
@@ -68,5 +84,13 @@ export function runBarcodeQualitySelfTest() {
 
   const validPass = valid.every(hasValidGtinChecksum)
   const invalidPass = invalid.every((code) => !hasValidGtinChecksum(code))
-  return { ok: validPass && invalidPass, validPass, invalidPass }
+
+  const duplicateFrame: BarcodeCandidate[] = [
+    { code: valid[0], source: 'Quagga2', format: 'ean_13', seenAt: 1000 },
+    { code: valid[0], source: 'Quagga2', format: 'ean_13', seenAt: 1010 },
+    { code: valid[0], source: 'Quagga2', format: 'ean_13', seenAt: 1120 },
+  ]
+  const dedupePass = countRecentConfirmations(duplicateFrame, duplicateFrame[2]) === 2
+
+  return { ok: validPass && invalidPass && dedupePass, validPass, invalidPass, dedupePass }
 }
