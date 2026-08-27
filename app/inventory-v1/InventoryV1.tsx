@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Barcode, Boxes, Camera, Check, ChevronRight, Minus, PackagePlus, Plus, RotateCcw, ScanLine, Settings, ShoppingCart, Trash2, X } from 'lucide-react'
 import { completeSale, parseScaleLabel, type Product, type Sale, type ScaleRule } from '@/lib/inventory/core'
+import QuaggaScanner from './QuaggaScanner'
 import styles from './inventory.module.css'
 
 type Unit = 'UN' | 'KG'
@@ -16,8 +17,7 @@ const STORAGE_KEY = 'rpg-inventory-v1-2026'
 const uid = () => crypto.randomUUID()
 const money = (c:number) => (c/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
 const qty = (m:number,u:Unit) => u === 'KG' ? `${(m/1000).toLocaleString('pt-BR',{maximumFractionDigits:3})} kg` : `${(m/1000).toLocaleString('pt-BR',{maximumFractionDigits:3})} un.`
-
-function emptyData(): StoreData { return { products:[], sales:[], movements:[], scaleRule:DEFAULT_RULE } }
+const emptyData = (): StoreData => ({ products:[], sales:[], movements:[], scaleRule:DEFAULT_RULE })
 
 export default function InventoryV1() {
   const [data,setData] = useState<StoreData>(emptyData)
@@ -37,10 +37,11 @@ export default function InventoryV1() {
   useEffect(()=>{ if(loaded) localStorage.setItem(STORAGE_KEY,JSON.stringify(data)) },[data,loaded])
 
   const totalCents = useMemo(()=>cart.reduce((sum,line)=>{
-    const p=data.products.find(x=>x.id===line.productId); return sum+(p?Math.round(p.priceCents*line.quantityMilli/1000):0)
+    const p=data.products.find(x=>x.id===line.productId)
+    return sum+(p?Math.round(p.priceCents*line.quantityMilli/1000):0)
   },0),[cart,data.products])
 
-  function flash(message:string){ setError(''); setNotice(message); setTimeout(()=>setNotice(''),2500) }
+  function flash(message:string){ setError(''); setNotice(message); window.setTimeout(()=>setNotice(''),2500) }
   function fail(message:string){ setNotice(''); setError(message) }
 
   function saveProduct() {
@@ -54,7 +55,8 @@ export default function InventoryV1() {
     if(data.products.some(p=>p.barcode===barcode)) return fail('Esse código de barras já está cadastrado.')
     const product:AppProduct={id:uid(),barcode,scaleCode:productForm.scaleCode.trim()||undefined,name,unit:productForm.unit,priceCents,stockMilli,minStockMilli,averageCostCents}
     setData(d=>({...d,products:[...d.products,product],movements:stockMilli?[...d.movements,{id:uid(),productId:product.id,type:'initial',quantityMilli:stockMilli,createdAt:new Date().toISOString(),note:'Estoque inicial'}]:d.movements}))
-    setProductForm({barcode:'',scaleCode:'',name:'',unit:'UN',price:'',stock:'',minStock:'0',cost:'0'}); flash('Produto cadastrado.')
+    setProductForm({barcode:'',scaleCode:'',name:'',unit:'UN',price:'',stock:'',minStock:'0',cost:'0'})
+    flash('Produto cadastrado.')
   }
 
   function receive(productId:string, amount:string, cost:string, note:string) {
@@ -65,22 +67,37 @@ export default function InventoryV1() {
       const nextStock=p.stockMilli+q
       const weighted=nextStock===0?unitCost:Math.round((p.stockMilli*p.averageCostCents+q*unitCost)/nextStock)
       return {...d,products:d.products.map(x=>x.id===productId?{...x,stockMilli:nextStock,averageCostCents:weighted}:x),movements:[...d.movements,{id:uid(),productId,type:'purchase',quantityMilli:q,createdAt:new Date().toISOString(),note:note||'Entrada manual'}]}
-    }); flash('Entrada registrada no estoque.')
+    })
+    flash('Entrada registrada no estoque.')
   }
 
   function handleCode(raw:string) {
-    const code=raw.trim(); if(!code) return
-    if(scanTarget==='product'){ setProductForm(f=>({...f,barcode:code})); setScannerOpen(false); return }
+    const code=raw.replace(/\s+/g,'').trim()
+    if(!code) return
+
+    if(scanTarget==='product'){
+      setProductForm(f=>({...f,barcode:code}))
+      setScannerOpen(false)
+      flash(`Código ${code} lido. Complete o cadastro do produto.`)
+      return
+    }
+
     const parsed=parseScaleLabel(code,data.scaleRule)
     if(parsed.kind==='barcode'){
-      const p=data.products.find(x=>x.barcode===parsed.code); if(!p) return fail(`Produto ${parsed.code} não encontrado.`)
-      addCart(p,1000,'unit'); setScannerOpen(false); return
+      const p=data.products.find(x=>x.barcode===parsed.code)
+      if(!p){ setScannerOpen(false); return fail(`Código ${parsed.code} foi lido, mas não está cadastrado no estoque.`) }
+      addCart(p,1000,'unit'); setScannerOpen(false); flash(`${p.name} adicionado ao carrinho.`); return
     }
-    const p=data.products.find(x=>x.scaleCode===parsed.productCode); if(!p) return fail(`Código de balança ${parsed.productCode} não está ligado a um produto.`)
+
+    const p=data.products.find(x=>x.scaleCode===parsed.productCode)
+    if(!p){ setScannerOpen(false); return fail(`Etiqueta foi lida, mas o código de balança ${parsed.productCode} não está ligado a nenhum produto.`) }
     let quantityMilli=1000
     if(parsed.quantity!==undefined) quantityMilli=Math.max(1,Math.round(parsed.quantity*1000))
-    else if(parsed.encodedPriceCents!==undefined){ if(p.priceCents<=0)return fail('Produto de balança está sem preço por kg/unidade.'); quantityMilli=Math.max(1,Math.round(parsed.encodedPriceCents/p.priceCents*1000)) }
-    addCart(p,quantityMilli,'scale'); setScannerOpen(false)
+    else if(parsed.encodedPriceCents!==undefined){
+      if(p.priceCents<=0){ setScannerOpen(false); return fail('Etiqueta foi lida, mas o produto está sem preço para converter o valor em quantidade.') }
+      quantityMilli=Math.max(1,Math.round(parsed.encodedPriceCents/p.priceCents*1000))
+    }
+    addCart(p,quantityMilli,'scale'); setScannerOpen(false); flash(`Etiqueta de ${p.name} lida e adicionada.`)
   }
 
   function addCart(p:AppProduct,quantityMilli:number,source:'unit'|'scale'){
@@ -99,7 +116,8 @@ export default function InventoryV1() {
       const byId=new Map(result.products.map(p=>[p.id,p]))
       const nextProducts=data.products.map(p=>({...p,stockMilli:byId.get(p.id)?.stockMilli??p.stockMilli}))
       const movements:Movement[]=cart.map(x=>({id:uid(),productId:x.productId,type:'sale',quantityMilli:-x.quantityMilli,createdAt:result.sale.createdAt,note:`Venda ${result.sale.id.slice(0,8)}`}))
-      setData(d=>({...d,products:nextProducts,sales:[result.sale,...d.sales],movements:[...d.movements,...movements]})); setCart([]); flash(`Venda registrada: ${money(result.sale.totalCents)}.`)
+      setData(d=>({...d,products:nextProducts,sales:[result.sale,...d.sales],movements:[...d.movements,...movements]}))
+      setCart([]); flash(`Venda registrada: ${money(result.sale.totalCents)}.`)
     }catch(e){ fail(e instanceof Error?e.message:'Falha ao concluir venda.') }
   }
 
@@ -112,7 +130,7 @@ export default function InventoryV1() {
 
   if(!loaded)return null
   return <div className={styles.shell}>
-    <header className={styles.top}><div><span className={styles.brand}>RPG</span><strong>Mercadinho</strong></div><span className={styles.status}>V1 local · teste real</span></header>
+    <header className={styles.top}><div><span className={styles.brand}>RPG</span><strong>Mercadinho</strong></div><span className={styles.status}>V1 local · scanner Quagga2</span></header>
     <nav className={styles.nav}>
       <button className={tab==='stock'?styles.active:''} onClick={()=>setTab('stock')}><Boxes/>Estoque</button>
       <button className={tab==='intake'?styles.active:''} onClick={()=>setTab('intake')}><PackagePlus/>Entrada</button>
@@ -120,20 +138,21 @@ export default function InventoryV1() {
       <button className={tab==='settings'?styles.active:''} onClick={()=>setTab('settings')}><Settings/>Ajustes</button>
     </nav>
     <main className={styles.main}>
-      {notice&&<div className={styles.success}><Check/>{notice}</div>}{error&&<div className={styles.error}>{error}<button onClick={()=>setError('')}><X/></button></div>}
+      {notice&&<div className={styles.success}><Check/>{notice}</div>}
+      {error&&<div className={styles.error}>{error}<button onClick={()=>setError('')}><X/></button></div>}
       {tab==='stock'&&<Stock products={data.products} form={productForm} setForm={setProductForm} save={saveProduct} scan={()=>{setScanTarget('product');setScannerOpen(true)}} adjust={adjust}/>} 
       {tab==='intake'&&<Intake products={data.products} receive={receive}/>} 
       {tab==='checkout'&&<Checkout products={data.products} cart={cart} total={totalCents} scan={()=>{setScanTarget('checkout');setScannerOpen(true)}} manual={handleCode} change={(id,d)=>setCart(c=>c.map(x=>x.productId===id?{...x,quantityMilli:Math.max(0,x.quantityMilli+d)}:x).filter(x=>x.quantityMilli>0))} remove={id=>setCart(c=>c.filter(x=>x.productId!==id))} checkout={checkout}/>} 
       {tab==='settings'&&<SettingsView rule={data.scaleRule} setRule={r=>setData(d=>({...d,scaleRule:r}))} exportBackup={exportBackup} importBackup={importBackup} reset={()=>{if(confirm('Apagar todos os dados locais desta V1?')){setData(emptyData());setCart([])}}}/>} 
     </main>
-    {scannerOpen&&<Scanner onCode={handleCode} close={()=>setScannerOpen(false)}/>} 
+    {scannerOpen&&<QuaggaScanner onCode={handleCode} close={()=>setScannerOpen(false)}/>} 
   </div>
 }
 
 function Stock({products,form,setForm,save,scan,adjust}:{products:AppProduct[];form:any;setForm:(f:any)=>void;save:()=>void;scan:()=>void;adjust:(id:string,d:number)=>void}){
-  return <><section className={styles.hero}><div><span>Inventário</span><h1>Produtos e saldo</h1><p>Cadastre pelo código da embalagem ou associe um código interno de balança.</p></div><button className={styles.primary} onClick={scan}><Camera/>Ler código</button></section>
+  return <><section className={styles.hero}><div><span>Inventário</span><h1>Produtos e saldo</h1><p>O cadastro começa pela leitura do código da embalagem. Para itens pesados, associe também o código interno da balança.</p></div><button className={styles.primary} onClick={scan}><Camera/>Escanear produto</button></section>
   <section className={styles.card}><h2>Novo produto</h2><div className={styles.formgrid}><input placeholder="Código de barras (EAN)" value={form.barcode} onChange={e=>setForm({...form,barcode:e.target.value})}/><input placeholder="Nome do produto" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/><input placeholder="Código balança, ex. 00123" value={form.scaleCode} onChange={e=>setForm({...form,scaleCode:e.target.value})}/><select value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}><option value="UN">Unidade</option><option value="KG">Quilo</option></select><input placeholder="Preço venda R$" inputMode="decimal" value={form.price} onChange={e=>setForm({...form,price:e.target.value})}/><input placeholder="Custo médio R$" inputMode="decimal" value={form.cost} onChange={e=>setForm({...form,cost:e.target.value})}/><input placeholder="Estoque inicial" inputMode="decimal" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})}/><input placeholder="Estoque mínimo" inputMode="decimal" value={form.minStock} onChange={e=>setForm({...form,minStock:e.target.value})}/></div><button className={styles.primary} onClick={save}>Cadastrar produto</button></section>
-  <section className={styles.productlist}>{products.length===0?<div className={styles.empty}><Boxes/><b>Nenhum produto</b><span>Cadastre o primeiro item acima.</span></div>:products.map(p=><article className={styles.product} key={p.id}><div className={styles.producticon}><Barcode/></div><div className={styles.grow}><b>{p.name}</b><small>{p.barcode}{p.scaleCode?` · balança ${p.scaleCode}`:''}</small><div className={styles.pills}><span>{money(p.priceCents)}</span><span>Custo {money(p.averageCostCents)}</span></div></div><div className={p.stockMilli<=p.minStockMilli?styles.low:styles.stockqty}><strong>{qty(p.stockMilli,p.unit)}</strong><small>{p.stockMilli<=p.minStockMilli?'Estoque baixo':'Disponível'}</small></div><div className={styles.adjust}><button onClick={()=>adjust(p.id,-1000)}><Minus/></button><button onClick={()=>adjust(p.id,1000)}><Plus/></button></div></article>)}</section></>
+  <section className={styles.productlist}>{products.length===0?<div className={styles.empty}><Boxes/><b>Nenhum produto</b><span>Use “Escanear produto” para começar.</span></div>:products.map(p=><article className={styles.product} key={p.id}><div className={styles.producticon}><Barcode/></div><div className={styles.grow}><b>{p.name}</b><small>{p.barcode}{p.scaleCode?` · balança ${p.scaleCode}`:''}</small><div className={styles.pills}><span>{money(p.priceCents)}</span><span>Custo {money(p.averageCostCents)}</span></div></div><div className={p.stockMilli<=p.minStockMilli?styles.low:styles.stockqty}><strong>{qty(p.stockMilli,p.unit)}</strong><small>{p.stockMilli<=p.minStockMilli?'Estoque baixo':'Disponível'}</small></div><div className={styles.adjust}><button onClick={()=>adjust(p.id,-1000)}><Minus/></button><button onClick={()=>adjust(p.id,1000)}><Plus/></button></div></article>)}</section></>
 }
 
 function Intake({products,receive}:{products:AppProduct[];receive:(id:string,q:string,c:string,n:string)=>void}){
@@ -143,15 +162,9 @@ function Intake({products,receive}:{products:AppProduct[];receive:(id:string,q:s
 
 function Checkout({products,cart,total,scan,manual,change,remove,checkout}:{products:AppProduct[];cart:CartLine[];total:number;scan:()=>void;manual:(s:string)=>void;change:(id:string,d:number)=>void;remove:(id:string)=>void;checkout:()=>void}){
  const [code,setCode]=useState('')
- return <><section className={styles.hero}><div><span>Checkout</span><h1>Caixa</h1><p>Leia EAN unitário ou etiqueta de balança. O mesmo produto lido de novo soma ao carrinho.</p></div><button className={styles.primary} onClick={scan}><ScanLine/>Abrir câmera</button></section><section className={styles.scanbar}><input autoFocus inputMode="numeric" placeholder="Escaneie ou digite o código" value={code} onChange={e=>setCode(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&code.trim()){manual(code);setCode('')}}}/><button onClick={()=>{manual(code);setCode('')}}>Adicionar</button></section><section className={styles.checkoutgrid}><div className={styles.productlist}>{cart.length===0?<div className={styles.empty}><ShoppingCart/><b>Carrinho vazio</b><span>Leia um produto para começar.</span></div>:cart.map(line=>{const p=products.find(x=>x.id===line.productId)!;return <article className={styles.cartline} key={line.productId}><div className={styles.grow}><b>{p.name}</b><small>{line.source==='scale'?'Etiqueta de balança':'Código unitário'} · {qty(line.quantityMilli,p.unit)}</small></div><div className={styles.cartstep}><button onClick={()=>change(p.id,-1000)}><Minus/></button><strong>{qty(line.quantityMilli,p.unit)}</strong><button onClick={()=>change(p.id,1000)}><Plus/></button></div><b>{money(Math.round(p.priceCents*line.quantityMilli/1000))}</b><button className={styles.trash} onClick={()=>remove(p.id)}><Trash2/></button></article>})}</div><aside className={styles.total}><span>Total</span><strong>{money(total)}</strong><button className={styles.pay} disabled={!cart.length} onClick={checkout}>CONFIRMAR VENDA</button><small>A baixa de todos os itens acontece em uma única operação local.</small></aside></section></>
+ return <><section className={styles.hero}><div><span>Checkout</span><h1>Caixa</h1><p>Leia EAN unitário ou etiqueta de balança. O mesmo produto lido novamente soma ao carrinho.</p></div><button className={styles.primary} onClick={scan}><ScanLine/>Escanear item</button></section><section className={styles.scanbar}><input inputMode="numeric" placeholder="Leitor USB / código manual de reserva" value={code} onChange={e=>setCode(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&code.trim()){manual(code);setCode('')}}}/><button onClick={()=>{manual(code);setCode('')}}>Adicionar</button></section><section className={styles.checkoutgrid}><div className={styles.productlist}>{cart.length===0?<div className={styles.empty}><ShoppingCart/><b>Carrinho vazio</b><span>Toque em “Escanear item”.</span></div>:cart.map(line=>{const p=products.find(x=>x.id===line.productId)!;return <article className={styles.cartline} key={line.productId}><div className={styles.grow}><b>{p.name}</b><small>{line.source==='scale'?'Etiqueta de balança':'Código unitário'} · {qty(line.quantityMilli,p.unit)}</small></div><div className={styles.cartstep}><button onClick={()=>change(p.id,-1000)}><Minus/></button><strong>{qty(line.quantityMilli,p.unit)}</strong><button onClick={()=>change(p.id,1000)}><Plus/></button></div><b>{money(Math.round(p.priceCents*line.quantityMilli/1000))}</b><button className={styles.trash} onClick={()=>remove(p.id)}><Trash2/></button></article>})}</div><aside className={styles.total}><span>Total</span><strong>{money(total)}</strong><button className={styles.pay} disabled={!cart.length} onClick={checkout}>CONFIRMAR VENDA</button><small>A baixa de todos os itens acontece em uma única operação local.</small></aside></section></>
 }
 
 function SettingsView({rule,setRule,exportBackup,importBackup,reset}:{rule:ScaleRule;setRule:(r:ScaleRule)=>void;exportBackup:()=>void;importBackup:(f:File)=>void;reset:()=>void}){
  return <><section className={styles.hero}><div><span>Configuração</span><h1>Etiqueta de balança</h1><p>A etiqueta varia por loja. Configure como o código impresso deve ser interpretado.</p></div></section><section className={styles.card}><div className={styles.formgrid}><label>Prefixo<input value={rule.prefix} onChange={e=>setRule({...rule,prefix:e.target.value})}/></label><label>Dígitos do produto<input type="number" value={rule.productDigits} onChange={e=>setRule({...rule,productDigits:Number(e.target.value)})}/></label><label>Dígitos do valor<input type="number" value={rule.valueDigits} onChange={e=>setRule({...rule,valueDigits:Number(e.target.value)})}/></label><label>Conteúdo<select value={rule.mode} onChange={e=>setRule({...rule,mode:e.target.value as 'weight'|'price'})}><option value="weight">Peso</option><option value="price">Preço</option></select></label><label>Casas decimais<input type="number" value={rule.decimalPlaces} onChange={e=>setRule({...rule,decimalPlaces:Number(e.target.value)})}/></label></div><div className={styles.example}><b>Exemplo padrão</b><code>20 00123 01250 7</code><span>prefixo · produto · valor · dígito final</span></div></section><section className={styles.card}><h2>Dados locais</h2><div className={styles.actions}><button className={styles.secondary} onClick={exportBackup}>Exportar backup JSON</button><label className={styles.secondary}>Importar backup<input hidden type="file" accept="application/json" onChange={e=>{const f=e.target.files?.[0];if(f)importBackup(f)}}/></label><button className={styles.danger} onClick={reset}><RotateCcw/>Apagar dados desta V1</button></div></section></>
-}
-
-function Scanner({onCode,close}:{onCode:(s:string)=>void;close:()=>void}){
- const video=useRef<HTMLVideoElement>(null),[manual,setManual]=useState(''),[message,setMessage]=useState('Abrindo câmera...')
- useEffect(()=>{let stream:MediaStream|undefined,timer:number|undefined,stopped=false; async function start(){try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});if(video.current)video.current.srcObject=stream; const Detector=(window as any).BarcodeDetector;if(!Detector){setMessage('Leitura automática não disponível neste navegador. Use o campo abaixo ou leitor USB.');return}const detector=new Detector({formats:['ean_13','ean_8','code_128','upc_a','upc_e']});setMessage('Aponte o código para a moldura.');const tick=async()=>{if(stopped||!video.current)return;try{const hits=await detector.detect(video.current);if(hits?.[0]?.rawValue){stopped=true;onCode(hits[0].rawValue);return}}catch{}timer=window.setTimeout(tick,250)};tick()}catch{setMessage('Não foi possível abrir a câmera. Digite o código abaixo.')}}start();return()=>{stopped=true;if(timer)clearTimeout(timer);stream?.getTracks().forEach(t=>t.stop())}},[onCode])
- return <div className={styles.overlay}><section className={styles.scanner}><button className={styles.close} onClick={close}><X/></button><span>Scanner</span><h2>Leia o código</h2><div className={styles.videowrap}><video ref={video} autoPlay muted playsInline/><i/></div><p>{message}</p><div className={styles.scanmanual}><input autoFocus inputMode="numeric" value={manual} onChange={e=>setManual(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&manual)onCode(manual)}} placeholder="Código manual / leitor USB"/><button onClick={()=>manual&&onCode(manual)}>Usar</button></div></section></div>
 }
