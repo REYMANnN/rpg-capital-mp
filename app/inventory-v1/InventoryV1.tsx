@@ -24,6 +24,8 @@ import { parseNfeXml, type ParsedNfe, type ParsedNfeItem } from '@/lib/inventory
 import { validateNewProductCommercialData, validateSalePrice } from '@/lib/inventory/productRules'
 import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 import QuaggaScanner from './QuaggaScanner'
+import InvoiceIntakeV10 from './InvoiceIntakeV10'
+import type { InvoiceReviewLineV10 } from '@/lib/inventory/invoiceReview'
 import styles from './inventory.module.css'
 
 type Unit = 'UN' | 'KG'
@@ -41,6 +43,10 @@ type Movement = {
   quantityMilli: number
   createdAt: string
   note: string
+  supplierDocument?: string
+  supplierName?: string
+  invoiceKey?: string
+  invoiceNumber?: string
 }
 type CartLine = { productId: string; quantityMilli: number; source: 'unit' }
 type StoreData = { products: AppProduct[]; sales: Sale[]; movements: Movement[]; scaleRule: ScaleRule }
@@ -556,6 +562,47 @@ export default function InventoryV1() {
     }
   }
 
+  function confirmInvoiceV10(invoice: ParsedNfe, importable: InvoiceReviewLineV10[]) {
+    if (!importable.length) return fail('Selecione ao menos um item identificado para importar.')
+    const marker = invoiceMarker(invoice)
+    if (data.movements.some((movement) => movement.type === 'purchase' && (movement.invoiceKey === invoice.accessKey || movement.note.includes(marker)))) {
+      return fail('Esta NF-e já foi importada.')
+    }
+
+    setData((current) => {
+      let products = current.products.map((product) => ({ ...product }))
+      const movements = [...current.movements]
+      const now = new Date().toISOString()
+
+      for (const line of importable) {
+        let product = products.find((candidate) => candidate.barcode === line.barcode)
+        if (!product) {
+          product = {
+            id: uid(), barcode: line.barcode, name: line.name || line.description, unit: 'UN',
+            priceCents: 0, stockMilli: 0, minStockMilli: 0, averageCostCents: 0,
+            catalogSource: line.source || undefined, catalogBrand: line.brand || undefined,
+            catalogImageUrl: line.imageUrl || undefined,
+          }
+          products.push(product)
+        }
+
+        const update = calculatePurchaseUpdate(product.stockMilli, product.averageCostCents, line.quantityMilli, line.unitCostCents)
+        products = products.map((candidate) => candidate.id === product!.id ? { ...candidate, ...update } : candidate)
+        movements.push({
+          id: uid(), productId: product.id, type: 'purchase', quantityMilli: line.quantityMilli,
+          createdAt: now,
+          note: `${marker} · NF ${invoice.number || 's/n'} · ${invoice.supplierName || 'Fornecedor'}`,
+          supplierDocument: invoice.supplierDocument || undefined,
+          supplierName: invoice.supplierName || undefined,
+          invoiceKey: invoice.accessKey || undefined,
+          invoiceNumber: invoice.number || undefined,
+        })
+      }
+      return { ...current, products, movements }
+    })
+    flash(`${importable.length} item(ns) confirmados e adicionados ao estoque. Produtos novos ficaram com preço de venda pendente.`)
+  }
+
   async function handleCode(raw: string) {
     const code = raw.replace(/\s+/g, '').trim()
     if (!code) return
@@ -707,14 +754,11 @@ export default function InventoryV1() {
         )}
 
         {tab === 'intake' && (
-          <Intake
+          <InvoiceIntakeV10
             products={data.products}
-            receive={receive}
-            review={invoiceReview}
-            loading={invoiceLoading}
-            loadInvoice={loadInvoice}
-            clearReview={() => setInvoiceReview(null)}
-            confirmInvoice={confirmInvoice}
+            onCommit={confirmInvoiceV10}
+            fail={fail}
+            flash={flash}
           />
         )}
 
@@ -954,7 +998,7 @@ function Checkout({ products, cart, total, scan, manual, change, remove, checkou
 function SettingsView({ cloud, exportBackup, importBackup, reset }: { cloud: string; exportBackup: () => void; importBackup: (file: File) => void; reset: () => void }) {
   return (
     <>
-      <section className={styles.hero}><div><span>Configuração</span><h1>Inventário</h1><p>Versão {INVENTORY_APP_VERSION}. Scan unitário para cadastro/edição e NF-e XML para entrada em massa.</p></div></section>
+      <section className={styles.hero}><div><span>Configuração</span><h1>Inventário</h1><p>Versão {INVENTORY_APP_VERSION}. Scan unitário para produtos e scan de chave NF-e com revisão inteligente para compras.</p></div></section>
       <section className={styles.card}><h2>Persistência</h2><p>{cloud}. O navegador mantém uma cópia local e sincroniza com o banco quando disponível.</p></section>
       <section className={styles.card}><h2>Backup</h2><div className={styles.actions}><button className={styles.secondary} onClick={exportBackup}>Exportar backup JSON</button><label className={styles.secondary}>Importar backup<input hidden type="file" accept="application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importBackup(file) }} /></label><button className={styles.danger} onClick={reset}><RotateCcw />Apagar dados do inventário</button></div></section>
     </>
