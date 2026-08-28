@@ -109,7 +109,7 @@ export function scoreProductCandidate(invoiceDescription: string, candidateName:
 
 export function rankProductCandidates(description: string, candidates: ProductCandidate[]) {
   return candidates
-    .map((candidate) => ({ candidate, score: scoreProductCandidate(description, `${candidate.brand || ''} ${candidate.name}`.trim()) }))
+    .map((candidate) => ({ candidate, score: scoreProductCandidate(description, candidate.name) }))
     .sort((a, b) => b.score - a.score)
 }
 
