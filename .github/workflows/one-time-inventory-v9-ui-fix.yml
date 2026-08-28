@@ -22,44 +22,42 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+          import re
 
           path = Path('app/inventory-v1/InventoryV1.tsx')
           text = path.read_text(encoding='utf-8')
 
-          text = text.replace(
-              "lookup.status === 'found' ? 'Produto identificado' : 'Produto novo identificado'",
-              "lookup.status === 'found' ? 'Produto novo · reconhecido no catálogo' : 'Produto novo · preenchimento manual'",
-          )
+          old_status = "lookup.status === 'found' ? 'Produto identificado' : 'Produto novo identificado'"
+          new_status = "lookup.status === 'found' ? 'Produto novo · reconhecido no catálogo' : 'Produto novo · preenchimento manual'"
+          text = text.replace(old_status, new_status)
 
-          old_title = """<div><span className={styles.eyebrow}>{mode === 'edit' ? 'Editar produto' : 'Cadastro por scan'}</span><h2>{mode === 'edit' ? 'Dados comerciais' : 'Complete o cadastro'}</h2></div>"""
-          new_title = """<div><span className={styles.eyebrow}>{mode === 'edit' ? 'Produto cadastrado' : 'Produto novo'}</span><h2>{mode === 'edit' ? 'Editar dados do produto' : 'Definir dados comerciais'}</h2></div>"""
+          old_title = "<div><span className={styles.eyebrow}>{mode === 'edit' ? 'Editar produto' : 'Cadastro por scan'}</span><h2>{mode === 'edit' ? 'Dados comerciais' : 'Complete o cadastro'}</h2></div>"
+          new_title = "<div><span className={styles.eyebrow}>{mode === 'edit' ? 'Produto cadastrado' : 'Produto novo'}</span><h2>{mode === 'edit' ? 'Editar dados do produto' : 'Definir dados comerciais'}</h2></div>"
           if old_title not in text:
               raise SystemExit('card title pattern not found')
           text = text.replace(old_title, new_title, 1)
 
-          old_fields = """<div className={styles.commercialGrid}>
-            <label className={styles.fieldLabel}>Preço de venda <b>obrigatório</b><input inputMode=\"decimal\" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} placeholder=\"Ex.: 8,99\" /><small>Valor cobrado do cliente por unidade.</small></label>
-            <label className={styles.fieldLabel}>Custo de compra {mode === 'new' ? <b>obrigatório</b> : <em>editável</em>}<input inputMode=\"decimal\" value={form.cost} onChange={(event) => setForm({ ...form, cost: event.target.value })} placeholder=\"Ex.: 6,42\" /><small>Quanto o mercado paga ao fornecedor por unidade. Quando veio de NF-e, já aparece preenchido.</small></label>
-            <label className={styles.fieldLabel}>{mode === 'edit' ? 'Quantidade em estoque' : 'Quantidade inicial'} <em>opcional</em><input inputMode=\"decimal\" value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} placeholder=\"0\" /><small>{mode === 'edit' ? 'Alterar este valor registra um ajuste de estoque.' : 'Se não informar, começa em zero.'}</small></label>
-            <label className={styles.fieldLabel}>Estoque mínimo <em>opcional</em><input inputMode=\"decimal\" value={form.minStock} onChange={(event) => setForm({ ...form, minStock: event.target.value })} placeholder=\"0\" /><small>Usado apenas para aviso de estoque baixo.</small></label>
-          </div>"""
+          replacement = '''          <div className={styles.commercialGrid}>
+            <label className={styles.fieldLabel}>Preço de venda <b>obrigatório</b><input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} /><small>Quanto o cliente paga por uma unidade deste produto.</small></label>
+            <label className={styles.fieldLabel}>Custo de compra {mode === 'new' ? <b>obrigatório</b> : <em>editável</em>}<input inputMode="decimal" value={form.cost} onChange={(event) => setForm({ ...form, cost: event.target.value })} /><small>Quanto o mercado pagou por unidade. Se o produto veio de uma NF-e, este valor já aparece preenchido.</small></label>
+            <label className={styles.fieldLabel}>{mode === 'edit' ? 'Quantidade em estoque' : 'Quantidade a adicionar ao estoque'} <em>opcional</em><input inputMode="decimal" value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} /><small>{mode === 'edit' ? 'Este é o saldo atual. Alterar o número registra um ajuste de estoque.' : 'Pode deixar 0 para apenas cadastrar o produto sem adicionar unidades.'}</small></label>
+            <label className={styles.fieldLabel}>Estoque mínimo <em>opcional</em><input inputMode="decimal" value={form.minStock} onChange={(event) => setForm({ ...form, minStock: event.target.value })} /><small>Serve apenas para avisar quando o estoque estiver baixo.</small></label>
+          </div>
 
-          new_fields = """<div className={styles.commercialGrid}>
-            <label className={styles.fieldLabel}>Preço de venda <b>obrigatório</b><input inputMode=\"decimal\" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} /><small>Quanto o cliente paga por uma unidade deste produto.</small></label>
-            <label className={styles.fieldLabel}>Custo de compra {mode === 'new' ? <b>obrigatório</b> : <em>editável</em>}<input inputMode=\"decimal\" value={form.cost} onChange={(event) => setForm({ ...form, cost: event.target.value })} /><small>Quanto o mercado pagou por unidade. Se o produto veio de uma NF-e, este valor já aparece preenchido.</small></label>
-            <label className={styles.fieldLabel}>{mode === 'edit' ? 'Quantidade em estoque' : 'Quantidade a adicionar ao estoque'} <em>opcional</em><input inputMode=\"decimal\" value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} /><small>{mode === 'edit' ? 'Este é o saldo atual. Alterar o número registra um ajuste de estoque.' : 'Pode deixar 0 para apenas cadastrar o produto sem adicionar unidades.'}</small></label>
-            <label className={styles.fieldLabel}>Estoque mínimo <em>opcional</em><input inputMode=\"decimal\" value={form.minStock} onChange={(event) => setForm({ ...form, minStock: event.target.value })} /><small>Serve apenas para avisar quando o estoque estiver baixo.</small></label>
-          </div>"""
+          <div className={styles.actions}>'''
 
-          if old_fields not in text:
-              raise SystemExit('commercial fields pattern not found')
-          text = text.replace(old_fields, new_fields, 1)
+          pattern = re.compile(r'          <div className=\{styles\.commercialGrid\}>[\s\S]*?          </div>\n\n          <div className=\{styles\.actions\}>', re.M)
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'commercialGrid structural replacement count={count}')
+
           path.write_text(text, encoding='utf-8')
 
       - name: Verify intended UI contract
         shell: bash
         run: |
           grep -q "Produto novo · reconhecido no catálogo" app/inventory-v1/InventoryV1.tsx
+          grep -q "Produto cadastrado' : 'Produto novo" app/inventory-v1/InventoryV1.tsx
           grep -q "Quantidade a adicionar ao estoque" app/inventory-v1/InventoryV1.tsx
           grep -q "Pode deixar 0 para apenas cadastrar" app/inventory-v1/InventoryV1.tsx
           ! grep -q 'placeholder="Ex.: 8,99"' app/inventory-v1/InventoryV1.tsx
