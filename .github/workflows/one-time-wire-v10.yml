@@ -22,13 +22,11 @@ jobs:
         run: |
           from pathlib import Path
           import re
-
           path = Path('app/inventory-v1/InventoryV1.tsx')
           text = path.read_text(encoding='utf-8')
-
-          text = text.replace("import QuaggaScanner from './QuaggaScanner'\n", "import QuaggaScanner from './QuaggaScanner'\nimport InvoiceIntakeV10 from './InvoiceIntakeV10'\nimport type { InvoiceReviewLineV10 } from '@/lib/inventory/invoiceReview'\n")
-
-          old_movement = """type Movement = {
+          if "import InvoiceIntakeV10 from './InvoiceIntakeV10'" not in text:
+              text = text.replace("import QuaggaScanner from './QuaggaScanner'\n", "import QuaggaScanner from './QuaggaScanner'\nimport InvoiceIntakeV10 from './InvoiceIntakeV10'\nimport type { InvoiceReviewLineV10 } from '@/lib/inventory/invoiceReview'\n")
+          old = """type Movement = {
   id: string
   productId: string
   type: 'initial' | 'purchase' | 'sale' | 'adjustment'
@@ -36,7 +34,7 @@ jobs:
   createdAt: string
   note: string
 }"""
-          new_movement = """type Movement = {
+          new = """type Movement = {
   id: string
   productId: string
   type: 'initial' | 'purchase' | 'sale' | 'adjustment'
@@ -48,59 +46,26 @@ jobs:
   invoiceKey?: string
   invoiceNumber?: string
 }"""
-          if old_movement not in text:
-              raise SystemExit('movement type pattern missing')
-          text = text.replace(old_movement, new_movement, 1)
-
-          anchor = "  async function handleCode(raw: string) {"
-          if anchor not in text:
-              raise SystemExit('handleCode anchor missing')
-
-          fn = r'''  function confirmInvoiceV10(invoice: ParsedNfe, importable: InvoiceReviewLineV10[]) {
+          if old in text: text = text.replace(old, new, 1)
+          if 'function confirmInvoiceV10(' not in text:
+              anchor = "  async function handleCode(raw: string) {"
+              fn = r'''  function confirmInvoiceV10(invoice: ParsedNfe, importable: InvoiceReviewLineV10[]) {
     if (!importable.length) return fail('Selecione ao menos um item identificado para importar.')
     const marker = invoiceMarker(invoice)
-    if (data.movements.some((movement) => movement.type === 'purchase' && (movement.invoiceKey === invoice.accessKey || movement.note.includes(marker)))) {
-      return fail('Esta NF-e já foi importada.')
-    }
-
+    if (data.movements.some((movement) => movement.type === 'purchase' && (movement.invoiceKey === invoice.accessKey || movement.note.includes(marker)))) return fail('Esta NF-e já foi importada.')
     setData((current) => {
       let products = current.products.map((product) => ({ ...product }))
       const movements = [...current.movements]
       const now = new Date().toISOString()
-
       for (const line of importable) {
         let product = products.find((candidate) => candidate.barcode === line.barcode)
         if (!product) {
-          product = {
-            id: uid(),
-            barcode: line.barcode,
-            name: line.name || line.description,
-            unit: 'UN',
-            priceCents: 0,
-            stockMilli: 0,
-            minStockMilli: 0,
-            averageCostCents: 0,
-            catalogSource: line.source || undefined,
-            catalogBrand: line.brand || undefined,
-            catalogImageUrl: line.imageUrl || undefined,
-          }
+          product = { id: uid(), barcode: line.barcode, name: line.name || line.description, unit: 'UN', priceCents: 0, stockMilli: 0, minStockMilli: 0, averageCostCents: 0, catalogSource: line.source || undefined, catalogBrand: line.brand || undefined, catalogImageUrl: line.imageUrl || undefined }
           products.push(product)
         }
-
         const update = calculatePurchaseUpdate(product.stockMilli, product.averageCostCents, line.quantityMilli, line.unitCostCents)
         products = products.map((candidate) => candidate.id === product!.id ? { ...candidate, ...update } : candidate)
-        movements.push({
-          id: uid(),
-          productId: product.id,
-          type: 'purchase',
-          quantityMilli: line.quantityMilli,
-          createdAt: now,
-          note: `${marker} · NF ${invoice.number || 's/n'} · ${invoice.supplierName || 'Fornecedor'}`,
-          supplierDocument: invoice.supplierDocument || undefined,
-          supplierName: invoice.supplierName || undefined,
-          invoiceKey: invoice.accessKey || undefined,
-          invoiceNumber: invoice.number || undefined,
-        })
+        movements.push({ id: uid(), productId: product.id, type: 'purchase', quantityMilli: line.quantityMilli, createdAt: now, note: `${marker} · NF ${invoice.number || 's/n'} · ${invoice.supplierName || 'Fornecedor'}`, supplierDocument: invoice.supplierDocument || undefined, supplierName: invoice.supplierName || undefined, invoiceKey: invoice.accessKey || undefined, invoiceNumber: invoice.number || undefined })
       }
       return { ...current, products, movements }
     })
@@ -108,33 +73,23 @@ jobs:
   }
 
 '''
-          text = text.replace(anchor, fn + anchor, 1)
-
+              if anchor not in text: raise SystemExit('handleCode anchor missing')
+              text = text.replace(anchor, fn + anchor, 1)
           pattern = re.compile(r"\{tab === 'intake' && \(\n\s*<Intake[\s\S]*?\n\s*/>\n\s*\)\}", re.M)
           replacement = """{tab === 'intake' && (
-          <InvoiceIntakeV10
-            products={data.products}
-            onCommit={confirmInvoiceV10}
-            fail={fail}
-            flash={flash}
-          />
+          <InvoiceIntakeV10 products={data.products} onCommit={confirmInvoiceV10} fail={fail} flash={flash} />
         )}"""
-          text, count = pattern.subn(replacement, text, count=1)
-          if count != 1:
-              raise SystemExit(f'intake replacement count={count}')
-
+          if '<InvoiceIntakeV10 products={data.products}' not in text:
+              text, count = pattern.subn(replacement, text, count=1)
+              if count != 1: raise SystemExit(f'intake replacement count={count}')
           text = text.replace('Versão {INVENTORY_APP_VERSION}. Scan unitário para cadastro/edição e NF-e XML para entrada em massa.', 'Versão {INVENTORY_APP_VERSION}. Scan unitário para produtos e scan de chave NF-e com revisão inteligente para compras.')
           path.write_text(text, encoding='utf-8')
-
       - name: Verify wiring
-        shell: bash
         run: |
           grep -q "InvoiceIntakeV10" app/inventory-v1/InventoryV1.tsx
           grep -q "confirmInvoiceV10" app/inventory-v1/InventoryV1.tsx
           grep -q "invoiceKey?: string" app/inventory-v1/InventoryV1.tsx
-          grep -q "onCommit={confirmInvoiceV10}" app/inventory-v1/InventoryV1.tsx
       - name: Commit wiring
-        shell: bash
         run: |
           git config user.name "inventory-v10-bot"
           git config user.email "inventory-v10-bot@users.noreply.github.com"
@@ -142,4 +97,4 @@ jobs:
           git commit -m "feat: wire v10 invoice intake into inventory" || exit 0
           git push origin inventory-v10
 
-# trigger: 2
+# trigger: 3
