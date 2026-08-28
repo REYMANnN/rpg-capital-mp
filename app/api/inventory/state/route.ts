@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
 
 const COOKIE_NAME = 'inventory_installation_id'
 
@@ -10,6 +10,12 @@ type StoreData = {
   sales: unknown[]
   movements: unknown[]
   scaleRule?: unknown
+}
+
+type CloudStateResponse = {
+  found?: boolean
+  version?: string
+  state?: unknown
 }
 
 function getInstallationId(request: NextRequest) {
@@ -39,80 +45,23 @@ function isState(value: unknown): value is StoreData {
 
 export async function GET(request: NextRequest) {
   const installation = getInstallationId(request)
-  const supabase = createAdminClient()
+  const supabase = createInventoryCloudClient()
+  const { data, error } = await supabase.rpc('inventory_v1_get_state', {
+    p_installation_id: installation.id,
+  })
 
-  const { data: store, error: storeError } = await supabase
-    .from('inventory_v1_stores')
-    .select('id')
-    .eq('installation_id', installation.id)
-    .maybeSingle()
-
-  if (storeError) {
-    return withInstallationCookie(NextResponse.json({ ok: false, error: 'store_lookup_failed' }, { status: 500 }), installation.id, installation.fresh)
-  }
-
-  if (!store) {
-    return withInstallationCookie(NextResponse.json({ ok: true, found: false, version: INVENTORY_APP_VERSION }), installation.id, installation.fresh)
-  }
-
-  const [{ data: products, error: productsError }, { data: sales, error: salesError }, { data: movements, error: movementsError }, { data: settings, error: settingsError }] = await Promise.all([
-    supabase.from('inventory_v1_products').select('*').eq('store_id', store.id).order('created_at'),
-    supabase.from('inventory_v1_sales').select('*').eq('store_id', store.id).order('sold_at', { ascending: false }),
-    supabase.from('inventory_v1_movements').select('*').eq('store_id', store.id).order('moved_at'),
-    supabase.from('inventory_v1_settings').select('*').eq('store_id', store.id).maybeSingle(),
-  ])
-
-  if (productsError || salesError || movementsError || settingsError) {
+  if (error) {
+    console.error('inventory_v1_get_state failed', error)
     return withInstallationCookie(NextResponse.json({ ok: false, error: 'state_lookup_failed' }, { status: 500 }), installation.id, installation.fresh)
   }
 
-  const saleIds = (sales ?? []).map((sale) => sale.id)
-  let items: any[] = []
-  if (saleIds.length) {
-    const { data, error } = await supabase.from('inventory_v1_sale_items').select('*').in('sale_id', saleIds)
-    if (error) {
-      return withInstallationCookie(NextResponse.json({ ok: false, error: 'sale_items_lookup_failed' }, { status: 500 }), installation.id, installation.fresh)
-    }
-    items = data ?? []
-  }
-
-  const state = {
-    products: (products ?? []).map((product) => ({
-      id: product.id,
-      barcode: product.barcode,
-      name: product.name,
-      unit: product.unit,
-      priceCents: Number(product.price_cents),
-      averageCostCents: Number(product.average_cost_cents),
-      stockMilli: Number(product.stock_milli),
-      minStockMilli: Number(product.min_stock_milli),
-      ...(product.catalog_source ? { catalogSource: product.catalog_source } : {}),
-      ...(product.catalog_brand ? { catalogBrand: product.catalog_brand } : {}),
-      ...(product.catalog_image_url ? { catalogImageUrl: product.catalog_image_url } : {}),
-    })),
-    sales: (sales ?? []).map((sale) => ({
-      id: sale.id,
-      createdAt: sale.sold_at,
-      totalCents: Number(sale.total_cents),
-      items: items.filter((item) => item.sale_id === sale.id).map((item) => ({
-        productId: item.product_id,
-        quantityMilli: Number(item.quantity_milli),
-        unitPriceCents: Number(item.unit_price_cents),
-        lineTotalCents: Number(item.line_total_cents),
-      })),
-    })),
-    movements: (movements ?? []).map((movement) => ({
-      id: movement.id,
-      productId: movement.product_id,
-      type: movement.movement_type,
-      quantityMilli: Number(movement.quantity_milli),
-      createdAt: movement.moved_at,
-      note: movement.note,
-    })),
-    scaleRule: settings?.scale_rule ?? {},
-  }
-
-  return withInstallationCookie(NextResponse.json({ ok: true, found: true, version: settings?.app_version ?? INVENTORY_APP_VERSION, state }), installation.id, installation.fresh)
+  const result = (data ?? {}) as CloudStateResponse
+  return withInstallationCookie(NextResponse.json({
+    ok: true,
+    found: Boolean(result.found),
+    version: result.version || INVENTORY_APP_VERSION,
+    ...(result.found ? { state: result.state } : {}),
+  }), installation.id, installation.fresh)
 }
 
 export async function PUT(request: NextRequest) {
@@ -128,7 +77,7 @@ export async function PUT(request: NextRequest) {
     return withInstallationCookie(NextResponse.json({ ok: false, error: 'invalid_state' }, { status: 400 }), installation.id, installation.fresh)
   }
 
-  const supabase = createAdminClient()
+  const supabase = createInventoryCloudClient()
   const { data, error } = await supabase.rpc('inventory_v1_sync_state', {
     p_installation_id: installation.id,
     p_state: state,
