@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
+import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const APP_VERSION = 'v8'
 const COOKIE_NAME = 'inventory_installation_id'
 
 type StoreData = {
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (!store) {
-    return withInstallationCookie(NextResponse.json({ ok: true, found: false, version: APP_VERSION }), installation.id, installation.fresh)
+    return withInstallationCookie(NextResponse.json({ ok: true, found: false, version: INVENTORY_APP_VERSION }), installation.id, installation.fresh)
   }
 
   const [{ data: products, error: productsError }, { data: sales, error: salesError }, { data: movements, error: movementsError }, { data: settings, error: settingsError }] = await Promise.all([
@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
     scaleRule: settings?.scale_rule ?? {},
   }
 
-  return withInstallationCookie(NextResponse.json({ ok: true, found: true, version: settings?.app_version ?? APP_VERSION, state }), installation.id, installation.fresh)
+  return withInstallationCookie(NextResponse.json({ ok: true, found: true, version: settings?.app_version ?? INVENTORY_APP_VERSION, state }), installation.id, installation.fresh)
 }
 
 export async function PUT(request: NextRequest) {
@@ -132,7 +132,7 @@ export async function PUT(request: NextRequest) {
   const { data, error } = await supabase.rpc('inventory_v1_sync_state', {
     p_installation_id: installation.id,
     p_state: state,
-    p_app_version: APP_VERSION,
+    p_app_version: INVENTORY_APP_VERSION,
   })
 
   if (error) {
@@ -140,5 +140,5 @@ export async function PUT(request: NextRequest) {
     return withInstallationCookie(NextResponse.json({ ok: false, error: 'sync_failed' }, { status: 500 }), installation.id, installation.fresh)
   }
 
-  return withInstallationCookie(NextResponse.json({ ok: true, storeId: data, version: APP_VERSION }), installation.id, installation.fresh)
+  return withInstallationCookie(NextResponse.json({ ok: true, storeId: data, version: INVENTORY_APP_VERSION }), installation.id, installation.fresh)
 }
