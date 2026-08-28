@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 type ExternalProduct = {
   code?: string
@@ -47,6 +48,27 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ found: false, error: 'invalid_barcode' }, { status: 400 })
   }
 
+  const supabase = createAdminClient()
+  const { data: cached } = await supabase
+    .from('inventory_v1_product_catalog_cache')
+    .select('barcode,name,brand,image_url,source,checked_at')
+    .eq('barcode', code)
+    .maybeSingle()
+
+  if (cached) {
+    return NextResponse.json({
+      found: true,
+      source: cached.source,
+      cached: true,
+      product: {
+        barcode: cached.barcode,
+        name: cached.name,
+        brand: cached.brand,
+        imageUrl: cached.image_url,
+      },
+    })
+  }
+
   for (const source of SOURCES) {
     const product = await lookupSource(source.base, code)
     if (!product) continue
@@ -54,16 +76,25 @@ export async function GET(request: NextRequest) {
     const name = (product.product_name_pt || product.product_name || '').trim()
     if (!name) continue
 
-    return NextResponse.json({
-      found: true,
+    const normalized = {
+      barcode: code,
+      name,
+      brand: product.brands?.trim() || '',
+      imageUrl: product.image_front_url || '',
+    }
+
+    await supabase.from('inventory_v1_product_catalog_cache').upsert({
+      barcode: code,
+      name: normalized.name,
+      brand: normalized.brand,
+      image_url: normalized.imageUrl,
       source: source.name,
-      product: {
-        barcode: code,
-        name,
-        brand: product.brands?.trim() || '',
-        imageUrl: product.image_front_url || '',
-      },
+      raw_metadata: { providerCode: product.code || code },
+      checked_at: new Date().toISOString(),
+      system_tag: 'inventory',
     })
+
+    return NextResponse.json({ found: true, source: source.name, cached: false, product: normalized })
   }
 
   return NextResponse.json({ found: false, barcode: code })
