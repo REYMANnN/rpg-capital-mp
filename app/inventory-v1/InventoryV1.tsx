@@ -761,7 +761,7 @@ function ProductIdentity({ form, lookup, mode }: { form: ProductForm; lookup: Lo
         {form.catalogImageUrl ? <img src={form.catalogImageUrl} alt="" /> : <Barcode />}
       </div>
       <div className={styles.grow}>
-        <span className={styles.eyebrow}>{mode === 'edit' ? 'Produto cadastrado' : lookup.status === 'loading' ? 'Pesquisando produto…' : lookup.status === 'found' ? 'Produto identificado' : 'Produto novo identificado'}</span>
+        <span className={styles.eyebrow}>{mode === 'edit' ? 'Produto cadastrado' : lookup.status === 'loading' ? 'Pesquisando produto…' : lookup.status === 'found' ? 'Produto novo · reconhecido no catálogo' : 'Produto novo · preenchimento manual'}</span>
         {manualName ? (
           <label className={styles.fieldLabel}>Nome do produto <b>obrigatório</b><input value={form.name} readOnly /></label>
         ) : (
@@ -812,14 +812,14 @@ function Stock({
       {mode && (
         <section className={styles.card}>
           <div className={styles.cardTitleRow}>
-            <div><span className={styles.eyebrow}>{mode === 'edit' ? 'Editar produto' : 'Cadastro por scan'}</span><h2>{mode === 'edit' ? 'Dados comerciais' : 'Complete o cadastro'}</h2></div>
+            <div><span className={styles.eyebrow}>{mode === 'edit' ? 'Produto cadastrado' : 'Produto novo'}</span><h2>{mode === 'edit' ? 'Editar dados do produto' : 'Definir dados comerciais'}</h2></div>
             <button className={styles.iconButton} onClick={close} aria-label="Fechar"><X /></button>
           </div>
 
           <div className={styles.identity}>
             <div className={styles.identityMedia}>{form.catalogImageUrl ? <img src={form.catalogImageUrl} alt="" /> : <Barcode />}</div>
             <div className={styles.grow}>
-              <span className={styles.eyebrow}>{lookup.status === 'loading' ? 'Pesquisando produto…' : mode === 'edit' ? 'Produto cadastrado' : lookup.status === 'found' ? 'Produto identificado' : 'Produto novo identificado'}</span>
+              <span className={styles.eyebrow}>{lookup.status === 'loading' ? 'Pesquisando produto…' : mode === 'edit' ? 'Produto cadastrado' : lookup.status === 'found' ? 'Produto novo · reconhecido no catálogo' : 'Produto novo · preenchimento manual'}</span>
               {manualName ? (
                 <label className={styles.fieldLabel}>Nome do produto <b>obrigatório</b><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Digite o nome que aparece na embalagem" /></label>
               ) : (
@@ -830,13 +830,13 @@ function Stock({
           </div>
 
           <div className={styles.commercialGrid}>
-            <label className={styles.fieldLabel}>Preço de venda <b>obrigatório</b><input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} placeholder="Ex.: 8,99" /><small>Valor cobrado do cliente por unidade.</small></label>
-            <label className={styles.fieldLabel}>Custo de compra {mode === 'new' ? <b>obrigatório</b> : <em>editável</em>}<input inputMode="decimal" value={form.cost} onChange={(event) => setForm({ ...form, cost: event.target.value })} placeholder="Ex.: 6,42" /><small>Quanto o mercado paga ao fornecedor por unidade. Quando veio de NF-e, já aparece preenchido.</small></label>
-            <label className={styles.fieldLabel}>{mode === 'edit' ? 'Quantidade em estoque' : 'Quantidade inicial'} <em>opcional</em><input inputMode="decimal" value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} placeholder="0" /><small>{mode === 'edit' ? 'Alterar este valor registra um ajuste de estoque.' : 'Se não informar, começa em zero.'}</small></label>
-            <label className={styles.fieldLabel}>Estoque mínimo <em>opcional</em><input inputMode="decimal" value={form.minStock} onChange={(event) => setForm({ ...form, minStock: event.target.value })} placeholder="0" /><small>Usado apenas para aviso de estoque baixo.</small></label>
-          </div>
+  <label className={styles.fieldLabel}>Preço de venda <b>obrigatório</b><input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} /><small>Quanto o cliente paga por uma unidade deste produto.</small></label>
+  <label className={styles.fieldLabel}>Custo de compra {mode === 'new' ? <b>obrigatório</b> : <em>editável</em>}<input inputMode="decimal" value={form.cost} onChange={(event) => setForm({ ...form, cost: event.target.value })} /><small>Quanto o mercado pagou por unidade. Se o produto veio de uma NF-e, este valor já aparece preenchido.</small></label>
+  <label className={styles.fieldLabel}>{mode === 'edit' ? 'Quantidade em estoque' : 'Quantidade a adicionar ao estoque'} <em>opcional</em><input inputMode="decimal" value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} /><small>{mode === 'edit' ? 'Este é o saldo atual. Alterar o número registra um ajuste de estoque.' : 'Pode deixar 0 para apenas cadastrar o produto sem adicionar unidades.'}</small></label>
+  <label className={styles.fieldLabel}>Estoque mínimo <em>opcional</em><input inputMode="decimal" value={form.minStock} onChange={(event) => setForm({ ...form, minStock: event.target.value })} /><small>Serve apenas para avisar quando o estoque estiver baixo.</small></label>
+</div>
 
-          <div className={styles.actions}><button className={styles.primary} onClick={save} disabled={lookup.status === 'loading'}>{mode === 'edit' ? 'Salvar alterações' : 'Cadastrar produto'}</button><button className={styles.secondary} onClick={close}>Cancelar</button></div>
+<div className={styles.actions}><button className={styles.primary} onClick={save} disabled={lookup.status === 'loading'}>{mode === 'edit' ? 'Salvar alterações' : 'Cadastrar produto'}</button><button className={styles.secondary} onClick={close}>Cancelar</button></div>
         </section>
       )}
 
