@@ -9,6 +9,7 @@ export type ParsedNfeItem = {
 }
 
 export type ParsedNfe = {
+  accessKey: string
   number: string
   issuedAt: string
   supplierName: string
@@ -64,6 +65,8 @@ export function parseNfeXml(xml: string): ParsedNfe {
     throw new Error('XML de NF-e malformado.')
   }
 
+  const infNfeOpen = source.match(/<(?:[\w.-]+:)?infNFe\b([^>]*)>/i)?.[1] ?? ''
+  const id = infNfeOpen.match(/\bId\s*=\s*["']NFe([^"']+)["']/i)?.[1] ?? ''
   const emit = source.match(/<(?:[\w.-]+:)?emit(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?emit>/i)?.[1] ?? ''
   const detMatches = [...source.matchAll(/<(?:[\w.-]+:)?det\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?det>/gi)]
   if (!detMatches.length) throw new Error('NF-e sem itens de produto.')
@@ -92,6 +95,7 @@ export function parseNfeXml(xml: string): ParsedNfe {
   }
 
   return {
+    accessKey: id,
     number: tag(source, 'nNF'),
     issuedAt: tag(source, 'dhEmi') || tag(source, 'dEmi'),
     supplierName: tag(emit, 'xNome'),
