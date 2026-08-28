@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Barcode, Boxes, Camera, Check, ChevronRight, Cloud, CloudOff, Minus, PackagePlus, Plus, RotateCcw, ScanLine, Settings, ShoppingCart, Trash2, X } from 'lucide-react'
 import { completeSale, type Product, type Sale, type ScaleRule } from '@/lib/inventory/core'
+import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 import QuaggaScanner from './QuaggaScanner'
 import styles from './inventory.module.css'
 
@@ -37,7 +38,6 @@ type ProductForm = {
   catalogImageUrl:string
 }
 
-const APP_VERSION = 'v8'
 const DEFAULT_RULE: ScaleRule = { prefix:'', productDigits:0, valueDigits:0, mode:'weight', decimalPlaces:0 }
 const STORAGE_KEY = 'rpg-inventory-v1-2026'
 const uid = () => crypto.randomUUID()
@@ -256,7 +256,7 @@ export default function InventoryV1() {
   if(!loaded)return null
   const cloudText=cloud==='synced'?'Nuvem sincronizada':cloud==='syncing'?'Sincronizando…':cloud==='offline'?'Modo local':'Conectando…'
   return <div className={styles.shell}>
-    <header className={styles.top}><div><span className={styles.brand}>RPG</span><strong>Mercadinho</strong></div><span className={styles.status}>{cloud==='offline'?<CloudOff/>:<Cloud/>}{APP_VERSION} · {cloudText} · EAN/UPC</span></header>
+    <header className={styles.top}><div><span className={styles.brand}>RPG</span><strong>Mercadinho</strong></div><span className={styles.status}>{cloud==='offline'?<CloudOff/>:<Cloud/>}{INVENTORY_APP_VERSION} · {cloudText} · EAN/UPC</span></header>
     <nav className={styles.nav}>
       <button className={tab==='stock'?styles.active:''} onClick={()=>setTab('stock')}><Boxes/>Estoque</button>
       <button className={tab==='intake'?styles.active:''} onClick={()=>setTab('intake')}><PackagePlus/>Entrada</button>
@@ -293,5 +293,5 @@ function Checkout({products,cart,total,scan,manual,change,remove,checkout}:{prod
 }
 
 function SettingsView({cloud,exportBackup,importBackup,reset}:{cloud:string;exportBackup:()=>void;importBackup:(f:File)=>void;reset:()=>void}){
- return <><section className={styles.hero}><div><span>Configuração</span><h1>Inventário</h1><p>Versão {APP_VERSION}. A leitura de etiquetas de balança foi deixada para uma etapa posterior.</p></div></section><section className={styles.card}><h2>Persistência</h2><p>{cloud}. O navegador mantém uma cópia local para o caixa continuar operando sem internet; quando disponível, o estado também é sincronizado com o banco.</p></section><section className={styles.card}><h2>Backup</h2><div className={styles.actions}><button className={styles.secondary} onClick={exportBackup}>Exportar backup JSON</button><label className={styles.secondary}>Importar backup<input hidden type="file" accept="application/json" onChange={e=>{const f=e.target.files?.[0];if(f)importBackup(f)}}/></label><button className={styles.danger} onClick={reset}><RotateCcw/>Apagar dados do inventário</button></div></section></>
+ return <><section className={styles.hero}><div><span>Configuração</span><h1>Inventário</h1><p>Versão {INVENTORY_APP_VERSION}. A leitura de etiquetas de balança foi deixada para uma etapa posterior.</p></div></section><section className={styles.card}><h2>Persistência</h2><p>{cloud}. O navegador mantém uma cópia local para o caixa continuar operando sem internet; quando disponível, o estado também é sincronizado com o banco.</p></section><section className={styles.card}><h2>Backup</h2><div className={styles.actions}><button className={styles.secondary} onClick={exportBackup}>Exportar backup JSON</button><label className={styles.secondary}>Importar backup<input hidden type="file" accept="application/json" onChange={e=>{const f=e.target.files?.[0];if(f)importBackup(f)}}/></label><button className={styles.danger} onClick={reset}><RotateCcw/>Apagar dados do inventário</button></div></section></>
 }
