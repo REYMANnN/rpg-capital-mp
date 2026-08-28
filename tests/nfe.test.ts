@@ -28,8 +28,9 @@ test('normalizes only usable GTIN barcodes', () => {
   assert.equal(normalizeInvoiceBarcode('123'), '')
 })
 
-test('parses NF-e purchase header and item money/quantity as integers', () => {
+test('parses NF-e purchase header, access key and item money/quantity as integers', () => {
   const parsed = parseNfeXml(xml)
+  assert.equal(parsed.accessKey, '351234')
   assert.equal(parsed.number, '12345')
   assert.equal(parsed.supplierName, 'Distribuidora Teste LTDA')
   assert.equal(parsed.supplierDocument, '12345678000190')
