@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
 
 type ExternalProduct = {
   code?: string
@@ -48,14 +48,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ found: false, error: 'invalid_barcode' }, { status: 400 })
   }
 
-  const supabase = createAdminClient()
-  const { data: cached } = await supabase
+  const supabase = createInventoryCloudClient()
+  const { data: cached, error: cacheReadError } = await supabase
     .from('inventory_v1_product_catalog_cache')
     .select('barcode,name,brand,image_url,source,checked_at')
     .eq('barcode', code)
     .maybeSingle()
 
-  if (cached) {
+  if (!cacheReadError && cached) {
     return NextResponse.json({
       found: true,
       source: cached.source,
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       imageUrl: product.image_front_url || '',
     }
 
-    await supabase.from('inventory_v1_product_catalog_cache').upsert({
+    const { error: cacheWriteError } = await supabase.from('inventory_v1_product_catalog_cache').upsert({
       barcode: code,
       name: normalized.name,
       brand: normalized.brand,
@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
       checked_at: new Date().toISOString(),
       system_tag: 'inventory',
     })
+    if (cacheWriteError) console.warn('inventory product cache write failed', cacheWriteError.message)
 
     return NextResponse.json({ found: true, source: source.name, cached: false, product: normalized })
   }
