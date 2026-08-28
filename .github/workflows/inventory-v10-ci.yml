@@ -20,3 +20,5 @@ jobs:
         run: npx tsx --test tests/nfeKey.test.ts tests/nfe.test.ts tests/purchaseMath.test.ts tests/productMatcher.test.ts tests/invoiceReview.test.ts
       - name: Production build
         run: npm run build
+
+# final-v10-verification
