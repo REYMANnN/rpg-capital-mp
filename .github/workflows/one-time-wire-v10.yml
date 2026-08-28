@@ -23,8 +23,8 @@ jobs:
         run: |
           git config user.name "inventory-v10-bot"
           git config user.email "inventory-v10-bot@users.noreply.github.com"
-          git add app/inventory-v1/InventoryV1.tsx
+          git add app/inventory-v1/InventoryV1.tsx app/inventory-v1/InvoiceIntakeV10.tsx
           git commit -m "feat: wire v10 invoice intake into inventory" || exit 0
           git push origin inventory-v10
 
-# trigger: 4
+# trigger: 5
