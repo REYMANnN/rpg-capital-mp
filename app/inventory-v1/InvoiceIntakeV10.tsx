@@ -5,7 +5,7 @@ import { Barcode, Camera, Check, FileUp, Pencil, Search, X } from 'lucide-react'
 import { parseNfeXml, type ParsedNfe } from '@/lib/inventory/nfe'
 import { DEMO_NFE_ACCESS_KEY, isValidNfeAccessKey, normalizeNfeAccessKey } from '@/lib/inventory/nfeKey'
 import { editInvoiceReviewLine, importableInvoiceLines, type InvoiceReviewLineV10 } from '@/lib/inventory/invoiceReview'
-import { pickBestProductCandidate, type ProductCandidate } from '@/lib/inventory/productMatcher'
+import { pickBestProductCandidate, scoreProductCandidate, type ProductCandidate } from '@/lib/inventory/productMatcher'
 import QuaggaScanner from './QuaggaScanner'
 import styles from './inventory.module.css'
 
@@ -28,7 +28,12 @@ type Props = {
 type Phase = 'idle' | 'resolving' | 'questions' | 'review'
 
 const money = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-const numberValue = (value: string) => Number(value.replace(/\./g, '').replace(',', '.'))
+const numberValue = (value: string) => {
+  const raw = value.trim().replace(/\s+/g, '')
+  if (raw.includes(',') && raw.includes('.')) return Number(raw.replace(/\./g, '').replace(',', '.'))
+  if (raw.includes(',')) return Number(raw.replace(',', '.'))
+  return Number(raw)
+}
 
 async function productByBarcode(barcode: string, products: ProductLike[]) {
   const local = products.find((product) => product.barcode === barcode)
@@ -178,8 +183,19 @@ export default function InvoiceIntakeV10({ products, onCommit, fail, flash }: Pr
   async function resolveWithBarcode(line: InvoiceReviewLineV10, rawBarcode: string) {
     const barcode = String(rawBarcode).replace(/\D+/g, '')
     if (!/^\d{8,14}$/.test(barcode)) return fail('EAN inválido.')
+    setScanner(null)
     const product = await productByBarcode(barcode, products)
     finishQuestion(line, { ...product, barcode, resolution: 'manual', selected: true })
+  }
+
+  async function updateEditedWithBarcode(line: InvoiceReviewLineV10, rawBarcode: string) {
+    const barcode = String(rawBarcode).replace(/\D+/g, '')
+    if (!/^\d{8,14}$/.test(barcode)) return fail('EAN inválido.')
+    setScanner(null)
+    const product = await productByBarcode(barcode, products)
+    const next = editInvoiceReviewLine(line, { ...product, barcode, resolution: 'manual', confirmed: true, selected: true })
+    setLines((current) => current.map((item) => item.line === line.line ? next : item))
+    void saveAlias(next)
   }
 
   async function searchProducts() {
@@ -189,7 +205,18 @@ export default function InvoiceIntakeV10({ products, onCommit, fail, flash }: Pr
     try {
       const response = await fetch(`/api/inventory/catalog-search?q=${encodeURIComponent(query)}`, { cache: 'no-store' })
       const result = await response.json()
-      setSearchResults(Array.isArray(result?.items) ? result.items : [])
+      const remote: ProductCandidate[] = Array.isArray(result?.items) ? result.items : []
+      const local = products
+        .map((product) => ({
+          candidate: { barcode: product.barcode, name: product.name, brand: product.catalogBrand || '', imageUrl: product.catalogImageUrl || '', source: 'Inventário' },
+          score: scoreProductCandidate(query, product.name),
+        }))
+        .filter((item) => item.score >= 0.2)
+        .sort((a, b) => b.score - a.score)
+        .map((item) => item.candidate)
+      const merged = new Map<string, ProductCandidate>()
+      for (const candidate of [...local, ...remote]) if (candidate.barcode) merged.set(candidate.barcode, candidate)
+      setSearchResults([...merged.values()].slice(0, 24))
     } finally { setSearching(false) }
   }
 
@@ -265,7 +292,7 @@ export default function InvoiceIntakeV10({ products, onCommit, fail, flash }: Pr
 
       <section className={styles.card}><p><b>Fallback:</b> o XML continua disponível para quando a chave real for lida mas a recuperação oficial ainda não estiver autorizada para aquele CNPJ.</p></section>
 
-      {scanner && <QuaggaScanner onCode={(code) => scanner === 'invoice' ? void scanInvoiceKey(code) : currentQuestion ? void resolveWithBarcode(currentQuestion, code) : editLine ? void resolveWithBarcode(editLine, code) : setScanner(null)} close={() => setScanner(null)} />}
+      {scanner && <QuaggaScanner onCode={(code) => scanner === 'invoice' ? void scanInvoiceKey(code) : currentQuestion ? void resolveWithBarcode(currentQuestion, code) : editLine ? void updateEditedWithBarcode(editLine, code) : setScanner(null)} close={() => setScanner(null)} />}
     </>
   )
 }
