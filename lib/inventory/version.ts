@@ -1,1 +1,1 @@
-export const INVENTORY_APP_VERSION = 'v8'
+export const INVENTORY_APP_VERSION = 'v9'
