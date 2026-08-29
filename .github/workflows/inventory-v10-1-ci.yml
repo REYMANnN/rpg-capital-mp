@@ -1,8 +1,8 @@
-name: Inventory v10.1 CI
+name: Inventory v10.x CI
 
 on:
   push:
-    branches: ['inventory-v10.1']
+    branches: ['inventory-v10.1', 'inventory-v10.2']
   pull_request:
     branches: [master]
 
@@ -16,9 +16,9 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm install
-      - name: Inventory v10.1 tests
-        run: npx tsx --test tests/nfeKey.test.ts tests/nfe.test.ts tests/intake.test.ts tests/productMatcher.test.ts tests/product-rules.test.ts tests/scanner-policy.test.ts tests/invoiceReview.test.ts tests/invoiceResolver.test.ts tests/supplierAliasContract.test.ts tests/v10_1ScenarioMatrix.test.ts
+      - name: Inventory v10.x tests
+        run: npx tsx --test tests/nfeKey.test.ts tests/nfe.test.ts tests/intake.test.ts tests/productMatcher.test.ts tests/product-rules.test.ts tests/scanner-policy.test.ts tests/invoiceReview.test.ts tests/invoiceResolver.test.ts tests/supplierAliasContract.test.ts tests/v10_1ScenarioMatrix.test.ts tests/v10_2Ux.test.ts
       - name: Production build
         run: npm run build
 
-# production-v10.1
+# production-v10.x
