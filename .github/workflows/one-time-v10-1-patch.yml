@@ -1,0 +1,26 @@
+name: Apply inventory v10.1 integration patch
+
+on:
+  push:
+    branches: ['inventory-v10.1']
+    paths:
+      - '.github/workflows/one-time-v10-1-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: inventory-v10.1
+          fetch-depth: 0
+      - run: python scripts/patch_inventory_v10_1.py
+      - run: |
+          git config user.name "inventory-v10-1-bot"
+          git config user.email "inventory-v10-1-bot@users.noreply.github.com"
+          git add app/inventory-v1/InvoiceIntakeV10_1.tsx app/inventory-v1/InventoryV1.tsx
+          git commit -m "feat: finish v10.1 package and stock integration" || exit 0
+          git push origin inventory-v10.1
