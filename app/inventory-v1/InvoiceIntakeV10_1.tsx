@@ -278,8 +278,8 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
       source,
       resolution: 'manual',
       identityStatus: 'manual',
-      decisionState: requiresPackageFactor(line.purchaseUnit) && line.packageFactor <= 0 ? 'needs-package-factor' : 'resolved',
-      confirmed: !requiresPackageFactor(line.purchaseUnit) || line.packageFactor > 0,
+      decisionState: requiresPackageFactor(line.purchaseUnit) ? 'needs-package-factor' : 'resolved',
+      confirmed: !requiresPackageFactor(line.purchaseUnit),
       selected: true,
       conflictingAliasBarcode: undefined,
     })
@@ -289,8 +289,8 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
     await applyDecision(line, {
       resolution: 'manual',
       identityStatus: 'manual',
-      decisionState: requiresPackageFactor(line.purchaseUnit) && line.packageFactor <= 0 ? 'needs-package-factor' : 'resolved',
-      confirmed: !requiresPackageFactor(line.purchaseUnit) || line.packageFactor > 0,
+      decisionState: requiresPackageFactor(line.purchaseUnit) ? 'needs-package-factor' : 'resolved',
+      confirmed: !requiresPackageFactor(line.purchaseUnit),
       selected: true,
     })
   }

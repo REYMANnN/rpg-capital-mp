@@ -578,7 +578,7 @@ export default function InventoryV1() {
         let product = products.find((candidate) => candidate.barcode === line.barcode)
         if (!product) {
           product = {
-            id: uid(), barcode: line.barcode, name: line.name || line.description, unit: 'UN',
+            id: uid(), barcode: line.barcode, name: line.name || line.description, unit: line.inventoryUnit,
             priceCents: 0, stockMilli: 0, minStockMilli: 0, averageCostCents: 0,
             catalogSource: line.source || undefined, catalogBrand: line.brand || undefined,
             catalogImageUrl: line.imageUrl || undefined,
@@ -586,10 +586,10 @@ export default function InventoryV1() {
           products.push(product)
         }
 
-        const update = calculatePurchaseUpdate(product.stockMilli, product.averageCostCents, line.quantityMilli, line.unitCostCents)
+        const update = calculatePurchaseUpdate(product.stockMilli, product.averageCostCents, line.stockQuantityMilli, line.inventoryUnitCostCents)
         products = products.map((candidate) => candidate.id === product!.id ? { ...candidate, ...update } : candidate)
         movements.push({
-          id: uid(), productId: product.id, type: 'purchase', quantityMilli: line.quantityMilli,
+          id: uid(), productId: product.id, type: 'purchase', quantityMilli: line.stockQuantityMilli,
           createdAt: now,
           note: `${marker} · NF ${invoice.number || 's/n'} · ${invoice.supplierName || 'Fornecedor'}`,
           supplierDocument: invoice.supplierDocument || undefined,
