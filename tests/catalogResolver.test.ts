@@ -37,6 +37,26 @@ test('strong Wave A identity resolves product without spending Wave B', async ()
   assert.equal(result.attempts.length, 1)
 })
 
+test('weak generic Wave A identity continues into Wave B for a better product name', async () => {
+  let waveBCalls = 0
+  const result = await resolveUniversalProduct('194252156940', {
+    dependencies: {
+      waveA: [stub(attempt('OpenFacts', 'hit', { name: 'Apple', imageUrl: 'https://img.example/apple.jpg' }))],
+      waveB: [stub(attempt('UPCitemdb', 'hit', {
+        name: 'Apple 20W USB-C Power Adapter',
+        brand: 'Apple',
+        model: 'MHJA3AM/A',
+        categoryRaw: 'Electronics',
+      }), () => waveBCalls++)],
+    },
+  })
+
+  assert.equal(waveBCalls, 1)
+  assert.equal(result.found, true)
+  assert.equal(result.product?.name, 'Apple 20W USB-C Power Adapter')
+  assert.equal(result.product?.model, 'MHJA3AM/A')
+})
+
 test('Wave B runs when Wave A has enrichment but no usable identity', async () => {
   let waveBCalls = 0
   const result = await resolveUniversalProduct(EAN, {
