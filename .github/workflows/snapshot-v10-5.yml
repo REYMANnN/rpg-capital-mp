@@ -1,0 +1,23 @@
+name: Snapshot BALCAO v10.5
+
+on:
+  push:
+    branches: ['snapshot-v10.5']
+    paths:
+      - '.github/workflows/snapshot-v10-5.yml'
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - name: Pack source
+        run: |
+          tar --exclude='.git' --exclude='.next' --exclude='node_modules' -czf /tmp/balcao-v10.5-source.tgz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: balcao-v10.5-source
+          path: /tmp/balcao-v10.5-source.tgz
+          if-no-files-found: error
