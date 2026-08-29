@@ -1,0 +1,26 @@
+name: Apply inventory v10.3 soft-delete patch
+
+on:
+  push:
+    branches: ['inventory-v10.3']
+    paths:
+      - '.github/workflows/one-time-v10-3-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: inventory-v10.3
+          fetch-depth: 0
+      - run: python scripts/patch_inventory_v10_3.py
+      - run: |
+          git config user.name "inventory-v10-3-bot"
+          git config user.email "inventory-v10-3-bot@users.noreply.github.com"
+          git add app/inventory-v1/InventoryV1.tsx app/inventory-v1/inventory.module.css lib/inventory/version.ts
+          git commit -m "feat: add soft delete and restore product flow" || exit 0
+          git push origin inventory-v10.3
