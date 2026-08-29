@@ -1,0 +1,1 @@
+Plan self-review complete: spec coverage mapped to tasks 1-6; no TBD/TODO placeholders; canonical type/function names are consistent across tasks; no missing acceptance criterion identified.
