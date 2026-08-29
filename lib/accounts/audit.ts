@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export type AuditInput = {
   businessId?: string | null
@@ -13,7 +13,8 @@ export type AuditInput = {
 }
 
 export async function writeAuditEvent(input: AuditInput): Promise<void> {
-  const { error } = await supabaseAdmin.from('balcao_audit_events').insert({
+  const admin = createAdminClient()
+  const { error } = await admin.from('balcao_audit_events').insert({
     business_id: input.businessId ?? null,
     store_id: input.storeId ?? null,
     actor_user_id: input.actorUserId ?? null,

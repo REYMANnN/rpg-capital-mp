@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import { getAccountState } from '@/lib/accounts/currentUser'
 import { destinationAfterLogin, safeNextPath } from '@/lib/accounts/routing'
 
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const requestedNext = safeNextPath(url.searchParams.get('next'))
   if (!code) return NextResponse.redirect(new URL('/login?erro=google', url.origin))
 
-  const supabase = await createServerSupabaseClient()
+  const supabase = await createServerClient()
   const { error } = await supabase.auth.exchangeCodeForSession(code)
   if (error) return NextResponse.redirect(new URL('/login?erro=google', url.origin))
 
