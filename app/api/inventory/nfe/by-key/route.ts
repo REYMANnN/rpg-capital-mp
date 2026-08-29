@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { DEMO_NFE_ACCESS_KEY, isValidNfeAccessKey, normalizeNfeAccessKey } from '@/lib/inventory/nfeKey'
+import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 
 const demoInvoice = {
   accessKey: DEMO_NFE_ACCESS_KEY,
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (key === DEMO_NFE_ACCESS_KEY) {
-    return NextResponse.json({ ok: true, demo: true, version: 'v10.3', scenarioCount: demoInvoice.items.length, invoice: demoInvoice })
+    return NextResponse.json({ ok: true, demo: true, version: INVENTORY_APP_VERSION, scenarioCount: demoInvoice.items.length, invoice: demoInvoice })
   }
 
   return NextResponse.json({
