@@ -16,7 +16,6 @@ const demoInvoice = {
     { line: 6, supplierCode: 'BOX6', barcode: '', description: 'REFRI COCA COLA 2L CX C/6 UN', purchaseUnit: 'CX', quantityMilli: 2000, unitCostCents: 4200, totalCents: 8400 },
     { line: 7, supplierCode: 'BOX-UNKNOWN', barcode: '7894900011517', description: 'REFRI COCA COLA 2L CAIXA', purchaseUnit: 'CX', quantityMilli: 3000, unitCostCents: 4500, totalCents: 13500 },
     { line: 8, supplierCode: 'EAN-UNKNOWN-CATALOG', barcode: '7896004000855', description: 'PRODUTO TESTE EAN VALIDO', purchaseUnit: 'UN', quantityMilli: 5000, unitCostCents: 275, totalCents: 1375 },
-    { line: 9, supplierCode: 'DECIMAL-KG', barcode: '', description: 'PRODUTO GRANEL TESTE', purchaseUnit: 'KG', quantityMilli: 1750, unitCostCents: 1200, totalCents: 2100 },
   ],
 }
 
@@ -27,7 +26,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (key === DEMO_NFE_ACCESS_KEY) {
-    return NextResponse.json({ ok: true, demo: true, version: 'v10.1', scenarioCount: demoInvoice.items.length, invoice: demoInvoice })
+    return NextResponse.json({ ok: true, demo: true, version: 'v10.2', scenarioCount: demoInvoice.items.length, invoice: demoInvoice })
   }
 
   return NextResponse.json({

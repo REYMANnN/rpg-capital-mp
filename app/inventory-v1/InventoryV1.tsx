@@ -723,7 +723,7 @@ export default function InventoryV1() {
   return (
     <div className={styles.shell}>
       <header className={styles.top}>
-        <div><span className={styles.brand}>RPG</span><strong>Mercadinho</strong></div>
+        <div><span className={styles.brand}>BALCÃO</span></div>
         <span className={styles.status}>{cloud === 'offline' ? <CloudOff /> : <Cloud />}<b>{INVENTORY_APP_VERSION}</b><span> · {cloudText} · EAN/UPC</span></span>
       </header>
 
@@ -791,6 +791,8 @@ export default function InventoryV1() {
           />
         )}
       </main>
+
+      <footer className={styles.powered}>Powered by RPG System</footer>
 
       {scannerOpen && <QuaggaScanner onCode={handleCode} close={() => setScannerOpen(false)} />}
     </div>

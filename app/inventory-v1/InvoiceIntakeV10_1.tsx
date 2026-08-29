@@ -116,6 +116,7 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
   const [packageFactorInput, setPackageFactorInput] = useState('')
   const [questionTotal, setQuestionTotal] = useState(0)
   const [learningWarning, setLearningWarning] = useState(false)
+  const [scanConfirmation, setScanConfirmation] = useState('')
 
   const pending = useMemo(() => pendingInvoiceLines(lines), [lines])
   const currentQuestion = pending[0] || null
@@ -136,6 +137,7 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
     setPackageFactorInput('')
     setQuestionTotal(0)
     setLearningWarning(false)
+    setScanConfirmation('')
   }
 
   function setResolvedLines(next: InvoiceReviewLineV10[]) {
@@ -250,7 +252,7 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
     if (learn && next.decisionState === 'resolved') await saveAlias(next)
   }
 
-  async function chooseBarcode(line: InvoiceReviewLineV10, rawBarcode: string, source = 'EAN confirmado manualmente') {
+  async function chooseBarcode(line: InvoiceReviewLineV10, rawBarcode: string, source = 'EAN confirmado manualmente', showScanConfirmation = false) {
     const barcode = String(rawBarcode).replace(/\D+/g, '')
     if (!/^\d{8,14}$/.test(barcode)) return fail('EAN inválido.')
     setScanner(null)
@@ -270,6 +272,12 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
       productId: undefined,
       salePriceCents: 0,
       storeStatus: 'new' as const,
+    }
+
+    if (showScanConfirmation) {
+      setScanConfirmation(`✓ Pronto! Este código será salvo como ${product.name || line.description} — EAN ${barcode}.`)
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 1600))
+      setScanConfirmation('')
     }
 
     await applyDecision(line, {
@@ -532,7 +540,7 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
       {scanner && <QuaggaScanner
         onCode={(code) => {
           if (scanner === 'invoice') return void scanInvoiceKey(code)
-          if (scanner === 'question-item' && currentQuestion) return void chooseBarcode(currentQuestion, code, 'EAN escaneado da embalagem')
+          if (scanner === 'question-item' && currentQuestion) return void chooseBarcode(currentQuestion, code, 'EAN escaneado da embalagem', true)
           if (scanner === 'edit-item' && editLine) return void chooseBarcode(editLine, code, 'EAN corrigido no editor')
           setScanner(null)
         }}
