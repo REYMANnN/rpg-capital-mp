@@ -1,0 +1,1 @@
+BALCÃO v10.3 soft-delete verification trigger.
