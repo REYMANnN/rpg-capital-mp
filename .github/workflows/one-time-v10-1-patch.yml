@@ -1,8 +1,8 @@
-name: Apply inventory v10.1 integration patch
+name: Apply inventory v10.2 UX patch
 
 on:
   push:
-    branches: ['inventory-v10.1']
+    branches: ['inventory-v10.2']
     paths:
       - '.github/workflows/one-time-v10-1-patch.yml'
 
@@ -15,12 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: inventory-v10.1
+          ref: inventory-v10.2
           fetch-depth: 0
-      - run: python scripts/patch_inventory_v10_1.py
+      - run: python scripts/patch_inventory_v10_2.py
       - run: |
-          git config user.name "inventory-v10-1-bot"
-          git config user.email "inventory-v10-1-bot@users.noreply.github.com"
-          git add app/inventory-v1/InvoiceIntakeV10_1.tsx app/inventory-v1/InventoryV1.tsx
-          git commit -m "feat: finish v10.1 package and stock integration" || exit 0
-          git push origin inventory-v10.1
+          git config user.name "inventory-v10-2-bot"
+          git config user.email "inventory-v10-2-bot@users.noreply.github.com"
+          git add app/inventory-v1/InvoiceIntakeV10_1.tsx app/inventory-v1/InventoryV1.tsx app/inventory-v1/inventory.module.css app/inventory-v1/page.tsx app/api/inventory/nfe/by-key/route.ts lib/inventory/version.ts
+          git commit -m "feat: ship BALCÃO v10.2 UX feedback" || exit 0
+          git push origin inventory-v10.2
