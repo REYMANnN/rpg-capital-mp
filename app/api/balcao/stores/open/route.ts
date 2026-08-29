@@ -1,0 +1,4 @@
+import { NextResponse } from 'next/server'
+import { getBusinessRole, getCurrentUser, getStoreBusiness } from '@/lib/accounts/currentUser'
+import { INVENTORY_INSTALLATION_COOKIE } from '@/lib/accounts/terminal'
+export async function GET(request: Request) { const url = new URL(request.url); const storeId = url.searchParams.get('storeId') ?? ''; const user = await getCurrentUser(); if (!user) return NextResponse.redirect(new URL('/login?intent=login', url.origin)); const store = await getStoreBusiness(storeId); if (!store || !await getBusinessRole(user.id, store.businessId)) return NextResponse.redirect(new URL('/manage', url.origin)); const response = NextResponse.redirect(new URL('/inventory-v1', url.origin)); response.cookies.set(INVENTORY_INSTALLATION_COOKIE, store.installationId, { httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 365 * 2 }); return response }

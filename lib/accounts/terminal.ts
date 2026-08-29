@@ -2,8 +2,10 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export const TERMINAL_COOKIE = 'balcao_terminal'
 export const STAFF_SESSION_COOKIE = 'balcao_staff_session'
+export const INVENTORY_INSTALLATION_COOKIE = 'inventory_installation_id'
 export const INVITE_TTL_MS = 15 * 60 * 1000
-export const STAFF_SESSION_TTL_MS = 30 * 60 * 1000
+export const STAFF_SESSION_IDLE_MS = 30 * 60 * 1000
+export const STAFF_SESSION_MAX_MS = 12 * 60 * 60 * 1000
 
 export function makeSecret(bytes = 32): string {
   return randomBytes(bytes).toString('base64url')
@@ -33,9 +35,6 @@ export function unpackCredential(value: string | null | undefined): { id: string
   return { id, secret }
 }
 
-export function isInviteUsable(
-  invite: { expiresAt: string; usedAt?: string | null; revokedAt?: string | null },
-  now = new Date(),
-): boolean {
+export function isInviteUsable(invite: { expiresAt: string; usedAt?: string | null; revokedAt?: string | null }, now = new Date()): boolean {
   return !invite.usedAt && !invite.revokedAt && new Date(invite.expiresAt).getTime() > now.getTime()
 }
