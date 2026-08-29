@@ -10,7 +10,7 @@ const version = readFileSync(new URL('../lib/inventory/version.ts', import.meta.
 test('BALCÃO branding and RPG System footer survive v10.x upgrades', () => {
   assert.match(inventory, />BALCÃO</)
   assert.match(inventory, /Powered by RPG System/)
-  assert.match(version, /v10\.3/)
+  assert.match(version, /v10\.\d+/)
 })
 
 test('EAN scan resolution gives visible confirmation before advancing', () => {
@@ -21,5 +21,5 @@ test('EAN scan resolution gives visible confirmation before advancing', () => {
 
 test('demo invoice no longer includes the grain KG scenario', () => {
   assert.doesNotMatch(demoRoute, /DECIMAL-KG|PRODUTO GRANEL TESTE/)
-  assert.match(demoRoute, /version: 'v10\.3'/)
+  assert.match(demoRoute, /INVENTORY_APP_VERSION/)
 })
