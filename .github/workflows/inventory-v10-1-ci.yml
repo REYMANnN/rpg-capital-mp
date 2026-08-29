@@ -1,0 +1,22 @@
+name: Inventory v10.1 CI
+
+on:
+  push:
+    branches: ['inventory-v10.1']
+  pull_request:
+    branches: [master]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install
+      - name: Inventory v10.1 tests
+        run: npx tsx --test tests/nfeKey.test.ts tests/nfe.test.ts tests/purchaseMath.test.ts tests/productMatcher.test.ts tests/invoiceReview.test.ts tests/invoiceResolver.test.ts
+      - name: Production build
+        run: npm run build
