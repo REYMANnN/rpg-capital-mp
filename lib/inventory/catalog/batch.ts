@@ -94,7 +94,7 @@ export async function resolveCatalogBatch(
 
   for (const barcode of uniqueValid) {
     const cached = cacheByBarcode.get(barcode)
-    if (isUsableCacheHit(cached)) {
+    if (cached && isUsableCacheHit(cached)) {
       const cachedResponse = cacheRowToLookupResponse(cached)
       responseByBarcode.set(barcode, { barcode, ...cachedResponse } as BatchLookupItem)
       continue
