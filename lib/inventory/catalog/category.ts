@@ -8,7 +8,7 @@ export function classifyGeneralCategory(...values: Array<string | undefined>): G
   const text = fold(values.filter(Boolean).join(' '))
   if (!text.trim()) return 'Não classificado'
 
-  if (/\b(pet|pets|racao|dog|dogs|cat|cats|cachorro|gato|veterin)/.test(text)) return 'Pet'
+  if (/\b(pets?|racao|dogs?|cats?|cachorro|gato|veterin)/.test(text)) return 'Pet'
   if (/\b(medicamento|medicine|medicines|pharmacy|farmacia|health|saude|drug|remedio|medical)/.test(text)) return 'Saúde'
   if (/\b(shampoo|conditioner|hair care|beauty|cosmetic|cosmetics|hygiene|higiene|skincare|skin care|deodorant|desodorante|soap|sabonete|toothpaste|creme dental|perfume)/.test(text)) return 'Higiene e beleza'
   if (/\b(cleaning|limpeza|detergent|detergente|disinfect|desinfet|bleach|alvejante|laundry|sabao em po|amaciante)/.test(text)) return 'Limpeza'
