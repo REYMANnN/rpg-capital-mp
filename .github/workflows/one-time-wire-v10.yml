@@ -1,4 +1,4 @@
-name: Trigger inventory v10 production deploy
+name: Trigger BALCÃO v10.x production deploy
 
 on:
   push:
@@ -21,5 +21,5 @@ jobs:
         run: |
           git config user.name "inventory-v10-release-bot"
           git config user.email "inventory-v10-release-bot@users.noreply.github.com"
-          git commit --allow-empty -m "chore: publish inventory v10"
+          git commit --allow-empty -m "chore: publish BALCÃO v10.3"
           git push origin master
