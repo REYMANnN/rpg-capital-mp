@@ -26,6 +26,7 @@ import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 import QuaggaScanner from './QuaggaScanner'
 import InvoiceIntakeV10 from './InvoiceIntakeV10'
 import type { InvoiceReviewLineV10 } from '@/lib/inventory/invoiceReview'
+import { activeProducts, reactivateProduct, softDeleteProduct } from '@/lib/inventory/productLifecycle'
 import styles from './inventory.module.css'
 
 type Unit = 'UN' | 'KG'
@@ -35,6 +36,7 @@ type AppProduct = Product & {
   catalogSource?: string
   catalogBrand?: string
   catalogImageUrl?: string
+  deletedAt?: string
 }
 type Movement = {
   id: string
@@ -163,6 +165,7 @@ export default function InventoryV1() {
   const [productForm, setProductForm] = useState<ProductForm>(emptyForm)
   const [invoiceReview, setInvoiceReview] = useState<InvoiceReview | null>(null)
   const [invoiceLoading, setInvoiceLoading] = useState(false)
+  const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -234,7 +237,8 @@ export default function InventoryV1() {
     [cart, data.products],
   )
 
-  const pendingPriceCount = useMemo(() => data.products.filter((p) => p.priceCents <= 0).length, [data.products])
+  const visibleProducts = useMemo(() => activeProducts(data.products), [data.products])
+  const pendingPriceCount = useMemo(() => visibleProducts.filter((p) => p.priceCents <= 0).length, [visibleProducts])
 
   function flash(message: string) {
     setError('')
@@ -274,6 +278,16 @@ export default function InventoryV1() {
 
   async function prepareProduct(code: string) {
     const existing = data.products.find((p) => p.barcode === code)
+    if (existing?.deletedAt) {
+      const restored = reactivateProduct(existing)
+      setData((current) => ({
+        ...current,
+        products: current.products.map((product) => product.id === existing.id ? restored : product),
+      }))
+      editProduct(restored)
+      flash(`Produto reativado: ${restored.name}. Estoque reiniciado em 0.`)
+      return 'reactivated' as const
+    }
     if (existing) {
       editProduct(existing)
       return 'existing' as const
@@ -397,6 +411,40 @@ export default function InventoryV1() {
     }
   }
 
+  function requestDeleteCurrentProduct() {
+    if (productMode !== 'edit' || !editingProductId) return
+    setDeleteCandidateId(editingProductId)
+  }
+
+  function confirmDeleteProduct() {
+    if (!deleteCandidateId) return
+    const existing = data.products.find((product) => product.id === deleteCandidateId)
+    if (!existing) {
+      setDeleteCandidateId(null)
+      return
+    }
+    const now = new Date().toISOString()
+    const deletion = softDeleteProduct(existing, now)
+    setData((current) => ({
+      ...current,
+      products: current.products.map((product) => product.id === existing.id ? deletion.product : product),
+      movements: deletion.stockAdjustmentMilli
+        ? [...current.movements, {
+            id: uid(),
+            productId: existing.id,
+            type: 'adjustment' as const,
+            quantityMilli: deletion.stockAdjustmentMilli,
+            createdAt: now,
+            note: 'Produto removido do estoque',
+          }]
+        : current.movements,
+    }))
+    setCart((current) => current.filter((line) => line.productId !== existing.id))
+    setDeleteCandidateId(null)
+    closeProductPanel()
+    flash(`${existing.name} foi removido do estoque.`)
+  }
+
   function receive(productId: string, amount: string, cost: string, note: string) {
     const q = toMilli(amount)
     const unitCost = toCents(cost)
@@ -516,6 +564,10 @@ export default function InventoryV1() {
 
       for (const line of importable) {
         let product = products.find((candidate) => candidate.barcode === line.barcode)
+        if (product?.deletedAt) {
+          product = reactivateProduct(product)
+          products = products.map((candidate) => candidate.id === product!.id ? product! : candidate)
+        }
         if (!product) {
           product = {
             id: uid(),
@@ -576,6 +628,10 @@ export default function InventoryV1() {
 
       for (const line of importable) {
         let product = products.find((candidate) => candidate.barcode === line.barcode)
+        if (product?.deletedAt) {
+          product = reactivateProduct(product)
+          products = products.map((candidate) => candidate.id === product!.id ? product! : candidate)
+        }
         if (!product) {
           product = {
             id: uid(), barcode: line.barcode, name: line.name || line.description, unit: line.inventoryUnit,
@@ -615,12 +671,12 @@ export default function InventoryV1() {
       return
     }
 
-    const product = data.products.find((candidate) => candidate.barcode === code)
+    const product = visibleProducts.find((candidate) => candidate.barcode === code)
     if (!product) {
       setScannerOpen(false)
       setTab('stock')
-      await prepareProduct(code)
-      flash('Produto novo identificado. Complete preço de venda, custo de compra e salve.')
+      const result = await prepareProduct(code)
+      if (result !== 'reactivated') flash('Produto novo identificado. Complete preço de venda, custo de compra e salve.')
       return
     }
 
@@ -719,6 +775,7 @@ export default function InventoryV1() {
   if (!loaded) return null
   const cloudText =
     cloud === 'synced' ? 'Nuvem sincronizada' : cloud === 'syncing' ? 'Sincronizando…' : cloud === 'offline' ? 'Modo local' : 'Conectando…'
+  const deleteCandidate = deleteCandidateId ? data.products.find((product) => product.id === deleteCandidateId) || null : null
 
   return (
     <div className={styles.shell}>
@@ -740,7 +797,7 @@ export default function InventoryV1() {
 
         {tab === 'stock' && (
           <Stock
-            products={data.products}
+            products={visibleProducts}
             pendingPriceCount={pendingPriceCount}
             form={productForm}
             setForm={setProductForm}
@@ -750,12 +807,13 @@ export default function InventoryV1() {
             close={closeProductPanel}
             scan={() => { setScanTarget('product'); setScannerOpen(true) }}
             edit={editProduct}
+            deleteCurrent={requestDeleteCurrentProduct}
           />
         )}
 
         {tab === 'intake' && (
           <InvoiceIntakeV10
-            products={data.products}
+            products={visibleProducts}
             onCommit={confirmInvoiceV10}
             fail={fail}
             flash={flash}
@@ -764,7 +822,7 @@ export default function InventoryV1() {
 
         {tab === 'checkout' && (
           <Checkout
-            products={data.products}
+            products={visibleProducts}
             cart={cart}
             total={totalCents}
             scan={() => { setScanTarget('checkout'); setScannerOpen(true) }}
@@ -793,6 +851,20 @@ export default function InventoryV1() {
       </main>
 
       <footer className={styles.powered}>Powered by RPG System</footer>
+
+      {deleteCandidate && (
+        <div className={styles.deleteOverlay} role="presentation" onClick={() => setDeleteCandidateId(null)}>
+          <div className={styles.deleteDialog} role="dialog" aria-modal="true" aria-labelledby="delete-product-title" onClick={(event) => event.stopPropagation()}>
+            <span className={styles.eyebrow}>Remover do estoque</span>
+            <h2 id="delete-product-title">Quer mesmo apagar “{deleteCandidate.name} — {deleteCandidate.barcode}” do seu estoque?</h2>
+            <p>O produto some do estoque e do caixa, mas vendas e movimentações antigas continuam preservadas.</p>
+            <div className={styles.actions}>
+              <button className={styles.secondary} onClick={() => setDeleteCandidateId(null)}>Cancelar</button>
+              <button className={styles.danger} onClick={confirmDeleteProduct}><Trash2 />Apagar produto</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {scannerOpen && <QuaggaScanner onCode={handleCode} close={() => setScannerOpen(false)} />}
     </div>
@@ -830,6 +902,7 @@ function Stock({
   close,
   scan,
   edit,
+  deleteCurrent,
 }: {
   products: AppProduct[]
   pendingPriceCount: number
@@ -841,6 +914,7 @@ function Stock({
   close: () => void
   scan: () => void
   edit: (product: AppProduct) => void
+  deleteCurrent: () => void
 }) {
   const manualName = mode === 'new' && lookup.status === 'new'
   return (
@@ -883,6 +957,7 @@ function Stock({
 </div>
 
 <div className={styles.actions}><button className={styles.primary} onClick={save} disabled={lookup.status === 'loading'}>{mode === 'edit' ? 'Salvar alterações' : 'Cadastrar produto'}</button><button className={styles.secondary} onClick={close}>Cancelar</button></div>
+{mode === 'edit' && <button className={styles.deleteFromStock} onClick={deleteCurrent}><Trash2 />Apagar esse produto do meu estoque</button>}
         </section>
       )}
 
