@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (key === DEMO_NFE_ACCESS_KEY) {
-    return NextResponse.json({ ok: true, demo: true, version: 'v10.2', scenarioCount: demoInvoice.items.length, invoice: demoInvoice })
+    return NextResponse.json({ ok: true, demo: true, version: 'v10.3', scenarioCount: demoInvoice.items.length, invoice: demoInvoice })
   }
 
   return NextResponse.json({
