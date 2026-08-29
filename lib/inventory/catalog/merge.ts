@@ -20,6 +20,36 @@ function betterCandidates(candidates: CatalogCandidate[]) {
   return [...candidates].sort((a, b) => (RANK[b.provider] ?? 0) - (RANK[a.provider] ?? 0))
 }
 
+function nameInformationScore(candidate: CatalogCandidate) {
+  const name = cleanText(candidate.name)
+  if (!name) return Number.NEGATIVE_INFINITY
+  const tokens = name.split(/\s+/).filter(Boolean)
+  const supportingFields = [
+    candidate.brand,
+    candidate.manufacturer,
+    candidate.categoryRaw,
+    candidate.description,
+    candidate.model,
+    candidate.size,
+    candidate.weight,
+    candidate.packageDescription,
+    candidate.ncm,
+  ].filter((value) => cleanText(value)).length
+
+  const descriptiveLength = Math.min(24, Math.max(0, name.length - 8) * 0.7)
+  const tokenBonus = Math.min(12, Math.max(0, tokens.length - 1) * 4)
+  const supportBonus = Math.min(12, supportingFields * 2)
+  const genericPenalty = tokens.length === 1 && name.length <= 12 && supportingFields === 0 ? 20 : 0
+
+  return (RANK[candidate.provider] ?? 0) + descriptiveLength + tokenBonus + supportBonus - genericPenalty
+}
+
+function bestNameCandidate(candidates: CatalogCandidate[]) {
+  return [...candidates]
+    .filter((candidate) => cleanText(candidate.name))
+    .sort((a, b) => nameInformationScore(b) - nameInformationScore(a))[0]
+}
+
 function accept(
   product: Record<string, unknown>,
   provenance: Record<string, CatalogProvider>,
@@ -50,6 +80,11 @@ export function mergeCatalogCandidates(
   }
 
   const sorted = betterCandidates(candidates)
+  if (!manual || !cleanText(product.name)) {
+    const nameCandidate = bestNameCandidate(sorted)
+    if (nameCandidate) accept(product, provenance, 'name', nameCandidate.name, nameCandidate.provider)
+  }
+
   for (const candidate of sorted) {
     accept(product, provenance, 'name', candidate.name, candidate.provider)
     accept(product, provenance, 'brand', candidate.brand, candidate.provider)
