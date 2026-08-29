@@ -26,7 +26,7 @@ const storeCreateSchema = z.object({
   businessId: uuid,
   displayName: z.string().trim().min(2, 'Informe o nome da loja.').max(120),
   businessType: z.enum(BUSINESS_TYPES),
-  cep: z.string().replace(/\D/g, '').length(8, 'Informe um CEP com 8 números.'),
+  cep: z.string().transform((value) => value.replace(/\D/g, '')).refine((value) => value.length === 8, 'Informe um CEP com 8 números.'),
   street: z.string().trim().min(2, 'Informe o endereço.'),
   number: z.string().trim().min(1, 'Informe o número.'),
   complement: z.string().trim().max(120).optional().default(''),
