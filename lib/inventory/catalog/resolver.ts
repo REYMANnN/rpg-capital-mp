@@ -1,7 +1,7 @@
 import { mergeCatalogCandidates } from './merge'
-import { normalizeBarcode } from './normalize'
+import { cleanText, normalizeBarcode } from './normalize'
 import { upcItemDbBudget } from './budget'
-import type { CatalogCandidate, CatalogLookup, CatalogResolveResult, ProviderAttempt } from './types'
+import type { CatalogCandidate, CatalogLookup, CatalogProduct, CatalogResolveResult, ProviderAttempt } from './types'
 import { lookupOpenFacts } from './providers/openFacts'
 import { lookupProductGuru } from './providers/productGuru'
 import { lookupGtinSearch } from './providers/gtinSearch'
@@ -47,6 +47,31 @@ const DEFAULT_WAVE_B: CatalogLookup[] = [lookupBarcodeFinder, guardedUpcItemDb]
 
 function candidatesFrom(attempts: ProviderAttempt[]): CatalogCandidate[] {
   return attempts.flatMap((attempt) => attempt.outcome === 'hit' && attempt.candidate ? [attempt.candidate] : [])
+}
+
+function hasStrongIdentity(product: CatalogProduct) {
+  const name = cleanText(product.name)
+  if (!name) return false
+
+  const normalizedName = name.toLocaleLowerCase('pt-BR')
+  const brand = cleanText(product.brand).toLocaleLowerCase('pt-BR')
+  const manufacturer = cleanText(product.manufacturer).toLocaleLowerCase('pt-BR')
+  const tokens = name.split(/\s+/).filter(Boolean)
+  const supportingFields = [
+    product.brand,
+    product.manufacturer,
+    product.categoryRaw,
+    product.description,
+    product.model,
+    product.size,
+    product.weight,
+    product.packageDescription,
+    product.ncm,
+  ].filter((value) => cleanText(value)).length
+
+  if ((brand && normalizedName === brand) || (manufacturer && normalizedName === manufacturer)) return false
+  if (supportingFields >= 2) return true
+  return tokens.length >= 2 && name.length >= 10 && supportingFields >= 1
 }
 
 async function runWave(
@@ -110,13 +135,16 @@ export async function resolveUniversalProduct(
   const attemptsA = await runWave(waveA, barcode, controller, deadlineAt, now)
   const candidatesA = candidatesFrom(attemptsA)
   const productA = mergeCatalogCandidates(barcode, candidatesA)
+  const outOfTime = controller.signal.aborted || now() >= deadlineAt
 
-  if (productA) {
+  if (productA && (hasStrongIdentity(productA) || outOfTime || waveB.length === 0)) {
     return { found: true, barcode, product: productA, attempts: attemptsA }
   }
 
-  if (controller.signal.aborted || now() >= deadlineAt) {
-    return { found: false, barcode, attempts: attemptsA }
+  if (outOfTime) {
+    return productA
+      ? { found: true, barcode, product: productA, attempts: attemptsA }
+      : { found: false, barcode, attempts: attemptsA }
   }
 
   const attemptsB = await runWave(waveB, barcode, controller, deadlineAt, now)
