@@ -1,102 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
+import { normalizeBarcode } from '@/lib/inventory/catalog/normalize'
+import { resolveUniversalProduct } from '@/lib/inventory/catalog/resolver'
+import {
+  cacheRowToLookupResponse,
+  isFreshNegativeCache,
+  isUsableCacheHit,
+  negativeCacheRow,
+  preserveManualCacheIdentity,
+  resolutionToCacheRow,
+  type CatalogCacheRow,
+} from '@/lib/inventory/catalog/cache'
 
-type ExternalProduct = {
-  code?: string
-  product_name?: string
-  product_name_pt?: string
-  brands?: string
-  image_front_url?: string
-}
-
-type ExternalResponse = {
-  status?: number
-  product?: ExternalProduct
-}
-
-const SOURCES = [
-  { name: 'Open Food Facts', base: 'https://world.openfoodfacts.org' },
-  { name: 'Open Products Facts', base: 'https://world.openproductsfacts.org' },
-]
-
-async function lookupSource(base: string, code: string) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 3500)
-  try {
-    const fields = 'code,product_name,product_name_pt,brands,image_front_url'
-    const response = await fetch(`${base}/api/v2/product/${encodeURIComponent(code)}.json?fields=${fields}`, {
-      headers: {
-        'User-Agent': 'RPG-Mercadinho/1.0 (https://rpg-capital-mp-25zw.vercel.app)',
-      },
-      signal: controller.signal,
-      cache: 'no-store',
-    })
-    if (!response.ok) return null
-    const payload = await response.json() as ExternalResponse
-    if (payload.status !== 1 || !payload.product) return null
-    return payload.product
-  } catch {
-    return null
-  } finally {
-    clearTimeout(timeout)
-  }
-}
+const CACHE_FIELDS = 'barcode,name,brand,image_url,source,raw_metadata,checked_at,manufacturer,category_general,category_raw,confidence_score,cache_status,miss_expires_at,canonical_updated_at'
 
 export async function GET(request: NextRequest) {
-  const code = request.nextUrl.searchParams.get('barcode')?.replace(/\s+/g, '').trim() ?? ''
-  if (!/^\d{8,14}$/.test(code)) {
+  const code = normalizeBarcode(request.nextUrl.searchParams.get('barcode'))
+  if (!code) {
     return NextResponse.json({ found: false, error: 'invalid_barcode' }, { status: 400 })
   }
 
   const supabase = createInventoryCloudClient()
-  const { data: cached, error: cacheReadError } = await supabase
+  const { data: cachedData, error: cacheReadError } = await supabase
     .from('inventory_v1_product_catalog_cache')
-    .select('barcode,name,brand,image_url,source,checked_at')
+    .select(CACHE_FIELDS)
     .eq('barcode', code)
     .maybeSingle()
+  const cached = !cacheReadError && cachedData ? cachedData as unknown as CatalogCacheRow : null
 
-  if (!cacheReadError && cached) {
-    return NextResponse.json({
-      found: true,
-      source: cached.source,
-      cached: true,
-      product: {
-        barcode: cached.barcode,
-        name: cached.name,
-        brand: cached.brand,
-        imageUrl: cached.image_url,
-      },
-    })
+  if (isUsableCacheHit(cached)) {
+    return NextResponse.json(cacheRowToLookupResponse(cached!))
   }
 
-  for (const source of SOURCES) {
-    const product = await lookupSource(source.base, code)
-    if (!product) continue
-
-    const name = (product.product_name_pt || product.product_name || '').trim()
-    if (!name) continue
-
-    const normalized = {
-      barcode: code,
-      name,
-      brand: product.brands?.trim() || '',
-      imageUrl: product.image_front_url || '',
-    }
-
-    const { error: cacheWriteError } = await supabase.from('inventory_v1_product_catalog_cache').upsert({
-      barcode: code,
-      name: normalized.name,
-      brand: normalized.brand,
-      image_url: normalized.imageUrl,
-      source: source.name,
-      raw_metadata: { providerCode: product.code || code },
-      checked_at: new Date().toISOString(),
-      system_tag: 'inventory',
-    })
-    if (cacheWriteError) console.warn('inventory product cache write failed', cacheWriteError.message)
-
-    return NextResponse.json({ found: true, source: source.name, cached: false, product: normalized })
+  if (isFreshNegativeCache(cached)) {
+    return NextResponse.json({ found: false, barcode: code, cached: true })
   }
 
-  return NextResponse.json({ found: false, barcode: code })
+  const resolution = await resolveUniversalProduct(code)
+  if (resolution.found && resolution.product) {
+    const resolvedRow = resolutionToCacheRow(resolution)
+    const row = preserveManualCacheIdentity(cached, resolvedRow)
+    const { error: cacheWriteError } = await supabase
+      .from('inventory_v1_product_catalog_cache')
+      .upsert(row)
+    if (cacheWriteError) console.warn('inventory universal product cache write failed', cacheWriteError.message)
+
+    const response = cacheRowToLookupResponse(row)
+    return NextResponse.json({ ...response, cached: false })
+  }
+
+  const missRow = negativeCacheRow(code)
+  const { error: missWriteError } = await supabase
+    .from('inventory_v1_product_catalog_cache')
+    .upsert(missRow)
+  if (missWriteError) console.warn('inventory product negative cache write failed', missWriteError.message)
+
+  return NextResponse.json({ found: false, barcode: code, cached: false })
 }
