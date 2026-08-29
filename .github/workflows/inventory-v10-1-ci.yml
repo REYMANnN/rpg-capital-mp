@@ -17,7 +17,7 @@ jobs:
           cache: npm
       - run: npm install
       - name: Inventory v10.x tests
-        run: npx tsx --test tests/nfeKey.test.ts tests/nfe.test.ts tests/intake.test.ts tests/productMatcher.test.ts tests/product-rules.test.ts tests/scanner-policy.test.ts tests/invoiceReview.test.ts tests/invoiceResolver.test.ts tests/supplierAliasContract.test.ts tests/v10_1ScenarioMatrix.test.ts tests/v10_2Ux.test.ts tests/productLifecycle.test.ts tests/v10_3DeleteProduct.test.ts tests/catalogNormalize.test.ts tests/catalogCategory.test.ts tests/catalogMerge.test.ts tests/catalogProviders.test.ts
+        run: npx tsx --test tests/nfeKey.test.ts tests/nfe.test.ts tests/intake.test.ts tests/productMatcher.test.ts tests/product-rules.test.ts tests/scanner-policy.test.ts tests/invoiceReview.test.ts tests/invoiceResolver.test.ts tests/supplierAliasContract.test.ts tests/v10_1ScenarioMatrix.test.ts tests/v10_2Ux.test.ts tests/productLifecycle.test.ts tests/v10_3DeleteProduct.test.ts tests/catalogNormalize.test.ts tests/catalogCategory.test.ts tests/catalogMerge.test.ts tests/catalogProviders.test.ts tests/catalogResolver.test.ts
       - name: Production build
         run: npm run build
 
