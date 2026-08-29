@@ -9,11 +9,11 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
     <emit><xNome>Distribuidora Teste LTDA</xNome><CNPJ>12345678000190</CNPJ></emit>
     <det nItem="1"><prod>
       <cProd>ABC-01</cProd><cEAN>7891000100103</cEAN><xProd>LEITE CONDENSADO</xProd>
-      <qCom>12.0000</qCom><vUnCom>6.4200000000</vUnCom><vProd>77.04</vProd>
+      <uCom>UN</uCom><qCom>12.0000</qCom><vUnCom>6.4200000000</vUnCom><vProd>77.04</vProd>
     </prod></det>
     <det nItem="2"><prod>
       <cProd>ABC-02</cProd><cEAN>SEM GTIN</cEAN><cEANTrib>7894900011517</cEANTrib><xProd>REFRIGERANTE</xProd>
-      <qCom>6.0000</qCom><vUnCom>4.50</vUnCom><vProd>27.00</vProd>
+      <uCom>CX</uCom><qCom>6.0000</qCom><vUnCom>45.00</vUnCom><vProd>270.00</vProd>
     </prod></det>
     <det nItem="3"><prod>
       <cProd>ABC-03</cProd><cEAN>SEM GTIN</cEAN><cEANTrib>SEM GTIN</cEANTrib><xProd>PRODUTO SEM GTIN</xProd>
@@ -28,7 +28,7 @@ test('normalizes only usable GTIN barcodes', () => {
   assert.equal(normalizeInvoiceBarcode('123'), '')
 })
 
-test('parses NF-e purchase header, access key and item money/quantity as integers', () => {
+test('parses NF-e purchase header, unit, access key and item money/quantity as integers', () => {
   const parsed = parseNfeXml(xml)
   assert.equal(parsed.accessKey, '351234')
   assert.equal(parsed.number, '12345')
@@ -41,10 +41,13 @@ test('parses NF-e purchase header, access key and item money/quantity as integer
     supplierCode: 'ABC-01',
     barcode: '7891000100103',
     description: 'LEITE CONDENSADO',
+    purchaseUnit: 'UN',
     quantityMilli: 12000,
     unitCostCents: 642,
     totalCents: 7704,
   })
+  assert.equal(parsed.items[1].purchaseUnit, 'CX')
+  assert.equal(parsed.items[2].purchaseUnit, 'UN')
 })
 
 test('uses cEANTrib when cEAN is unavailable and keeps missing GTIN item pending', () => {
