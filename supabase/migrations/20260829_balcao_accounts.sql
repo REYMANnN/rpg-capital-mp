@@ -2,7 +2,6 @@ create extension if not exists pgcrypto;
 create schema if not exists private;
 revoke all on schema private from public, anon;
 
-authorization_security:
 create table if not exists public.balcao_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   phone text,
