@@ -3,6 +3,7 @@ export type ParsedNfeItem = {
   supplierCode: string
   barcode: string
   description: string
+  purchaseUnit: string
   quantityMilli: number
   unitCostCents: number
   totalCents: number
@@ -47,7 +48,7 @@ function validGtin(code: string) {
 
 export function normalizeInvoiceBarcode(value: string | null | undefined) {
   const raw = String(value ?? '').replace(/\s+/g, '').trim()
-  if (!raw || /^SEMGTIN$/i.test(raw)) return ''
+  if (!raw || /^SEM\s*GTIN$/i.test(raw)) return ''
   return validGtin(raw) ? raw : ''
 }
 
@@ -84,6 +85,7 @@ export function parseNfeXml(xml: string): ParsedNfe {
       supplierCode: tag(prod, 'cProd'),
       barcode: primaryBarcode || tributaryBarcode,
       description: tag(prod, 'xProd'),
+      purchaseUnit: tag(prod, 'uCom').trim().toUpperCase() || 'UN',
       quantityMilli: decimalToInt(tag(prod, 'qCom'), 1000),
       unitCostCents: decimalToInt(tag(prod, 'vUnCom'), 100),
       totalCents: decimalToInt(tag(prod, 'vProd'), 100),
