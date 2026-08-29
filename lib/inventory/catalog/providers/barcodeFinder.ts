@@ -54,7 +54,7 @@ export async function lookupBarcodeFinder(barcode: string, signal?: AbortSignal)
 
   const fallback = await request(code, `https://www.barcodefinder.info/v1/product/${encodeURIComponent(code)}`, signal)
   if (fallback.outcome === 'hit') return fallback
-  return primary.outcome === 'miss' && fallback.outcome !== 'hit'
+  return primary.outcome === 'miss'
     ? { ...fallback, durationMs: primary.durationMs + fallback.durationMs }
     : { ...primary, durationMs: primary.durationMs + fallback.durationMs }
 }
