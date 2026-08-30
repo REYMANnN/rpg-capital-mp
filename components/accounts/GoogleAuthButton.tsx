@@ -34,7 +34,13 @@ async function sha256(value: string) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export default function GoogleAuthButton({ label = 'Continuar com Google' }: { label?: string }) {
+export default function GoogleAuthButton({
+  label = 'Continuar com Google',
+  intent,
+}: {
+  label?: string
+  intent: 'login' | 'signup'
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const nonceRef = useRef<string>('')
   const initializedRef = useRef(false)
@@ -79,7 +85,7 @@ export default function GoogleAuthButton({ label = 'Continuar com Google' }: { l
             return
           }
 
-          window.location.assign('/auth/google/complete')
+          window.location.assign(`/auth/google/complete?intent=${intent}`)
         },
       })
 
@@ -88,7 +94,7 @@ export default function GoogleAuthButton({ label = 'Continuar com Google' }: { l
         type: 'standard',
         theme: 'outline',
         size: 'large',
-        text: label.toLowerCase().startsWith('criar') ? 'signup_with' : 'continue_with',
+        text: intent === 'signup' ? 'signup_with' : 'continue_with',
         shape: 'rectangular',
         logo_alignment: 'left',
         width: 360,
@@ -115,7 +121,7 @@ export default function GoogleAuthButton({ label = 'Continuar com Google' }: { l
     return () => {
       cancelled = true
     }
-  }, [label])
+  }, [intent])
 
   return (
     <div className="w-full">
@@ -123,7 +129,7 @@ export default function GoogleAuthButton({ label = 'Continuar com Google' }: { l
         {!loaded ? <span className="text-sm font-medium text-slate-600">Carregando Google…</span> : null}
         <div ref={containerRef} className={busy ? 'pointer-events-none opacity-60' : ''} />
       </div>
-      {busy ? <p className="mt-3 text-center text-sm font-medium text-slate-600">Entrando no BALCÃO…</p> : null}
+      {busy ? <p className="mt-3 text-center text-sm font-medium text-slate-600">{intent === 'signup' ? 'Criando sua conta…' : 'Entrando no BALCÃO…'}</p> : null}
       {error ? <p role="alert" className="mt-3 text-sm font-medium text-red-700">{error}</p> : null}
     </div>
   )
