@@ -21,3 +21,11 @@ test('onboarding API keeps returning the existing RPC response contract', () => 
   assert.match(route, /store_id/)
   assert.match(route, /installation_id/)
 })
+
+test('onboarding API normalizes the selected Pix type and returns field-specific validation errors', () => {
+  const route = readFileSync(join(process.cwd(), 'app/api/balcao/onboarding/route.ts'), 'utf8')
+  assert.match(route, /normalizePixKey/)
+  assert.match(route, /data\.pixType/)
+  assert.match(route, /field:/)
+  assert.match(route, /taxId/)
+})
