@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { validateOnboarding, normalizeDigits } from '@/lib/accounts/validation'
+import { normalizeDigits, normalizePixKey, validateOnboarding } from '@/lib/accounts/validation'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 
 const LEGACY_INSTALLATION_COOKIE = 'inventory_installation_id'
@@ -18,9 +18,17 @@ export async function POST(request: Request) {
   if (userError || !user) return NextResponse.json({ error: 'Entre com sua Conta Google para continuar.' }, { status: 401 })
 
   const parsed = validateOnboarding(await request.json().catch(() => null))
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Confira os dados informados.' }, { status: 400 })
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    return NextResponse.json({
+      error: issue?.message ?? 'Confira os dados informados.',
+      field: issue?.path?.[0] ? String(issue.path[0]) : undefined,
+    }, { status: 400 })
+  }
+
   const data = parsed.data
   const taxId = normalizeDigits(data.taxId)
+  const pixKey = data.pixKey ? normalizePixKey(data.pixType, data.pixKey) : ''
 
   const cookieStore = await cookies()
   const currentInstallationId = cookieStore.get(LEGACY_INSTALLATION_COOKIE)?.value ?? null
@@ -30,7 +38,7 @@ export async function POST(request: Request) {
     p_business_name: data.businessName,
     p_tax_id: taxId,
     p_phone: data.phone,
-    p_pix_key: data.pixKey || null,
+    p_pix_key: pixKey || null,
     p_referral_source: data.referralSource,
     p_referral_other: data.referralOther || null,
     p_business_type: data.businessType,
@@ -46,18 +54,25 @@ export async function POST(request: Request) {
 
   if (error) {
     if (error.message.includes('BALCAO_CNPJ_ALREADY_REGISTERED') || error.code === '23505') {
-      return NextResponse.json({ error: 'Este CNPJ já está cadastrado. Peça acesso ao responsável pelo negócio.' }, { status: 409 })
+      return NextResponse.json({
+        error: 'Este CNPJ já está cadastrado. Peça acesso ao responsável pelo negócio.',
+        field: 'taxId',
+      }, { status: 409 })
     }
     if (error.message.includes('BALCAO_MEMBER_CANNOT_ONBOARD')) {
       return NextResponse.json({ error: 'Sua conta já está vinculada a outro perfil de gestão.' }, { status: 409 })
     }
+    if (error.message.includes('BALCAO_INVALID_ONBOARDING')) {
+      return NextResponse.json({ error: 'Algum dado obrigatório está incompleto. Confira os campos e tente novamente.' }, { status: 400 })
+    }
     console.error('BALCAO onboarding RPC failed', { code: error.code })
-    return NextResponse.json({ error: 'Não conseguimos concluir o cadastro. Tente novamente.' }, { status: 500 })
+    return NextResponse.json({ error: 'Não conseguimos concluir o cadastro agora. Seus dados foram mantidos; tente novamente.' }, { status: 500 })
   }
 
   const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as OnboardingResult | null
   if (!result?.business_id || !result.store_id || !result.installation_id) {
-    return NextResponse.json({ error: 'Não conseguimos concluir o cadastro. Tente novamente.' }, { status: 500 })
+    console.error('BALCAO onboarding RPC returned incomplete result')
+    return NextResponse.json({ error: 'Não conseguimos concluir o cadastro agora. Seus dados foram mantidos; tente novamente.' }, { status: 500 })
   }
 
   if (currentInstallationId !== result.installation_id) {
