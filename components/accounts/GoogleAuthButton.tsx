@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
+const BALCAO_APP_URL = 'https://rpg-capital-mp-25zw.vercel.app'
+
 export default function GoogleAuthButton({ label = 'Continuar com Google' }: { label?: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -13,8 +15,11 @@ export default function GoogleAuthButton({ label = 'Continuar com Google' }: { l
     const supabase = createClient()
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/google/callback` },
+      options: {
+        redirectTo: `${BALCAO_APP_URL}/auth/google/callback`,
+      },
     })
+
     if (authError) {
       setError('Não conseguimos abrir o Google. Tente novamente.')
       setBusy(false)
