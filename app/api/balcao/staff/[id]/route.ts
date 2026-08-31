@@ -1,26 +1,52 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { getBusinessRole, getCurrentUser, getStoreBusiness } from '@/lib/accounts/currentUser'
-import { writeAuditEvent } from '@/lib/accounts/audit'
+import { getCurrentUser } from '@/lib/accounts/currentUser'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 
-const schema = z.object({ storeId: z.string().uuid(), displayName: z.string().trim().min(2).max(80).optional(), role: z.enum(['stock','cashier','manager','custom']).optional(), customPermissions: z.array(z.string()).max(30).optional(), active: z.boolean().optional() })
+const schema = z.object({
+  storeId: z.string().uuid(),
+  displayName: z.string().trim().min(2).max(80).optional(),
+  role: z.enum(['stock', 'cashier', 'manager', 'custom']).optional(),
+  customPermissions: z.array(z.string()).max(30).optional(),
+  active: z.boolean().optional(),
+})
+
+function mapRpcError(message: string) {
+  if (message.includes('BALCAO_STAFF_FORBIDDEN')) return { status: 403, error: 'Sem permissão.' }
+  if (message.includes('BALCAO_STAFF_NOT_FOUND')) return { status: 404, error: 'Funcionário não encontrado.' }
+  if (message.includes('BALCAO_STORE_NOT_FOUND')) return { status: 404, error: 'Loja não encontrada.' }
+  if (message.includes('BALCAO_INVALID_STAFF')) return { status: 400, error: 'Confira os dados do funcionário.' }
+  if (message.includes('BALCAO_NOT_AUTHENTICATED')) return { status: 401, error: 'Não autenticado.' }
+  return { status: 500, error: 'Não conseguimos atualizar o funcionário.' }
+}
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser(); if (!user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
-  const parsed = schema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return NextResponse.json({ error: 'Confira os dados do funcionário.' }, { status: 400 })
-  const { id } = await params; const input = parsed.data
-  const store = await getStoreBusiness(input.storeId); if (!store || !await getBusinessRole(user.id, store.businessId)) return NextResponse.json({ error: 'Sem permissão.' }, { status: 403 })
-  const admin = createAdminClient()
-  if (input.displayName !== undefined || input.active !== undefined) {
-    const values: Record<string, unknown> = { updated_at: new Date().toISOString() }; if (input.displayName !== undefined) values.display_name = input.displayName; if (input.active !== undefined) values.active = input.active
-    const { error } = await admin.from('balcao_staff_profiles').update(values).eq('id', id).eq('business_id', store.businessId); if (error) return NextResponse.json({ error: 'Não conseguimos atualizar o funcionário.' }, { status: 500 })
+  const user = await getCurrentUser()
+  if (!user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
+
+  const parsed = schema.safeParse(await request.json().catch(() => null))
+  if (!parsed.success) return NextResponse.json({ error: 'Confira os dados do funcionário.' }, { status: 400 })
+
+  const { id } = await params
+  if (!z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: 'Funcionário inválido.' }, { status: 400 })
   }
-  if (input.role !== undefined || input.customPermissions !== undefined || input.active !== undefined) {
-    const values: Record<string, unknown> = { updated_at: new Date().toISOString() }; if (input.role !== undefined) values.role = input.role; if (input.customPermissions !== undefined) values.custom_permissions = input.customPermissions; if (input.active !== undefined) values.active = input.active
-    const { error } = await admin.from('balcao_staff_store_access').update(values).eq('staff_id', id).eq('store_id', input.storeId); if (error) return NextResponse.json({ error: 'Não conseguimos atualizar as permissões.' }, { status: 500 })
+
+  const input = parsed.data
+  const supabase = await createServerClient()
+  const { error } = await supabase.rpc('balcao_update_staff', {
+    p_store_id: input.storeId,
+    p_staff_id: id,
+    p_display_name: input.displayName ?? null,
+    p_role: input.role ?? null,
+    p_custom_permissions: input.customPermissions ?? null,
+    p_active: input.active ?? null,
+  })
+
+  if (error) {
+    const mapped = mapRpcError(error.message)
+    return NextResponse.json({ error: mapped.error }, { status: mapped.status })
   }
-  if (input.active === false) await admin.from('balcao_staff_sessions').update({ revoked_at: new Date().toISOString() }).eq('staff_id', id).is('revoked_at', null)
-  await writeAuditEvent({ businessId: store.businessId, storeId: input.storeId, actorUserId: user.id, action: input.active === false ? 'staff.deactivated' : 'staff.updated', entityType: 'staff', entityId: id }).catch(() => {})
+
   return NextResponse.json({ ok: true })
 }
