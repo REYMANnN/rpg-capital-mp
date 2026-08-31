@@ -1,0 +1,208 @@
+create or replace function private.balcao_ensure_staff_access_link()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.balcao_staff_access_links (staff_id, store_id, token, created_by)
+  values (new.staff_id, new.store_id, encode(extensions.gen_random_bytes(24), 'hex'), auth.uid())
+  on conflict (staff_id, store_id) do nothing;
+  return new;
+end;
+$$;
+
+create or replace function public.balcao_rotate_staff_access_link(
+  p_store_id uuid,
+  p_staff_id uuid
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+#variable_conflict error
+declare
+  v_user_id uuid := auth.uid();
+  v_business_id uuid;
+  v_role text;
+  v_token text := encode(extensions.gen_random_bytes(24), 'hex');
+  v_exists boolean := false;
+begin
+  if v_user_id is null then raise exception 'BALCAO_NOT_AUTHENTICATED'; end if;
+
+  select s.business_id into v_business_id
+  from public.inventory_v1_stores as s
+  where s.id = p_store_id and s.active;
+  if v_business_id is null then raise exception 'BALCAO_STORE_NOT_FOUND'; end if;
+
+  select m.role into v_role
+  from public.balcao_business_members as m
+  where m.business_id = v_business_id and m.user_id = v_user_id and m.active;
+  if v_role is null or v_role not in ('owner', 'admin', 'manager') then raise exception 'BALCAO_STAFF_FORBIDDEN'; end if;
+
+  select exists (
+    select 1
+    from public.balcao_staff_profiles as p
+    join public.balcao_staff_store_access as a on a.staff_id = p.id
+    where p.id = p_staff_id and p.business_id = v_business_id and a.store_id = p_store_id
+  ) into v_exists;
+  if not v_exists then raise exception 'BALCAO_STAFF_NOT_FOUND'; end if;
+
+  insert into public.balcao_staff_access_links (staff_id, store_id, token, active, created_by, created_at, updated_at)
+  values (p_staff_id, p_store_id, v_token, true, v_user_id, now(), now())
+  on conflict (staff_id, store_id) do update
+  set token = excluded.token, active = true, updated_at = now();
+
+  insert into public.balcao_audit_events (
+    business_id, store_id, actor_user_id, action, entity_type, entity_id, metadata, created_at
+  ) values (
+    v_business_id, p_store_id, v_user_id, 'staff.access_link_rotated', 'staff', p_staff_id::text, '{}'::jsonb, now()
+  );
+
+  return v_token;
+end;
+$$;
+
+create or replace function public.balcao_staff_access_login(
+  p_token text,
+  p_display_name text,
+  p_pin text,
+  p_terminal_hash text,
+  p_session_hash text,
+  p_user_agent text,
+  p_session_expires_at timestamptz
+)
+returns table (
+  login_status text,
+  terminal_id uuid,
+  session_id uuid,
+  installation_id uuid,
+  store_name text,
+  staff_id uuid,
+  staff_name text,
+  staff_role text
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+#variable_conflict error
+declare
+  v_link public.balcao_staff_access_links%rowtype;
+  v_business_id uuid;
+  v_installation_id uuid;
+  v_store_name text;
+  v_staff_name text;
+  v_pin_hash text;
+  v_role text;
+  v_failed integer;
+  v_locked_until timestamptz;
+  v_attempts integer;
+  v_lock_until timestamptz;
+  v_terminal_id uuid;
+  v_session_id uuid;
+  v_bcrypt_hash text;
+  v_now timestamptz := now();
+begin
+  if length(coalesce(p_token, '')) < 24
+     or length(btrim(coalesce(p_display_name, ''))) < 2
+     or coalesce(p_pin, '') !~ '^\d{4}$'
+     or coalesce(p_terminal_hash, '') !~ '^[0-9a-f]{64}$'
+     or coalesce(p_session_hash, '') !~ '^[0-9a-f]{64}$'
+     or p_session_expires_at is null
+     or p_session_expires_at <= v_now
+     or p_session_expires_at > v_now + interval '13 hours' then
+    return query select 'INVALID_REQUEST', null::uuid, null::uuid, null::uuid, null::text, null::uuid, null::text, null::text;
+    return;
+  end if;
+
+  select l.* into v_link
+  from public.balcao_staff_access_links as l
+  where l.token = p_token and l.active
+  limit 1;
+  if v_link.staff_id is null then
+    return query select 'INVALID_LINK', null::uuid, null::uuid, null::uuid, null::text, null::uuid, null::text, null::text;
+    return;
+  end if;
+
+  select p.business_id, p.display_name, p.pin_hash, p.failed_pin_attempts, p.locked_until,
+         a.role, s.installation_id, s.display_name
+  into v_business_id, v_staff_name, v_pin_hash, v_failed, v_locked_until,
+       v_role, v_installation_id, v_store_name
+  from public.balcao_staff_profiles as p
+  join public.balcao_staff_store_access as a on a.staff_id = p.id and a.store_id = v_link.store_id
+  join public.inventory_v1_stores as s on s.id = v_link.store_id
+  where p.id = v_link.staff_id and p.active and a.active and s.active
+  for update of p;
+
+  if v_business_id is null then
+    return query select 'INVALID_LINK', null::uuid, null::uuid, null::uuid, null::text, null::uuid, null::text, null::text;
+    return;
+  end if;
+
+  if lower(regexp_replace(btrim(p_display_name), '\s+', ' ', 'g'))
+       <> lower(regexp_replace(btrim(v_staff_name), '\s+', ' ', 'g')) then
+    return query select 'INVALID_NAME', null::uuid, null::uuid, null::uuid, v_store_name, v_link.staff_id, null::text, null::text;
+    return;
+  end if;
+
+  if v_locked_until is not null and v_locked_until > v_now then
+    return query select 'PIN_LOCKED', null::uuid, null::uuid, null::uuid, v_store_name, v_link.staff_id, v_staff_name, v_role;
+    return;
+  end if;
+
+  v_bcrypt_hash := replace(v_pin_hash, '$2b$', '$2a$');
+  if extensions.crypt(p_pin, v_bcrypt_hash) <> v_bcrypt_hash then
+    v_attempts := coalesce(v_failed, 0) + 1;
+    v_lock_until := null;
+    if v_attempts >= 5 then
+      case greatest(1, floor(v_attempts / 5.0)::integer)
+        when 1 then v_lock_until := v_now + interval '30 seconds';
+        when 2 then v_lock_until := v_now + interval '2 minutes';
+        when 3 then v_lock_until := v_now + interval '5 minutes';
+        when 4 then v_lock_until := v_now + interval '15 minutes';
+        else v_lock_until := v_now + interval '1 hour';
+      end case;
+    end if;
+
+    update public.balcao_staff_profiles as p
+    set failed_pin_attempts = v_attempts, locked_until = v_lock_until, updated_at = v_now
+    where p.id = v_link.staff_id;
+
+    return query select case when v_lock_until is null then 'INVALID_PIN' else 'PIN_LOCKED' end,
+      null::uuid, null::uuid, null::uuid, v_store_name, v_link.staff_id, v_staff_name, v_role;
+    return;
+  end if;
+
+  update public.balcao_staff_profiles as p
+  set failed_pin_attempts = 0, locked_until = null, updated_at = v_now
+  where p.id = v_link.staff_id;
+
+  insert into public.balcao_terminals (
+    store_id, display_name, credential_hash, user_agent, active, last_seen_at, created_at, updated_at
+  ) values (
+    v_link.store_id, 'Acesso · ' || v_staff_name, p_terminal_hash,
+    nullif(left(coalesce(p_user_agent, ''), 500), ''), true, v_now, v_now, v_now
+  ) returning id into v_terminal_id;
+
+  insert into public.balcao_staff_sessions (
+    terminal_id, staff_id, session_hash, expires_at, last_seen_at, created_at
+  ) values (
+    v_terminal_id, v_link.staff_id, p_session_hash, p_session_expires_at, v_now, v_now
+  ) returning id into v_session_id;
+
+  update public.balcao_staff_access_links as l
+  set last_used_at = v_now, updated_at = v_now
+  where l.staff_id = v_link.staff_id and l.store_id = v_link.store_id;
+
+  insert into public.balcao_audit_events (
+    business_id, store_id, actor_staff_id, terminal_id, action, entity_type, entity_id, metadata, created_at
+  ) values (
+    v_business_id, v_link.store_id, v_link.staff_id, v_terminal_id,
+    'staff.access_login', 'staff', v_link.staff_id::text, '{}'::jsonb, v_now
+  );
+
+  return query select 'OK', v_terminal_id, v_session_id, v_installation_id, v_store_name, v_link.staff_id, v_staff_name, v_role;
+end;
+$$;
