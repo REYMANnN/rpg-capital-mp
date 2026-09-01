@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
     id: context.current_staff_id,
     displayName: context.current_staff_name,
     role: context.current_staff_role,
+    customPermissions: Array.isArray(context.current_custom_permissions) ? context.current_custom_permissions : [],
   } : null
 
   return NextResponse.json({
