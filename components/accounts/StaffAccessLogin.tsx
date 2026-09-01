@@ -53,7 +53,7 @@ export default function StaffAccessLogin({ token }: { token: string }) {
         setPin('')
         return
       }
-      router.replace('/work')
+      router.replace('/inventory-v1')
       router.refresh()
     } catch {
       setError('A conexão falhou. Tente novamente.')
