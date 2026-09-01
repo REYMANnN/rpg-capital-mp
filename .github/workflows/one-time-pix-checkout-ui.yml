@@ -1,0 +1,112 @@
+name: One-time Pix checkout UI patch
+
+on:
+  push:
+    branches: [feat-pix-checkout-qr]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'feat: wire Pix checkout UI') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat-pix-checkout-qr
+      - name: Replace checkout payment flow
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('app/inventory-v1/InventoryV1.tsx')
+          text = path.read_text()
+          start = text.index('function Checkout(')
+          end = text.index('\nfunction SettingsView(', start)
+          replacement = r'''function Checkout({ products, cart, total, scan, manual, change, remove, checkout }: { products: AppProduct[]; cart: CartLine[]; total: number; scan: () => void; manual: (value: string) => void | Promise<void>; change: (id: string, delta: number) => void; remove: (id: string) => void; checkout: () => void }) {
+  const [code, setCode] = useState('')
+  const [pixCharge, setPixCharge] = useState<{ amountCents: number; payload: string; qrDataUrl: string } | null>(null)
+  const [pixBusy, setPixBusy] = useState(false)
+  const [pixError, setPixError] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  async function chargePix() {
+    if (!cart.length || total <= 0) return
+    setPixBusy(true)
+    setPixError('')
+    setCopied(false)
+    try {
+      const response = await fetch('/api/balcao/checkout/pix', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ amountCents: total }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result?.error || 'Não foi possível gerar a cobrança Pix.')
+      setPixCharge({ amountCents: result.amountCents, payload: result.payload, qrDataUrl: result.qrDataUrl })
+    } catch (cause) {
+      setPixError(cause instanceof Error ? cause.message : 'Não foi possível gerar a cobrança Pix.')
+    } finally {
+      setPixBusy(false)
+    }
+  }
+
+  async function copyPix() {
+    if (!pixCharge) return
+    try {
+      await navigator.clipboard.writeText(pixCharge.payload)
+      setCopied(true)
+    } catch {
+      setPixError('Não foi possível copiar automaticamente. Selecione o código abaixo.')
+    }
+  }
+
+  function confirmPixPayment() {
+    setPixCharge(null)
+    setCopied(false)
+    checkout()
+  }
+
+  return (
+    <>
+      <section className={styles.hero}><div><span>Checkout</span><h1>Caixa</h1><p>Leia o código do produto. SKU sem preço de venda abre automaticamente no editor antes de entrar no carrinho.</p></div><button className={styles.primary} onClick={scan}><ScanLine />Escanear item</button></section>
+      <section className={styles.scanbar}><input inputMode="numeric" placeholder="Leitor USB / código manual" value={code} onChange={(event) => setCode(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && code.trim()) { void manual(code); setCode('') } }} /><button onClick={() => { void manual(code); setCode('') }}>Adicionar</button></section>
+      <section className={styles.checkoutgrid}>
+        <div className={styles.productlist}>{cart.length === 0 ? <div className={styles.empty}><ShoppingCart /><b>Carrinho vazio</b><span>Toque em “Escanear item”.</span></div> : cart.map((line) => { const product = products.find((candidate) => candidate.id === line.productId); if (!product) return null; return <article className={styles.cartline} key={line.productId}><div className={styles.grow}><b>{product.name}</b><small>{qty(line.quantityMilli, product.unit)}</small></div><div className={styles.cartstep}><button onClick={() => change(product.id, -1000)}>−</button><strong>{qty(line.quantityMilli, product.unit)}</strong><button onClick={() => change(product.id, 1000)}>+</button></div><b>{money(Math.round((product.priceCents * line.quantityMilli) / 1000))}</b><button className={styles.trash} onClick={() => remove(product.id)}><Trash2 /></button></article> })}</div>
+        <aside className={styles.total}><span>Total</span><strong>{money(total)}</strong><button className={styles.pay} disabled={!cart.length || pixBusy} onClick={() => void chargePix()}>{pixBusy ? 'GERANDO PIX…' : 'COBRAR NO PIX'}</button>{pixError ? <small role="alert" style={{ color: '#fecaca', opacity: 1 }}>{pixError}</small> : <small>A venda só é concluída depois que o operador confirmar o recebimento.</small>}</aside>
+      </section>
+
+      {pixCharge && (
+        <div className={styles.deleteOverlay} role="dialog" aria-modal="true" aria-label="Cobrança Pix">
+          <div className={styles.deleteDialog}>
+            <span className={styles.eyebrow}>Cobrança Pix</span>
+            <h2>Receber {money(pixCharge.amountCents)}</h2>
+            <p>Peça ao cliente para escanear o QR Code. O valor já vai preenchido no aplicativo do banco.</p>
+            <div style={{ display: 'grid', placeItems: 'center', margin: '18px 0' }}>
+              <img src={pixCharge.qrDataUrl} alt={`QR Code Pix de ${money(pixCharge.amountCents)}`} style={{ width: 'min(320px, 100%)', height: 'auto', borderRadius: 12, background: 'white' }} />
+            </div>
+            <label className={styles.fieldLabel}>Pix Copia e Cola
+              <textarea readOnly value={pixCharge.payload} onFocus={(event) => event.currentTarget.select()} style={{ width: '100%', minHeight: 94, boxSizing: 'border-box', resize: 'vertical', border: '1px solid #c8d1ca', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.4 }} />
+            </label>
+            <div className={styles.actions} style={{ marginTop: 16 }}>
+              <button className={styles.secondary} onClick={() => void copyPix()}>{copied ? 'Código copiado' : 'Copiar código Pix'}</button>
+              <button className={styles.primary} onClick={confirmPixPayment}><Check />PAGAMENTO RECEBIDO</button>
+              <button className={styles.secondary} onClick={() => { setPixCharge(null); setCopied(false) }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+'''
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
+      - name: Commit UI change
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/inventory-v1/InventoryV1.tsx
+          git commit -m "feat: wire Pix checkout UI"
+          git push origin feat-pix-checkout-qr
