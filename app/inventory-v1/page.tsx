@@ -11,7 +11,9 @@ export const metadata = {
 }
 
 export default async function Page() {
-  if (process.env.BALCAO_ACCOUNTS_ENFORCED !== 'true') return <InventoryV1 />
+  if (process.env.BALCAO_ACCOUNTS_ENFORCED !== 'true') {
+    return <InventoryRoleGate role="manager"><InventoryV1 /></InventoryRoleGate>
+  }
 
   const jar = await cookies()
   const context = await authorizeInventoryContext({
