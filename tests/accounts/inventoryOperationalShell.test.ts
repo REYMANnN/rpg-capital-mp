@@ -22,19 +22,26 @@ test('inventory role gate resolves the current operational staff session', () =>
   assert.match(gate, /store.*displayName/s)
 })
 
-test('inventory navigation is rendered from permissions instead of CSS nth-child hiding', () => {
-  const inventory = source('app/inventory-v1/InventoryV1.tsx')
+test('inventory navigation is controlled by permissions instead of CSS nth-child hiding', () => {
   const gate = source('components/accounts/InventoryRoleGate.tsx')
-  assert.match(inventory, /canStock/)
-  assert.match(inventory, /canIntake/)
-  assert.match(inventory, /canCheckout/)
-  assert.match(inventory, /canSettings/)
+  assert.match(gate, /canStock/)
+  assert.match(gate, /canIntake/)
+  assert.match(gate, /canCheckout/)
+  assert.match(gate, /canSettings/)
+  assert.match(gate, /permissionsForRole/)
   assert.doesNotMatch(gate, /nth-child/)
 })
 
 test('the original inventory header exposes staff profile and logout', () => {
-  const inventory = source('app/inventory-v1/InventoryV1.tsx')
-  assert.match(inventory, /Perfil do usuário/)
-  assert.match(inventory, /Trocar funcionário/)
-  assert.match(inventory, /\/api\/balcao\/staff\/logout/)
+  const gate = source('components/accounts/InventoryRoleGate.tsx')
+  assert.match(gate, /Perfil do usuário/)
+  assert.match(gate, /Trocar funcionário/)
+  assert.match(gate, /\/api\/balcao\/staff\/logout/)
+  assert.match(gate, /createPortal/)
+})
+
+test('inventory is always wrapped so staff role resolution also works when account enforcement flag is off', () => {
+  const page = source('app/inventory-v1/page.tsx')
+  assert.match(page, /BALCAO_ACCOUNTS_ENFORCED/)
+  assert.match(page, /return <InventoryRoleGate role="manager"><InventoryV1 \/><\/InventoryRoleGate>/)
 })
