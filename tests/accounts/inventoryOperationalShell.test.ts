@@ -27,6 +27,7 @@ test('inventory navigation is controlled by permissions instead of CSS nth-child
   assert.match(gate, /canStock/)
   assert.match(gate, /canIntake/)
   assert.match(gate, /canCheckout/)
+  assert.match(gate, /canFinance/)
   assert.match(gate, /canSettings/)
   assert.match(gate, /permissionsForRole/)
   assert.doesNotMatch(gate, /nth-child/)
@@ -40,8 +41,14 @@ test('the original inventory header exposes staff profile and logout', () => {
   assert.match(gate, /createPortal/)
 })
 
-test('inventory is always wrapped so staff role resolution also works when account enforcement flag is off', () => {
+test('inventory is always wrapped and google management keeps management access when enforcement is off', () => {
   const page = source('app/inventory-v1/page.tsx')
   assert.match(page, /BALCAO_ACCOUNTS_ENFORCED/)
-  assert.match(page, /return <InventoryRoleGate role="manager"><InventoryV1 \/><\/InventoryRoleGate>/)
+  assert.match(page, /return <InventoryRoleGate role="manager" managementAccess><InventoryV1 \/><\/InventoryRoleGate>/)
+})
+
+test('finance-only staff are routed without mounting InventoryV1', () => {
+  const page = source('app/inventory-v1/page.tsx')
+  assert.match(page, /canFinance && !canLoadOperationalState/)
+  assert.match(page, /<FinanceOnlyShell \/>/)
 })
