@@ -135,6 +135,20 @@ export default function BankConnections({
 
   const activeCount = useMemo(() => connections.filter((connection) => connection.status !== 'disconnected').length, [connections])
 
+  async function finalizeConnection(itemId: string) {
+    setNotice('Autorização concluída. Estamos trazendo os dados do banco.')
+    const response = await fetch('/api/balcao/finance/malvo/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storeId: storeId || null, itemId }),
+    })
+    const payload = await response.json().catch(() => ({})) as { error?: string }
+    if (!response.ok) throw new Error(payload.error || 'A conta foi autorizada, mas não foi possível salvá-la no BALCÃO.')
+    setNotice('Conta conectada e dados bancários sincronizados.')
+    await load()
+    onFinanceChanged?.()
+  }
+
   async function connectBank() {
     if (!canManage || connecting) return
     setConnecting(true)
@@ -158,10 +172,15 @@ export default function BankConnections({
         connectorTypes: ['BUSINESS_BANK', 'PERSONAL_BANK'],
         language: 'pt',
         includeSandbox: false,
-        onSuccess: () => {
-          setNotice('Autorização concluída. Estamos sincronizando os dados do banco.')
-          window.setTimeout(() => { void load(); onFinanceChanged?.() }, 1500)
-          window.setTimeout(() => { void load(); onFinanceChanged?.() }, 5000)
+        onSuccess: (data) => {
+          const itemId = data.item?.id
+          if (!itemId) {
+            setError('A autorização terminou, mas a Malvo não informou o identificador da conexão.')
+            return
+          }
+          void finalizeConnection(itemId).catch((caught) => {
+            setError(caught instanceof Error ? caught.message : 'Não foi possível salvar a conexão bancária.')
+          })
         },
         onError: (widgetError) => setError(widgetError.message || 'A conexão bancária não foi concluída.'),
         onClose: () => {
@@ -236,7 +255,7 @@ export default function BankConnections({
         </div>
       </section>
 
-      {!configured ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><b>Integração pronta, faltam as credenciais do servidor.</b><p className="mt-1 text-xs leading-5 text-amber-800">Depois que o Client ID, Client Secret e o segredo do webhook forem configurados, o botão de conexão fica habilitado.</p></div> : null}
+      {!configured ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><b>Integração bancária indisponível.</b><p className="mt-1 text-xs leading-5 text-amber-800">As credenciais da Malvo precisam estar configuradas no servidor.</p></div> : null}
       {!canManage ? <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><b>Você pode consultar os dados financeiros.</b><p className="mt-1 text-xs leading-5 text-slate-500">Por segurança, somente a conta principal do negócio pode criar, renovar ou revogar consentimentos bancários.</p></div> : null}
       {notice ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">{notice}</div> : null}
       {error ? <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-900">{error}</div> : null}
