@@ -70,6 +70,8 @@ const dateTime = (value: string | null) => value
   ? new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   : 'Ainda não sincronizada'
 
+const onboardingEligibleStatuses: Connection['status'][] = ['pending', 'active', 'updating']
+
 function statusMeta(status: Connection['status']) {
   switch (status) {
     case 'active': return { label: 'Conectada', className: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2 }
@@ -114,7 +116,7 @@ export default function BankConnections({
       if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar as conexões.')
       const nextConnections = payload.connections || []
       setConnections(nextConnections)
-      onConnectionCountChange?.(nextConnections.filter((connection) => connection.status !== 'disconnected').length)
+      onConnectionCountChange?.(nextConnections.filter((connection) => onboardingEligibleStatuses.includes(connection.status)).length)
       setConfigured(Boolean(payload.configured))
       setCanManage(Boolean(payload.canManage))
     } catch (caught) {
@@ -258,7 +260,7 @@ export default function BankConnections({
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-black ${status.className}`}><StatusIcon className={`h-3.5 w-3.5 ${connection.status === 'updating' || connection.status === 'pending' ? 'animate-spin' : ''}`} />{status.label}</span>
-                {canManage && connection.status !== 'disconnected' ? <button onClick={() => void disconnect(connection)} disabled={disconnectingId === connection.id} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-black text-rose-700 hover:bg-rose-50 disabled:opacity-50"><Unplug className="h-3.5 w-3.5" />{disconnectingId === connection.id ? 'Removendo…' : 'Remover conexão'}</button> : null}
+                {canManage && connection.status !== 'disconnected' ? <button aria-label="Desconectar conta bancária" onClick={() => void disconnect(connection)} disabled={disconnectingId === connection.id} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-black text-rose-700 hover:bg-rose-50 disabled:opacity-50"><Unplug className="h-3.5 w-3.5" />{disconnectingId === connection.id ? 'Removendo…' : 'Remover conexão'}</button> : null}
               </div>
             </article>
           })}
