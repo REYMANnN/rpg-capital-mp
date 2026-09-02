@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { deleteMalvoItem } from '@/lib/malvo/client'
 
@@ -11,47 +10,40 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) return NextResponse.json({ error: 'Entre com sua Conta Google para continuar.' }, { status: 401 })
 
-  const admin = createAdminClient()
-  const { data: connection, error: connectionError } = await admin.from('balcao_finance_connections')
-    .select('id,business_id,store_id,provider,provider_item_id,status')
-    .eq('id', id)
-    .maybeSingle()
+  const { data, error } = await supabase.rpc('balcao_get_finance_connection_for_management', {
+    p_connection_id: id,
+  })
 
-  if (connectionError) return NextResponse.json({ error: 'Não foi possível carregar a conexão.' }, { status: 500 })
-  if (!connection) return NextResponse.json({ error: 'Conexão não encontrada.' }, { status: 404 })
-
-  const { data: membership, error: membershipError } = await supabase.from('balcao_business_members')
-    .select('role')
-    .eq('business_id', connection.business_id)
-    .eq('user_id', user.id)
-    .eq('active', true)
-    .maybeSingle()
-
-  if (membershipError || !membership || !['owner', 'admin', 'manager'].includes(membership.role)) {
-    return NextResponse.json({ error: 'Somente a gestão pode desconectar uma conta bancária.' }, { status: 403 })
+  if (error || !data || typeof data !== 'object') {
+    const missing = String(error?.message || '').includes('BALCAO_FINANCE_CONNECTION_NOT_FOUND')
+    return NextResponse.json({ error: missing ? 'Conexão não encontrada.' : 'Somente a gestão pode remover uma conta bancária.' }, { status: missing ? 404 : 403 })
   }
 
-  if (connection.status === 'disconnected') return NextResponse.json({ ok: true, alreadyDisconnected: true })
-  if (connection.provider !== 'malvo') return NextResponse.json({ error: 'Provedor bancário não suportado.' }, { status: 400 })
+  const connection = data as Record<string, unknown>
+  const status = typeof connection.status === 'string' ? connection.status : ''
+  const provider = typeof connection.provider === 'string' ? connection.provider : ''
+  const itemId = typeof connection.itemId === 'string' ? connection.itemId : ''
+
+  if (status === 'disconnected') return NextResponse.json({ ok: true, alreadyDisconnected: true })
+  if (provider !== 'malvo' || !itemId) return NextResponse.json({ error: 'Provedor bancário não suportado.' }, { status: 400 })
 
   try {
-    await deleteMalvoItem(connection.provider_item_id)
+    await deleteMalvoItem(itemId)
   } catch (caught) {
-    const status = (caught as Error & { status?: number })?.status
-    if (status !== 404) {
+    const remoteStatus = (caught as Error & { status?: number })?.status
+    if (remoteStatus !== 404) {
       console.error('BALCAO Malvo disconnect failed', caught)
       return NextResponse.json({ error: 'Não foi possível revogar o consentimento bancário agora.' }, { status: 502 })
     }
   }
 
-  const now = new Date().toISOString()
-  await Promise.all([
-    admin.from('balcao_finance_connections').update({ status: 'disconnected', updated_at: now }).eq('id', connection.id),
-    admin.from('balcao_finance_accounts').update({ status: 'disconnected', updated_at: now })
-      .eq('business_id', connection.business_id)
-      .eq('store_id', connection.store_id)
-      .eq('provider', 'malvo'),
-  ])
+  const { error: disconnectError } = await supabase.rpc('balcao_disconnect_finance_connection', {
+    p_connection_id: id,
+  })
+  if (disconnectError) {
+    console.error('BALCAO finance disconnect RPC failed', disconnectError)
+    return NextResponse.json({ error: 'O banco foi desconectado, mas não foi possível atualizar o BALCÃO.' }, { status: 500 })
+  }
 
   return NextResponse.json({ ok: true })
 }
