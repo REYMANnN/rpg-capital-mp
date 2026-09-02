@@ -10,14 +10,25 @@ function source(path: string) {
   return readFileSync(full, 'utf8')
 }
 
-test('finance dashboard endpoint is protected by operational financial permission', () => {
+test('finance dashboard endpoint uses a permission-aware Supabase RPC without service role', () => {
   const route = source('app/api/balcao/finance/dashboard/route.ts')
-  assert.match(route, /authorizeInventoryContext/)
-  assert.match(route, /analysis\.financial/)
-  assert.match(route, /balcao_finance_accounts/)
-  assert.match(route, /balcao_finance_transactions/)
-  assert.match(route, /balcao_finance_daily_metrics/)
+  assert.match(route, /createServerClient/)
+  assert.match(route, /balcao_finance_dashboard_source/)
   assert.match(route, /buildFinanceDashboard/)
+  assert.doesNotMatch(route, /createAdminClient/)
+  assert.doesNotMatch(route, /authorizeInventoryContext/)
+})
+
+test('finance dashboard source RPC supports Google management and PIN staff finance permission', () => {
+  const migration = source('supabase/migrations/20260902_balcao_finance_dashboard_rpc.sql')
+  assert.match(migration, /balcao_finance_dashboard_source/)
+  assert.match(migration, /auth\.uid\(\)/)
+  assert.match(migration, /analysis\.financial/)
+  assert.match(migration, /balcao_operational_context/)
+  assert.match(migration, /inventory_v1_get_state/)
+  assert.match(migration, /balcao_finance_accounts/)
+  assert.match(migration, /balcao_finance_transactions/)
+  assert.match(migration, /balcao_finance_daily_metrics/)
 })
 
 test('finance dashboard offers 7, 30 and 90 day periods and identifies demo data', () => {
