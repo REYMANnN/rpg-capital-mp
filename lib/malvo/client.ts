@@ -115,6 +115,10 @@ export async function getMalvoItem(itemId: string) {
   return malvoRequest(`/items/${encodeURIComponent(itemId)}`) as Promise<Record<string, any>>
 }
 
+export async function deleteMalvoItem(itemId: string) {
+  return malvoRequest(`/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' })
+}
+
 export async function listMalvoAccounts(itemId: string) {
   const all: Record<string, any>[] = []
   let page = 1
