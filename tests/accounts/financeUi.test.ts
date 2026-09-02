@@ -31,13 +31,38 @@ test('finance dashboard source RPC supports Google management and PIN staff fina
   assert.match(migration, /balcao_finance_daily_metrics/)
 })
 
-test('finance dashboard offers 7, 30 and 90 day periods and identifies demo data', () => {
+test('finance v2 has four user-facing areas and keeps technical depth available', () => {
   const dashboard = source('app/inventory-v1/FinanceDashboard.tsx')
   assert.match(dashboard, /\[7, 30, 90\]/)
   assert.match(dashboard, /Dados de demonstração/)
-  assert.match(dashboard, /Margem bruta/)
-  assert.match(dashboard, /Fluxo de caixa/)
+  assert.match(dashboard, /Visão geral/)
+  assert.match(dashboard, /Vendas/)
+  assert.match(dashboard, /Gastos/)
   assert.match(dashboard, /Movimentações/)
+  assert.match(dashboard, /Exportar CSV/)
+  assert.match(dashboard, /CMV/)
+  assert.match(dashboard, /Margem bruta/)
+})
+
+test('finance v2 speaks to a non-accountant before exposing accounting terminology', () => {
+  const dashboard = source('app/inventory-v1/FinanceDashboard.tsx')
+  assert.match(dashboard, /Dinheiro entrando e saindo/)
+  assert.match(dashboard, /Quanto sobrou das vendas/)
+  assert.match(dashboard, /O que merece sua atenção/)
+  assert.match(dashboard, /Para onde foi seu dinheiro/)
+})
+
+test('finance charts use robust SVG visualizations instead of the old percentage-height sales bars', () => {
+  const charts = source('app/inventory-v1/finance/FinanceCharts.tsx')
+  assert.match(charts, /<svg/)
+  assert.match(charts, /viewBox=/)
+  assert.match(charts, /CashFlowChart/)
+  assert.match(charts, /SalesAndCostChart/)
+  assert.match(charts, /MarginTrendChart/)
+  assert.match(charts, /ExpenseDonut/)
+
+  const dashboard = source('app/inventory-v1/FinanceDashboard.tsx')
+  assert.doesNotMatch(dashboard, /flex w-\[70%\] flex-col-reverse/)
 })
 
 test('operational app has a real Financeiro tab and a finance-only path does not mount inventory state', () => {
