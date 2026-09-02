@@ -1,0 +1,26 @@
+name: Apply BALCAO Financeiro tab patch
+
+on:
+  push:
+    branches: ['feat/balcao-financeiro']
+    paths:
+      - '.github/workflows/one-time-balcao-financeiro-tab.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/balcao-financeiro
+          fetch-depth: 0
+      - run: python scripts/patch_balcao_financeiro.py
+      - run: |
+          git config user.name "balcao-finance-bot"
+          git config user.email "balcao-finance-bot@users.noreply.github.com"
+          git add app/inventory-v1/InventoryV1.tsx
+          git commit -m "feat: add Financeiro tab to operational app" || exit 0
+          git push origin feat/balcao-financeiro
