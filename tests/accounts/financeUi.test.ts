@@ -39,17 +39,18 @@ test('finance v2 RPC returns enough lookback for previous-period comparisons', (
   assert.match(migration, /balcao_finance_dashboard_source/)
 })
 
-test('finance v2 has four user-facing areas and keeps technical depth available', () => {
+test('finance v2 keeps the visual business views and technical depth after demo data is retired', () => {
   const dashboard = source('app/inventory-v1/FinanceDashboard.tsx')
   assert.match(dashboard, /\[7, 30, 90\]/)
-  assert.match(dashboard, /Dados de demonstração/)
   assert.match(dashboard, /Visão geral/)
   assert.match(dashboard, /Vendas/)
   assert.match(dashboard, /Gastos/)
   assert.match(dashboard, /Movimentações/)
+  assert.match(dashboard, /Conexões/)
   assert.match(dashboard, /Exportar CSV/)
   assert.match(dashboard, /CMV/)
   assert.match(dashboard, /Margem bruta/)
+  assert.doesNotMatch(dashboard, /Dados de demonstração/)
 })
 
 test('finance v2 speaks to a non-accountant before exposing accounting terminology', () => {
