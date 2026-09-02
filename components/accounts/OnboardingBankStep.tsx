@@ -8,9 +8,15 @@ export default function OnboardingBankStep({ storeId, userName }: { storeId: str
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [activeConnectionCount, setActiveConnectionCount] = useState(0)
 
   async function finish() {
     if (busy) return
+    if (activeConnectionCount < 1) {
+      setError('Conecte pelo menos uma conta bancária para concluir o cadastro.')
+      return
+    }
+
     setBusy(true)
     setError('')
     try {
@@ -41,13 +47,20 @@ export default function OnboardingBankStep({ storeId, userName }: { storeId: str
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
       <p className="text-sm font-semibold text-blue-700">Conta bancária</p>
       <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{userName ? `${userName.split(' ')[0]}, ` : ''}conecte a conta do seu negócio.</h1>
-      <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">Isso permite que o BALCÃO organize entradas, gastos e fluxo de caixa. A autorização acontece diretamente no seu banco pelo Open Finance; o BALCÃO não recebe sua senha.</p>
+      <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">É obrigatório conectar pelo menos uma conta bancária. Depois da primeira, você pode adicionar quantas contas quiser. A autorização acontece diretamente no seu banco pelo Open Finance; o BALCÃO não recebe sua senha.</p>
 
-      <div className="mt-7"><BankConnections storeId={storeId} returnTo="onboarding" /></div>
+      <div className="mt-7">
+        <BankConnections
+          storeId={storeId}
+          returnTo="onboarding"
+          onConnectionCountChange={setActiveConnectionCount}
+        />
+      </div>
 
+      {activeConnectionCount < 1 ? <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">Conecte pelo menos uma conta bancária para liberar a conclusão do cadastro.</p> : null}
       {error ? <p role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">{error}</p> : null}
       <div className="mt-6 flex justify-end">
-        <button onClick={() => void finish()} disabled={busy} className="min-h-12 rounded-xl bg-blue-700 px-6 py-3 font-semibold text-white disabled:opacity-50">{busy ? 'Concluindo…' : 'Entrar no BALCÃO'}</button>
+        <button onClick={() => void finish()} disabled={busy || activeConnectionCount < 1} className="min-h-12 rounded-xl bg-blue-700 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Concluindo…' : activeConnectionCount < 1 ? 'Conecte uma conta para continuar' : 'Entrar no BALCÃO'}</button>
       </div>
     </section>
   </div>
