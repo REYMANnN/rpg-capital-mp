@@ -35,6 +35,7 @@ test('finance v2 RPC returns enough lookback for previous-period comparisons', (
   const migration = source('supabase/migrations/20260902_balcao_finance_dashboard_v2_lookback.sql')
   assert.match(migration, /v_lookback_days/)
   assert.match(migration, /v_days \* 2/)
+  assert.match(migration, /limit 10000/i)
   assert.match(migration, /balcao_finance_dashboard_source/)
 })
 
