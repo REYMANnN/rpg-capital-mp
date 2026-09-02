@@ -18,18 +18,29 @@ test('cashier can sell but cannot manually manage inventory', () => {
   assert.equal(can(p, 'analysis.financial'), false)
 })
 
-test('manager gets operational, analysis, team and device permissions', () => {
+test('finance can view financial analysis without stock or checkout access', () => {
+  const p = permissionsForRole('finance')
+  assert.equal(can(p, 'analysis.financial'), true)
+  assert.equal(can(p, 'inventory.view'), false)
+  assert.equal(can(p, 'checkout.sell'), false)
+})
+
+test('manager gets all operational modules but not account administration', () => {
   const p = permissionsForRole('manager')
-  for (const permission of ['inventory.write', 'checkout.sell', 'analysis.financial', 'team.manage', 'devices.manage'] as const) {
+  for (const permission of ['inventory.write', 'checkout.sell', 'analysis.financial'] as const) {
     assert.equal(can(p, permission), true)
+  }
+  for (const permission of ['team.manage', 'devices.manage', 'stores.manage', 'integrations.manage', 'settings.manage'] as const) {
+    assert.equal(can(p, permission), false)
   }
 })
 
-test('custom role only receives explicitly granted permissions', () => {
-  const p = permissionsForRole('custom', ['inventory.view', 'products.lookup'])
+test('custom role only receives explicitly granted operational permissions', () => {
+  const p = permissionsForRole('custom', ['inventory.view', 'products.lookup', 'team.manage'])
   assert.equal(can(p, 'inventory.view'), true)
   assert.equal(can(p, 'products.lookup'), true)
   assert.equal(can(p, 'checkout.sell'), false)
+  assert.equal(can(p, 'team.manage'), false)
 })
 
 test('pin lock starts after five failures and increases progressively', () => {
