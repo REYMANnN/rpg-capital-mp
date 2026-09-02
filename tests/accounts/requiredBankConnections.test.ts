@@ -20,10 +20,10 @@ test('onboarding cannot finish before at least one bank connection is active', (
   assert.match(route, /BALCAO_OPEN_FINANCE_REQUIRED/)
 })
 
-test('bank connection UI reports active connections back to onboarding', () => {
+test('bank connection UI reports only onboarding-eligible Malvo connections back to onboarding', () => {
   const connections = source('app/inventory-v1/finance/BankConnections.tsx')
   assert.match(connections, /onConnectionCountChange/)
-  assert.match(connections, /filter\(\(connection\) => connection\.status !== 'disconnected'\)\.length/)
+  assert.match(connections, /\['pending', 'active', 'updating'\]/)
   assert.match(connections, /onConnectionCountChange\?\./)
 })
 
