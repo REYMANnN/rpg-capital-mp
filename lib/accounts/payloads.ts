@@ -1,15 +1,24 @@
 import { z } from 'zod'
 import { BUSINESS_TYPES } from './validation'
+import { OPERATIONAL_PERMISSIONS } from './access'
 
 const uuid = z.string().uuid('Identificador inválido.')
-const role = z.enum(['stock', 'cashier', 'manager', 'custom'])
+const role = z.enum(['stock', 'cashier', 'finance', 'manager', 'custom'])
+const operationalPermission = z.enum(OPERATIONAL_PERMISSIONS)
 
 const staffCreateSchema = z.object({
   storeId: uuid,
   displayName: z.string().trim().min(2, 'Informe o nome do funcionário.').max(80),
   role,
   pin: z.string().regex(/^\d{4}$/, 'O PIN deve ter 4 números.'),
-  customPermissions: z.array(z.string()).max(30).optional().default([]),
+  customPermissions: z.array(operationalPermission).max(OPERATIONAL_PERMISSIONS.length).optional().default([]),
+}).superRefine((value, ctx) => {
+  if (value.role === 'custom' && value.customPermissions.length === 0) {
+    ctx.addIssue({ code: 'custom', path: ['customPermissions'], message: 'Escolha ao menos um módulo para o acesso personalizado.' })
+  }
+  if (value.role !== 'custom' && value.customPermissions.length > 0) {
+    ctx.addIssue({ code: 'custom', path: ['customPermissions'], message: 'Permissões personalizadas só podem ser usadas no perfil Personalizado.' })
+  }
 })
 
 const inviteCreateSchema = z.object({
