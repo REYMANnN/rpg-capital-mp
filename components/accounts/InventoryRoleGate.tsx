@@ -22,6 +22,7 @@ type WorkContext = {
 const ROLE_NAME: Record<Role, string> = {
   cashier: 'Caixa',
   stock: 'Estoque',
+  finance: 'Financeiro',
   manager: 'Gerente',
   custom: 'Personalizado',
 }
@@ -30,7 +31,7 @@ function normalizedLabel(button: HTMLButtonElement) {
   return (button.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
-export default function InventoryRoleGate({ role, children }: { role: Role; children: ReactNode }) {
+export default function InventoryRoleGate({ role, managementAccess = false, children }: { role: Role; managementAccess?: boolean; children: ReactNode }) {
   const root = useRef<HTMLDivElement>(null)
   const [effectiveRole, setEffectiveRole] = useState<Role>(role)
   const [customPermissions, setCustomPermissions] = useState<Permission[]>([])
@@ -78,9 +79,10 @@ export default function InventoryRoleGate({ role, children }: { role: Role; chil
     [effectiveRole, customPermissions],
   )
   const canStock = can(permissions, 'inventory.write') || can(permissions, 'products.manage')
-  const canIntake = can(permissions, 'inventory.write')
+  const canIntake = canStock
   const canCheckout = can(permissions, 'checkout.sell')
-  const canSettings = can(permissions, 'settings.manage')
+  const canFinance = can(permissions, 'analysis.financial')
+  const canSettings = managementAccess && !currentStaff
 
   useEffect(() => {
     if (!resolved || !root.current) return
@@ -96,8 +98,9 @@ export default function InventoryRoleGate({ role, children }: { role: Role; chil
       const allowed = label.includes('estoque') ? canStock
         : label.includes('entrada') ? canIntake
           : label.includes('caixa') ? canCheckout
-            : label.includes('ajustes') ? canSettings
-              : true
+            : label.includes('financeiro') ? canFinance
+              : label.includes('ajustes') ? canSettings
+                : true
 
       button.style.display = allowed ? '' : 'none'
       button.setAttribute('aria-hidden', allowed ? 'false' : 'true')
@@ -106,7 +109,7 @@ export default function InventoryRoleGate({ role, children }: { role: Role; chil
     }
 
     if (!activeAllowed) firstAllowed?.click()
-  }, [resolved, canStock, canIntake, canCheckout, canSettings])
+  }, [resolved, canStock, canIntake, canCheckout, canFinance, canSettings])
 
   async function switchStaff() {
     if (loggingOut) return
