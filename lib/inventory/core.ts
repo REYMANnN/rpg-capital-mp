@@ -14,6 +14,7 @@ export interface Product {
   scaleCode?: string
   name: string
   priceCents: number
+  averageCostCents?: number
   stockMilli: number
   minStockMilli: number
 }
@@ -28,12 +29,16 @@ export interface SaleItem {
   quantityMilli: number
   unitPriceCents: number
   lineTotalCents: number
+  unitCostCents: number
+  lineCostCents: number
 }
 
 export interface Sale {
   id: string
   createdAt: string
   totalCents: number
+  cogsCents: number
+  grossProfitCents: number
   items: SaleItem[]
 }
 
@@ -88,11 +93,14 @@ export function completeSale(products: Product[], lines: CartInput[], saleId: st
 
   const items: SaleItem[] = [...quantities].map(([productId, quantityMilli]) => {
     const product = byId.get(productId)!
+    const unitCostCents = Number.isFinite(product.averageCostCents) ? Math.max(0, Math.round(product.averageCostCents ?? 0)) : 0
     return {
       productId,
       quantityMilli,
       unitPriceCents: product.priceCents,
       lineTotalCents: Math.round(product.priceCents * quantityMilli / 1000),
+      unitCostCents,
+      lineCostCents: Math.round(unitCostCents * quantityMilli / 1000),
     }
   })
 
@@ -101,12 +109,17 @@ export function completeSale(products: Product[], lines: CartInput[], saleId: st
     stockMilli: product.stockMilli - (quantities.get(product.id) ?? 0),
   }))
 
+  const totalCents = items.reduce((sum, item) => sum + item.lineTotalCents, 0)
+  const cogsCents = items.reduce((sum, item) => sum + item.lineCostCents, 0)
+
   return {
     products: nextProducts,
     sale: {
       id: saleId,
       createdAt: new Date().toISOString(),
-      totalCents: items.reduce((sum, item) => sum + item.lineTotalCents, 0),
+      totalCents,
+      cogsCents,
+      grossProfitCents: totalCents - cogsCents,
       items,
     } satisfies Sale,
   }
