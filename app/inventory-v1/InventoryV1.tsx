@@ -15,6 +15,7 @@ import {
   ScanLine,
   Settings,
   ShoppingCart,
+  WalletCards,
   Trash2,
   X,
 } from 'lucide-react'
@@ -25,6 +26,7 @@ import { validateNewProductCommercialData, validateSalePrice } from '@/lib/inven
 import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 import QuaggaScanner from './QuaggaScanner'
 import InvoiceIntakeV10 from './InvoiceIntakeV10'
+import FinanceDashboard from './FinanceDashboard'
 import type { InvoiceReviewLineV10 } from '@/lib/inventory/invoiceReview'
 import { activeProducts, reactivateProduct, softDeleteProduct } from '@/lib/inventory/productLifecycle'
 import styles from './inventory.module.css'
@@ -153,7 +155,7 @@ export default function InventoryV1() {
   const [data, setData] = useState<StoreData>(emptyData)
   const [loaded, setLoaded] = useState(false)
   const [cloud, setCloud] = useState<CloudState>('loading')
-  const [tab, setTab] = useState<'stock' | 'intake' | 'checkout' | 'settings'>('stock')
+  const [tab, setTab] = useState<'stock' | 'intake' | 'checkout' | 'finance' | 'settings'>('stock')
   const [cart, setCart] = useState<CartLine[]>([])
   const [scannerOpen, setScannerOpen] = useState(false)
   const [scanTarget, setScanTarget] = useState<'product' | 'checkout'>('checkout')
@@ -788,6 +790,7 @@ export default function InventoryV1() {
         <button className={tab === 'stock' ? styles.active : ''} onClick={() => setTab('stock')}><Boxes />Estoque</button>
         <button className={tab === 'intake' ? styles.active : ''} onClick={() => setTab('intake')}><FileUp />Entrada</button>
         <button className={tab === 'checkout' ? styles.active : ''} onClick={() => setTab('checkout')}><ShoppingCart />Caixa</button>
+        <button className={tab === 'finance' ? styles.active : ''} onClick={() => setTab('finance')}><WalletCards />Financeiro</button>
         <button className={tab === 'settings' ? styles.active : ''} onClick={() => setTab('settings')}><Settings />Ajustes</button>
       </nav>
 
@@ -832,6 +835,8 @@ export default function InventoryV1() {
             checkout={checkout}
           />
         )}
+
+        {tab === 'finance' && <FinanceDashboard />}
 
         {tab === 'settings' && (
           <SettingsView
