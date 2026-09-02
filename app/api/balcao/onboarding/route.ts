@@ -17,6 +17,12 @@ export async function POST(request: Request) {
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) return NextResponse.json({ error: 'Entre com sua Conta Google para continuar.' }, { status: 401 })
 
+  const { data: existingProfile } = await supabase.from('balcao_profiles')
+    .select('onboarding_completed')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  const wasAlreadyCompleted = existingProfile?.onboarding_completed === true
+
   const parsed = validateOnboarding(await request.json().catch(() => null))
   if (!parsed.success) {
     const issue = parsed.error.issues[0]
@@ -66,13 +72,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Algum dado obrigatório está incompleto. Confira os campos e tente novamente.' }, { status: 400 })
     }
     console.error('BALCAO onboarding RPC failed', { code: error.code })
-    return NextResponse.json({ error: 'Não conseguimos concluir o cadastro agora. Seus dados foram mantidos; tente novamente.' }, { status: 500 })
+    return NextResponse.json({ error: 'Não conseguimos concluir seu cadastro agora. Seus dados foram mantidos; tente novamente.' }, { status: 500 })
   }
 
   const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as OnboardingResult | null
   if (!result?.business_id || !result.store_id || !result.installation_id) {
     console.error('BALCAO onboarding RPC returned incomplete result')
-    return NextResponse.json({ error: 'Não conseguimos concluir o cadastro agora. Seus dados foram mantidos; tente novamente.' }, { status: 500 })
+    return NextResponse.json({ error: 'Não conseguimos concluir seu cadastro agora. Seus dados foram mantidos; tente novamente.' }, { status: 500 })
+  }
+
+  if (!wasAlreadyCompleted) {
+    const { error: pendingError } = await supabase.rpc('balcao_require_open_finance_onboarding')
+    if (pendingError) {
+      console.error('BALCAO onboarding Open Finance pending state failed', { code: pendingError.code })
+      return NextResponse.json({ error: 'A loja foi criada, mas não conseguimos preparar a conexão bancária. Tente novamente.' }, { status: 500 })
+    }
   }
 
   if (currentInstallationId !== result.installation_id) {
@@ -85,5 +99,10 @@ export async function POST(request: Request) {
     })
   }
 
-  return NextResponse.json({ ok: true, businessId: result.business_id, storeId: result.store_id })
+  return NextResponse.json({
+    ok: true,
+    businessId: result.business_id,
+    storeId: result.store_id,
+    requiresBankConnection: !wasAlreadyCompleted,
+  })
 }
