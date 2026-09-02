@@ -31,6 +31,13 @@ test('finance dashboard source RPC supports Google management and PIN staff fina
   assert.match(migration, /balcao_finance_daily_metrics/)
 })
 
+test('finance v2 RPC returns enough lookback for previous-period comparisons', () => {
+  const migration = source('supabase/migrations/20260902_balcao_finance_dashboard_v2_lookback.sql')
+  assert.match(migration, /v_lookback_days/)
+  assert.match(migration, /v_days \* 2/)
+  assert.match(migration, /balcao_finance_dashboard_source/)
+})
+
 test('finance v2 has four user-facing areas and keeps technical depth available', () => {
   const dashboard = source('app/inventory-v1/FinanceDashboard.tsx')
   assert.match(dashboard, /\[7, 30, 90\]/)
