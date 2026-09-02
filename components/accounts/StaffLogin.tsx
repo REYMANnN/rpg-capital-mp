@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 type Person = {
   id: string
   displayName: string
-  role: 'cashier' | 'stock' | 'manager' | 'custom'
+  role: 'cashier' | 'stock' | 'finance' | 'manager' | 'custom'
 }
 
 type Context = {
@@ -17,7 +17,7 @@ type Context = {
   error?: string
 }
 
-const roleName = { cashier: 'Caixa', stock: 'Estoque', manager: 'Gerente', custom: 'Personalizado' } as const
+const roleName = { cashier: 'Caixa', stock: 'Estoque', finance: 'Financeiro', manager: 'Gerente', custom: 'Personalizado' } as const
 
 export default function StaffLogin() {
   const [ctx, setCtx] = useState<Context | null>(null)
