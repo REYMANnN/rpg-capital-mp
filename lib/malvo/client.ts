@@ -1,3 +1,4 @@
+// Malvo credentials are read from Vercel environment variables at runtime.
 const MALVO_API = 'https://api.malvo.io'
 
 type CachedKey = { value: string; expiresAt: number } | null
