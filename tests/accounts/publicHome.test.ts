@@ -20,13 +20,13 @@ test('public home offers existing-account and signup paths', () => {
   assert.match(home, /\/login\?intent=signup/)
 })
 
-test('public home keeps a temporary test-account button that goes straight to manage', () => {
+test('public home keeps a temporary test-account button that authenticates and opens manage', () => {
   const home = source('app/home/page.tsx')
   const button = source('components/accounts/TestGoogleLoginButton.tsx')
 
   assert.match(home, /TestGoogleLoginButton/)
   assert.match(button, /Entrar na conta de teste/)
-  assert.match(button, /href=["']\/manage["']/)
+  assert.match(button, /href=["']\/api\/balcao\/test-login["']/)
   assert.doesNotMatch(button, /signInWithOAuth/)
   assert.doesNotMatch(button, /provider:\s*['"]google['"]/)
   assert.doesNotMatch(button, /\/login\?intent=/)
