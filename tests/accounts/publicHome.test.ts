@@ -20,14 +20,14 @@ test('public home offers existing-account and signup paths', () => {
   assert.match(home, /\/login\?intent=signup/)
 })
 
-test('public home exposes the temporary test-account OAuth path', () => {
+test('public home keeps a temporary test-account button that logs in without Google', () => {
   const home = source('app/home/page.tsx')
   const button = source('components/accounts/TestGoogleLoginButton.tsx')
 
   assert.match(home, /TestGoogleLoginButton/)
   assert.match(button, /Entrar na conta de teste/)
-  assert.match(button, /renanguadalupe05@gmail\.com/)
-  assert.match(button, /signInWithOAuth/)
-  assert.match(button, /provider:\s*['"]google['"]/)
-  assert.match(button, /\/auth\/google\/callback\?next=\/manage/)
+  assert.match(button, /\/api\/balcao\/test-login/)
+  assert.doesNotMatch(button, /signInWithOAuth/)
+  assert.doesNotMatch(button, /provider:\s*['"]google['"]/)
+  assert.doesNotMatch(button, /\/login\?intent=/)
 })
