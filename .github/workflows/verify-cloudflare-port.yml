@@ -19,8 +19,8 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - name: Install Cloudflare/vinext runtime dependencies
-        run: npm install vinext@latest @vinext/cloudflare@latest react-server-dom-webpack@latest
+      - name: Align React runtime and install vinext
+        run: npm install react@19.2.6 react-dom@19.2.6 react-server-dom-webpack@19.2.6 vinext@latest @vinext/cloudflare@latest
       - name: Install Cloudflare/vinext build dependencies
         run: npm install --save-dev vite@latest @vitejs/plugin-react@latest @vitejs/plugin-rsc@latest @cloudflare/vite-plugin@latest wrangler@latest
       - name: Build for Cloudflare Workers
