@@ -19,9 +19,9 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - name: Install OpenNext and Wrangler
+      - name: Install supported Next, OpenNext and Wrangler
         run: |
-          npm install @opennextjs/cloudflare@latest
+          npm install next@16.3.3 eslint-config-next@16.3.3 @opennextjs/cloudflare@latest
           npm install --save-dev wrangler@latest
       - name: Build through the same command used by Cloudflare
         env:
@@ -33,7 +33,7 @@ jobs:
           test -d .open-next/assets
       - name: Verify existing Cloudflare deploy command
         run: npx wrangler deploy --dry-run
-      - name: Verify Vercel/Next build is unchanged
+      - name: Verify Next build on Cloudflare branch
         run: npm run build:next
       - name: Commit dependency metadata
         run: |
@@ -44,5 +44,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
-          git commit -m "chore: add OpenNext Cloudflare dependencies"
+          git commit -m "chore: align Cloudflare dev runtime dependencies"
           git push
