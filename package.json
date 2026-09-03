@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/platform-build.mjs",
+    "build:next": "next build",
+    "build:cloudflare": "opennextjs-cloudflare build",
     "start": "next start",
     "lint": "eslint",
     "test:scanner": "node --experimental-strip-types --test tests/scanner-policy.test.ts"
