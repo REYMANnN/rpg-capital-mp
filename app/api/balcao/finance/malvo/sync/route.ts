@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { getBusinessRole, getStoreBusiness } from '@/lib/accounts/currentUser'
+import { getBusinessBillingState, hasBillingAccess } from '@/lib/billing/access'
 import { syncMalvoItemAsManagement } from '@/lib/malvo/managementSync'
 import { hashSecret, INVENTORY_INSTALLATION_COOKIE, STAFF_SESSION_COOKIE, TERMINAL_COOKIE, unpackCredential } from '@/lib/accounts/terminal'
 
@@ -15,6 +16,7 @@ export async function POST(request: Request) {
   let businessId = ''
   let storeId = ''
   let authorization = ''
+  let userEmail: string | null = null
 
   if (requestedStoreId) {
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -28,6 +30,7 @@ export async function POST(request: Request) {
     businessId = store.businessId
     storeId = requestedStoreId
     authorization = 'google'
+    userEmail = user.email ?? null
   } else {
     const jar = await cookies()
     const terminal = unpackCredential(jar.get(TERMINAL_COOKIE)?.value)
@@ -55,6 +58,11 @@ export async function POST(request: Request) {
   if (!businessId || !storeId) return NextResponse.json({ error: 'Loja não identificada.' }, { status: 400 })
   if (authorization !== 'google') {
     return NextResponse.json({ error: 'Somente a conta principal pode atualizar conexões bancárias.' }, { status: 403 })
+  }
+
+  const billing = await getBusinessBillingState(businessId, userEmail)
+  if (!hasBillingAccess(billing)) {
+    return NextResponse.json({ error: 'Regularize a assinatura do BALCÃO antes de atualizar os dados bancários.' }, { status: 402 })
   }
 
   const { data, error: listError } = await supabase.rpc('balcao_list_finance_connections', {
