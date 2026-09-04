@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { deleteMalvoItem } from '@/lib/malvo/client'
+import { deleteSubscription } from '@/lib/asaas/client'
+import { retireBillingSlot } from '@/lib/billing/access'
+import { isBillingBypassEmail, monthlyAmountCents } from '@/lib/billing/config'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,6 +31,15 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   if (status === 'disconnected') return NextResponse.json({ ok: true, alreadyDisconnected: true })
   if (provider !== 'malvo' || !itemId) return NextResponse.json({ error: 'Provedor bancário não suportado.' }, { status: 400 })
 
+  const bypass = isBillingBypassEmail(user.email)
+  const admin = createAdminClient()
+  const [{ data: localConnection }, { data: slot }] = await Promise.all([
+    admin.from('balcao_finance_connections').select('id, business_id').eq('id', id).maybeSingle(),
+    bypass
+      ? Promise.resolve({ data: null })
+      : admin.from('balcao_billing_slots').select('id, business_id, asaas_subscription_id').eq('finance_connection_id', id).maybeSingle(),
+  ])
+
   try {
     await deleteMalvoItem(itemId)
   } catch (caught) {
@@ -45,5 +58,49 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
     return NextResponse.json({ error: 'O banco foi desconectado, mas não foi possível atualizar o BALCÃO.' }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true })
+  if (bypass || !localConnection?.business_id) return NextResponse.json({ ok: true, bypass })
+
+  let billingSyncPending = false
+  const businessId = localConnection.business_id as string
+  try {
+    await retireBillingSlot(id)
+  } catch (caught) {
+    console.error('BALCAO billing slot retirement failed', caught)
+    billingSyncPending = true
+  }
+
+  const { data: account } = await admin.from('balcao_billing_accounts')
+    .select('next_bank_count')
+    .eq('business_id', businessId)
+    .maybeSingle()
+  const nextBankCount = Math.max(0, (account?.next_bank_count ?? 1) - 1)
+  const nextAmountCents = monthlyAmountCents(nextBankCount)
+  await admin.from('balcao_billing_accounts').update({
+    next_bank_count: nextBankCount,
+    next_amount_cents: nextAmountCents,
+    updated_at: new Date().toISOString(),
+  }).eq('business_id', businessId)
+
+  if (slot?.asaas_subscription_id) {
+    try {
+      await deleteSubscription(slot.asaas_subscription_id)
+      await admin.from('balcao_billing_accounts').update({ provider_sync_error: null, updated_at: new Date().toISOString() }).eq('business_id', businessId)
+    } catch (caught) {
+      const remoteStatus = (caught as Error & { status?: number })?.status
+      if (remoteStatus !== 404) {
+        billingSyncPending = true
+        const message = caught instanceof Error ? caught.message : 'Falha ao encerrar a recorrência no Asaas.'
+        console.error('BALCAO Asaas subscription cancellation failed', caught)
+        await admin.from('balcao_billing_accounts').update({ provider_sync_error: message, updated_at: new Date().toISOString() }).eq('business_id', businessId)
+      }
+    }
+  } else {
+    billingSyncPending = true
+    await admin.from('balcao_billing_accounts').update({
+      provider_sync_error: 'A conexão foi removida antes de o Asaas informar o identificador da assinatura. A recorrência precisa ser conciliada.',
+      updated_at: new Date().toISOString(),
+    }).eq('business_id', businessId)
+  }
+
+  return NextResponse.json({ ok: true, billingSyncPending, nextBankCount, nextAmountCents })
 }
