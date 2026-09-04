@@ -56,13 +56,14 @@ export async function getBusinessBillingState(businessId: string, email?: string
 
   const [{ data: account, error: accountError }, { count: availableSlots, error: slotError }] = await Promise.all([
     admin.from('balcao_billing_accounts')
-      .select('status, price_per_bank_cents, current_bank_count, next_bank_count, current_amount_cents, next_amount_cents, paid_until, card_brand, card_last4, card_expiry_month, card_expiry_year, provider_sync_error')
+      .select('status, price_per_bank_cents, current_bank_count, next_bank_count, current_amount_cents, next_amount_cents, provider_sync_error')
       .eq('business_id', businessId)
       .maybeSingle(),
     admin.from('balcao_billing_slots')
       .select('id', { count: 'exact', head: true })
       .eq('business_id', businessId)
-      .eq('status', 'available'),
+      .eq('status', 'available')
+      .eq('payment_status', 'active'),
   ])
 
   if (accountError) throw accountError
@@ -78,12 +79,12 @@ export async function getBusinessBillingState(businessId: string, email?: string
     nextBankCount: account?.next_bank_count ?? 0,
     currentAmountCents: account?.current_amount_cents ?? 0,
     nextAmountCents: account?.next_amount_cents ?? 0,
-    paidUntil: account?.paid_until ?? null,
+    paidUntil: null,
     availableSlots: availableSlots ?? 0,
-    cardBrand: account?.card_brand ?? null,
-    cardLast4: account?.card_last4 ?? null,
-    cardExpiryMonth: account?.card_expiry_month ?? null,
-    cardExpiryYear: account?.card_expiry_year ?? null,
+    cardBrand: null,
+    cardLast4: null,
+    cardExpiryMonth: null,
+    cardExpiryYear: null,
     providerSyncError: account?.provider_sync_error ?? null,
   }
 }
@@ -125,15 +126,17 @@ export async function retireBillingSlot(financeConnectionId: string) {
   return typeof data === 'string' ? data : null
 }
 
-export async function createAvailableBillingSlot(input: { businessId: string; operationId?: string | null; periodStart?: string | null; periodEnd?: string | null }) {
+export async function createAvailableBillingSlot(input: { businessId: string; operationId: string; nextDueDate?: string | null }) {
   const admin = createAdminClient()
+  const { data: existing } = await admin.from('balcao_billing_slots').select('id').eq('operation_id', input.operationId).maybeSingle()
+  if (existing?.id) return existing.id as string
   const { data, error } = await admin.from('balcao_billing_slots').insert({
     business_id: input.businessId,
-    operation_id: input.operationId ?? null,
+    operation_id: input.operationId,
     status: 'available',
+    payment_status: 'active',
     paid_amount_cents: BANK_PRICE_CENTS,
-    billing_period_start: input.periodStart ?? null,
-    billing_period_end: input.periodEnd ?? null,
+    next_due_date: input.nextDueDate ?? null,
   }).select('id').single()
   if (error) throw error
   return data.id as string
