@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createMalvoConnectToken } from '@/lib/malvo/client'
 import { getBusinessRole, getStoreBusiness } from '@/lib/accounts/currentUser'
+import { releaseBillingReservation, reserveBillingSlot } from '@/lib/billing/access'
 import { hashSecret, INVENTORY_INSTALLATION_COOKIE, STAFF_SESSION_COOKIE, TERMINAL_COOKIE, unpackCredential } from '@/lib/accounts/terminal'
 
 export const dynamic = 'force-dynamic'
@@ -15,6 +16,7 @@ export async function POST(request: Request) {
   let businessId = ''
   let storeId = ''
   let authorization = ''
+  let userEmail: string | null = null
 
   if (requestedStoreId) {
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -26,6 +28,7 @@ export async function POST(request: Request) {
     businessId = store.businessId
     storeId = requestedStoreId
     authorization = 'google'
+    userEmail = user.email ?? null
   } else {
     const jar = await cookies()
     const terminal = unpackCredential(jar.get(TERMINAL_COOKIE)?.value)
@@ -56,6 +59,11 @@ export async function POST(request: Request) {
   }
   if (!businessId || !storeId) return NextResponse.json({ error: 'Não foi possível identificar a loja.' }, { status: 400 })
 
+  const entitlement = await reserveBillingSlot({ businessId, email: userEmail })
+  if (!entitlement.bypass && !entitlement.slotId) {
+    return NextResponse.json({ error: 'Esta conexão bancária ainda não foi paga. Ative uma conexão de R$ 5,99 antes de continuar.' }, { status: 402 })
+  }
+
   try {
     const origin = new URL(request.url).origin
     const accessToken = await createMalvoConnectToken({
@@ -68,6 +76,7 @@ export async function POST(request: Request) {
       headers: { 'Cache-Control': 'private, no-store, max-age=0' },
     })
   } catch (caught) {
+    if (!entitlement.bypass) await releaseBillingReservation(businessId, entitlement.slotId).catch(() => undefined)
     const message = caught instanceof Error ? caught.message : 'Malvo indisponível'
     const missingConfig = /MALVO_(CLIENT_ID|CLIENT_SECRET|WEBHOOK_SECRET) is not configured/.test(message)
     console.error('BALCAO Malvo connect-token failed', missingConfig ? 'missing_configuration' : caught)
