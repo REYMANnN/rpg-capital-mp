@@ -31,29 +31,30 @@ test('billing policy centralizes R$5.99 price and owner test-account bypass', ()
   assert.match(access, /hasBillingAccess/)
 })
 
-test('Asaas client keeps API key server-side and supports token, subscription, one-off payment and future-value update', () => {
+test('Asaas client keeps API key server-side and creates hosted recurring and detached checkouts', () => {
   const client = source('lib/asaas/client.ts')
   assert.match(client, /ASAAS_API_KEY/)
   assert.match(client, /api-sandbox\.asaas\.com\/v3/)
   assert.match(client, /api\.asaas\.com\/v3/)
-  assert.match(client, /creditCard\/tokenizeCreditCard/)
-  assert.match(client, /\/subscriptions/)
-  assert.match(client, /\/payments/)
+  assert.match(client, /\/checkouts/)
+  assert.match(client, /RECURRENT/)
+  assert.match(client, /DETACHED/)
   assert.match(client, /updatePendingPayments:\s*false/)
   assert.match(client, /access_token/)
+  assert.doesNotMatch(client, /ccv|cardNumber|creditCard\s*:/i)
 })
 
-test('onboarding inserts billing before the mandatory bank connection but bypass account can skip it', () => {
+test('onboarding inserts hosted billing before the mandatory bank connection but bypass account can skip it', () => {
   const page = source('app/onboarding/page.tsx')
   const component = source('components/accounts/OnboardingBillingStep.tsx')
-  const payRoute = source('app/api/balcao/billing/onboarding/pay/route.ts')
+  const startRoute = source('app/api/balcao/billing/onboarding/start/route.ts')
   assert.match(page, /OnboardingBillingStep/)
   assert.match(page, /getBusinessBillingState/)
   assert.match(component, /R\$\s*5,99/)
-  assert.match(component, /Pagar R\$ 5,99 e continuar/)
-  assert.match(payRoute, /isBillingBypassEmail/)
-  assert.match(payRoute, /tokenizeCreditCard/)
-  assert.match(payRoute, /createCreditCardSubscription/)
+  assert.match(component, /Ir para pagamento/)
+  assert.match(startRoute, /isBillingBypassEmail/)
+  assert.match(startRoute, /createRecurringCheckout/)
+  assert.match(startRoute, /checkoutUrl/)
 })
 
 test('manage and Malvo are protected by server-side billing access', () => {
@@ -68,34 +69,33 @@ test('manage and Malvo are protected by server-side billing access', () => {
   assert.match(sync, /402/)
 })
 
-test('billing page and API expose safe summary without exposing the stored card token', () => {
+test('billing page and API expose safe summary without payment secrets', () => {
   const page = source('app/billing/page.tsx')
   const route = source('app/api/balcao/billing/route.ts')
   assert.match(page, /Plano e pagamento|Pagamento pendente/)
   assert.match(route, /nextAmountCents/)
-  assert.doesNotMatch(route, /credit_card_token\s*:/i)
+  assert.doesNotMatch(route, /apiKey|credit_card_token|ASAAS_API_KEY/)
 })
 
-test('adding a bank charges immediately before Malvo and removing a bank changes only future billing', () => {
+test('adding a bank creates a R$5.99 detached checkout before Malvo and removal changes only future billing', () => {
   const add = source('app/api/balcao/billing/banks/add/route.ts')
   const connections = source('app/inventory-v1/finance/BankConnections.tsx')
   const remove = source('app/api/balcao/finance/connections/[id]/route.ts')
-  assert.match(add, /createCreditCardPayment/)
+  assert.match(add, /createDetachedCheckout/)
   assert.match(add, /BANK_PRICE_CENTS/)
-  assert.match(add, /updateSubscriptionValue/)
   assert.match(connections, /R\$5,99|R\$ 5,99/)
   assert.match(connections, /próxima mensalidade/i)
   assert.match(remove, /retireBillingSlot/)
   assert.match(remove, /updateSubscriptionValue/)
 })
 
-test('Asaas webhook is authenticated and idempotent', () => {
+test('Asaas webhook is authenticated, idempotent and activates checkout entitlements', () => {
   const webhook = source('app/api/balcao/billing/asaas/webhook/route.ts')
   assert.match(webhook, /ASAAS_WEBHOOK_TOKEN/)
   assert.match(webhook, /asaas-access-token/i)
   assert.match(webhook, /timingSafeEqual/)
   assert.match(webhook, /balcao_billing_webhook_events/)
   assert.match(webhook, /23505/)
-  assert.match(webhook, /PAYMENT_CONFIRMED/)
+  assert.match(webhook, /CHECKOUT_PAID/)
   assert.match(webhook, /PAYMENT_OVERDUE/)
 })
