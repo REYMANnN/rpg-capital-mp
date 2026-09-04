@@ -10,10 +10,12 @@ function source(path: string) {
   return readFileSync(full, 'utf8')
 }
 
-test('billing schema stores accounts, paid slots, idempotent operations and webhook events', () => {
+test('billing schema stores accounts, paid recurring slots, idempotent operations and webhook events', () => {
   const migration = source('supabase/migrations/20260904_balcao_asaas_billing.sql')
   assert.match(migration, /create table if not exists public\.balcao_billing_accounts/i)
   assert.match(migration, /create table if not exists public\.balcao_billing_slots/i)
+  assert.match(migration, /asaas_subscription_id/i)
+  assert.match(migration, /payment_status/i)
   assert.match(migration, /create table if not exists public\.balcao_billing_operations/i)
   assert.match(migration, /create table if not exists public\.balcao_billing_webhook_events/i)
   assert.match(migration, /idempotency_key[^\n]+unique/i)
@@ -31,15 +33,14 @@ test('billing policy centralizes R$5.99 price and owner test-account bypass', ()
   assert.match(access, /hasBillingAccess/)
 })
 
-test('Asaas client keeps API key server-side and creates hosted recurring and detached checkouts', () => {
+test('Asaas client keeps API key server-side and uses hosted recurring checkout plus subscription cancellation', () => {
   const client = source('lib/asaas/client.ts')
   assert.match(client, /ASAAS_API_KEY/)
   assert.match(client, /api-sandbox\.asaas\.com\/v3/)
   assert.match(client, /api\.asaas\.com\/v3/)
   assert.match(client, /\/checkouts/)
   assert.match(client, /RECURRENT/)
-  assert.match(client, /DETACHED/)
-  assert.match(client, /updatePendingPayments:\s*false/)
+  assert.match(client, /deleteSubscription/)
   assert.match(client, /access_token/)
   assert.doesNotMatch(client, /ccv|cardNumber|creditCard\s*:/i)
 })
@@ -69,7 +70,7 @@ test('manage and Malvo are protected by server-side billing access', () => {
   assert.match(sync, /402/)
 })
 
-test('billing page and API expose safe summary without payment secrets', () => {
+test('billing page and API expose safe aggregate summary without payment secrets', () => {
   const page = source('app/billing/page.tsx')
   const route = source('app/api/balcao/billing/route.ts')
   assert.match(page, /Plano e pagamento|Pagamento pendente/)
@@ -77,19 +78,19 @@ test('billing page and API expose safe summary without payment secrets', () => {
   assert.doesNotMatch(route, /apiKey|credit_card_token|ASAAS_API_KEY/)
 })
 
-test('adding a bank creates a R$5.99 detached checkout before Malvo and removal changes only future billing', () => {
+test('adding a bank creates another R$5.99 recurring checkout and removal cancels only that bank recurrence', () => {
   const add = source('app/api/balcao/billing/banks/add/route.ts')
   const connections = source('app/inventory-v1/finance/BankConnections.tsx')
   const remove = source('app/api/balcao/finance/connections/[id]/route.ts')
-  assert.match(add, /createDetachedCheckout/)
+  assert.match(add, /createRecurringCheckout/)
   assert.match(add, /BANK_PRICE_CENTS/)
   assert.match(connections, /R\$5,99|R\$ 5,99/)
   assert.match(connections, /próxima mensalidade/i)
   assert.match(remove, /retireBillingSlot/)
-  assert.match(remove, /updateSubscriptionValue/)
+  assert.match(remove, /deleteSubscription/)
 })
 
-test('Asaas webhook is authenticated, idempotent and activates checkout entitlements', () => {
+test('Asaas webhook is authenticated, idempotent and maps checkout/subscription/payment lifecycle to slots', () => {
   const webhook = source('app/api/balcao/billing/asaas/webhook/route.ts')
   assert.match(webhook, /ASAAS_WEBHOOK_TOKEN/)
   assert.match(webhook, /asaas-access-token/i)
@@ -97,5 +98,6 @@ test('Asaas webhook is authenticated, idempotent and activates checkout entitlem
   assert.match(webhook, /balcao_billing_webhook_events/)
   assert.match(webhook, /23505/)
   assert.match(webhook, /CHECKOUT_PAID/)
+  assert.match(webhook, /SUBSCRIPTION_CREATED/)
   assert.match(webhook, /PAYMENT_OVERDUE/)
 })
