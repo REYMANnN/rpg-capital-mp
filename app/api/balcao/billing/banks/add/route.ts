@@ -5,10 +5,14 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getBusinessRole, getStoreBusiness } from '@/lib/accounts/currentUser'
 import { BANK_PRICE_CENTS, isBillingBypassEmail } from '@/lib/billing/config'
 import { getBusinessBillingState, hasBillingAccess } from '@/lib/billing/access'
-import { createDetachedCheckout } from '@/lib/asaas/client'
+import { createRecurringCheckout } from '@/lib/asaas/client'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+
+function brazilDate() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -58,7 +62,7 @@ export async function POST(request: Request) {
     .select('asaas_customer_id, next_bank_count, next_amount_cents')
     .eq('business_id', businessId)
     .maybeSingle()
-  if (accountError) throw accountError
+  if (accountError) return NextResponse.json({ error: 'Não foi possível consultar a assinatura.' }, { status: 500 })
   if (!account?.asaas_customer_id) {
     return NextResponse.json({ error: 'A assinatura ainda não possui cliente de cobrança no Asaas.' }, { status: 409 })
   }
@@ -79,13 +83,16 @@ export async function POST(request: Request) {
 
   try {
     const origin = new URL(request.url).origin
-    const checkout = await createDetachedCheckout({
+    const checkout = await createRecurringCheckout({
       customer: account.asaas_customer_id,
       valueCents: BANK_PRICE_CENTS,
+      nextDueDate: brazilDate(),
       externalReference: `balcao:${businessId}:add:${operationId}`,
       successUrl: `${origin}/inventory-v1?finance=connections&billing=success`,
       cancelUrl: `${origin}/inventory-v1?finance=connections&billing=cancel`,
       expiredUrl: `${origin}/inventory-v1?finance=connections&billing=expired`,
+      itemName: 'BALCÃO - nova conta bancária',
+      itemDescription: 'R$ 5,99 por mês para uma nova conta bancária conectada',
     })
 
     const { error: updateError } = await admin.from('balcao_billing_operations').update({
