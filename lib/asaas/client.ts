@@ -17,6 +17,7 @@ function config() {
   const environment = process.env.ASAAS_ENV?.trim().toLowerCase() === 'production' ? 'production' : 'sandbox'
   return {
     apiKey,
+    environment,
     baseUrl: environment === 'production' ? 'https://api.asaas.com/v3' : 'https://api-sandbox.asaas.com/v3',
   }
 }
@@ -56,22 +57,11 @@ async function asaasRequest<T>(path: string, init: { method?: 'GET' | 'POST' | '
 }
 
 export type AsaasCustomer = { id: string; name?: string; externalReference?: string }
-export type AsaasPayment = { id: string; status?: string; subscription?: string | null; dueDate?: string; value?: number; externalReference?: string }
+export type AsaasCheckout = { id: string; link?: string | null; status?: string; externalReference?: string; customer?: string | null }
 export type AsaasSubscription = { id: string; status?: string; value?: number; nextDueDate?: string; externalReference?: string }
-export type AsaasCreditCardToken = { creditCardToken: string; creditCardBrand?: string; creditCardNumber?: string }
 
 export async function findAsaasCustomerByExternalReference(externalReference: string) {
   const response = await asaasRequest<{ data?: AsaasCustomer[] }>('/customers', { query: { externalReference, limit: 1 } })
-  return response.data?.[0] ?? null
-}
-
-export async function findAsaasPaymentByExternalReference(externalReference: string) {
-  const response = await asaasRequest<{ data?: AsaasPayment[] }>('/payments', { query: { externalReference, limit: 1 } })
-  return response.data?.[0] ?? null
-}
-
-export async function findAsaasSubscriptionByExternalReference(externalReference: string) {
-  const response = await asaasRequest<{ data?: AsaasSubscription[] }>('/subscriptions', { query: { externalReference, limit: 1 } })
   return response.data?.[0] ?? null
 }
 
@@ -94,74 +84,80 @@ export async function ensureAsaasCustomer(input: { name: string; cpfCnpj: string
   return existing ?? createAsaasCustomer(input)
 }
 
-export async function tokenizeCreditCard(input: {
-  customer: string
-  creditCard: { holderName: string; number: string; expiryMonth: string; expiryYear: string; ccv: string }
-  holder: { name: string; email: string; cpfCnpj: string; postalCode: string; addressNumber: string; addressComplement?: string | null; phone?: string | null; mobilePhone?: string | null }
-  remoteIp: string
-}) {
-  return asaasRequest<AsaasCreditCardToken>('/creditCard/tokenizeCreditCard', {
-    method: 'POST',
-    body: {
-      customer: input.customer,
-      creditCard: input.creditCard,
-      creditCardHolderInfo: input.holder,
-      remoteIp: input.remoteIp,
-    },
-  })
+function checkoutUrl(checkout: AsaasCheckout) {
+  if (checkout.link) return checkout.link
+  const { environment } = config()
+  if (environment === 'production') return `https://asaas.com/checkoutSession/show?id=${encodeURIComponent(checkout.id)}`
+  return `https://sandbox.asaas.com/checkoutSession/show/${encodeURIComponent(checkout.id)}`
 }
 
-export async function createCreditCardPayment(input: {
+export async function createRecurringCheckout(input: {
   customer: string
-  creditCardToken: string
-  valueCents: number
-  dueDate: string
-  remoteIp: string
-  externalReference: string
-  description: string
-}) {
-  const existing = await findAsaasPaymentByExternalReference(input.externalReference)
-  if (existing) return existing
-  return asaasRequest<AsaasPayment>('/payments', {
-    method: 'POST',
-    body: {
-      customer: input.customer,
-      billingType: 'CREDIT_CARD',
-      value: input.valueCents / 100,
-      dueDate: input.dueDate,
-      creditCardToken: input.creditCardToken,
-      remoteIp: input.remoteIp,
-      externalReference: input.externalReference,
-      description: input.description,
-    },
-  })
-}
-
-export async function createCreditCardSubscription(input: {
-  customer: string
-  creditCardToken: string
   valueCents: number
   nextDueDate: string
-  remoteIp: string
   externalReference: string
-  description: string
+  successUrl: string
+  cancelUrl: string
+  expiredUrl: string
 }) {
-  const existing = await findAsaasSubscriptionByExternalReference(input.externalReference)
-  if (existing) return existing
-  return asaasRequest<AsaasSubscription>('/subscriptions', {
+  const checkout = await asaasRequest<AsaasCheckout>('/checkouts', {
     method: 'POST',
     body: {
-      customer: input.customer,
-      billingType: 'CREDIT_CARD',
-      value: input.valueCents / 100,
-      nextDueDate: input.nextDueDate,
-      cycle: 'MONTHLY',
-      creditCardToken: input.creditCardToken,
-      remoteIp: input.remoteIp,
+      billingTypes: ['CREDIT_CARD'],
+      chargeTypes: ['RECURRENT'],
+      minutesToExpire: 60,
       externalReference: input.externalReference,
-      description: input.description,
+      customer: input.customer,
+      callback: {
+        successUrl: input.successUrl,
+        cancelUrl: input.cancelUrl,
+        expiredUrl: input.expiredUrl,
+      },
+      items: [{
+        name: 'BALCÃO - conta bancária',
+        description: 'Assinatura mensal do BALCÃO por conta bancária conectada',
+        quantity: 1,
+        value: input.valueCents / 100,
+      }],
+      subscription: {
+        cycle: 'MONTHLY',
+        nextDueDate: `${input.nextDueDate} 12:00:00`,
+      },
     },
   })
+  return { ...checkout, url: checkoutUrl(checkout) }
+}
+
+export async function createDetachedCheckout(input: {
+  customer: string
+  valueCents: number
+  externalReference: string
+  successUrl: string
+  cancelUrl: string
+  expiredUrl: string
+}) {
+  const checkout = await asaasRequest<AsaasCheckout>('/checkouts', {
+    method: 'POST',
+    body: {
+      billingTypes: ['CREDIT_CARD'],
+      chargeTypes: ['DETACHED'],
+      minutesToExpire: 60,
+      externalReference: input.externalReference,
+      customer: input.customer,
+      callback: {
+        successUrl: input.successUrl,
+        cancelUrl: input.cancelUrl,
+        expiredUrl: input.expiredUrl,
+      },
+      items: [{
+        name: 'BALCÃO - nova conta bancária',
+        description: 'Ativação de uma nova conta bancária no período atual',
+        quantity: 1,
+        value: input.valueCents / 100,
+      }],
+    },
+  })
+  return { ...checkout, url: checkoutUrl(checkout) }
 }
 
 export async function updateSubscriptionValue(subscriptionId: string, valueCents: number) {
@@ -171,12 +167,5 @@ export async function updateSubscriptionValue(subscriptionId: string, valueCents
       value: valueCents / 100,
       updatePendingPayments: false,
     },
-  })
-}
-
-export async function updateSubscriptionCard(input: { subscriptionId: string; creditCardToken: string; remoteIp: string }) {
-  return asaasRequest<AsaasSubscription>(`/subscriptions/${encodeURIComponent(input.subscriptionId)}/creditCard`, {
-    method: 'PUT',
-    body: { creditCardToken: input.creditCardToken, remoteIp: input.remoteIp },
   })
 }
