@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getBusinessRole, getStoreBusiness } from '@/lib/accounts/currentUser'
+import { attachReservedBillingSlot } from '@/lib/billing/access'
+import { isBillingBypassEmail } from '@/lib/billing/config'
 import { hashSecret, INVENTORY_INSTALLATION_COOKIE, STAFF_SESSION_COOKIE, TERMINAL_COOKIE, unpackCredential } from '@/lib/accounts/terminal'
+import { deleteMalvoItem } from '@/lib/malvo/client'
 import { syncMalvoItemAsManagement } from '@/lib/malvo/managementSync'
 
 export const dynamic = 'force-dynamic'
@@ -18,6 +22,7 @@ export async function POST(request: Request) {
   let businessId = ''
   let storeId = ''
   let authorization = ''
+  let userEmail: string | null = null
 
   if (requestedStoreId) {
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -33,6 +38,7 @@ export async function POST(request: Request) {
     businessId = store.businessId
     storeId = requestedStoreId
     authorization = 'google'
+    userEmail = user.email ?? null
   } else {
     const jar = await cookies()
     const terminal = unpackCredential(jar.get(TERMINAL_COOKIE)?.value)
@@ -69,6 +75,23 @@ export async function POST(request: Request) {
       expectedStoreId: storeId,
       supabase,
     })
+
+    if (!isBillingBypassEmail(userEmail)) {
+      const admin = createAdminClient()
+      const { data: connection } = await admin.from('balcao_finance_connections')
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('provider', 'malvo')
+        .eq('provider_item_id', itemId)
+        .maybeSingle()
+      const slotId = connection?.id ? await attachReservedBillingSlot(businessId, connection.id) : null
+      if (!slotId) {
+        await deleteMalvoItem(itemId).catch(() => undefined)
+        if (connection?.id) await admin.from('balcao_finance_connections').update({ status: 'disconnected', updated_at: new Date().toISOString() }).eq('id', connection.id)
+        return NextResponse.json({ error: 'A autorização bancária expirou antes de concluir. Nenhuma conexão paga foi consumida; tente novamente.' }, { status: 409 })
+      }
+    }
+
     return NextResponse.json({ ok: true, result }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (caught) {
     console.error('BALCAO Malvo completion sync failed', caught)
