@@ -56,12 +56,22 @@ async function asaasRequest<T>(path: string, init: { method?: 'GET' | 'POST' | '
 }
 
 export type AsaasCustomer = { id: string; name?: string; externalReference?: string }
-export type AsaasPayment = { id: string; status?: string; subscription?: string | null; dueDate?: string; value?: number }
-export type AsaasSubscription = { id: string; status?: string; value?: number; nextDueDate?: string }
+export type AsaasPayment = { id: string; status?: string; subscription?: string | null; dueDate?: string; value?: number; externalReference?: string }
+export type AsaasSubscription = { id: string; status?: string; value?: number; nextDueDate?: string; externalReference?: string }
 export type AsaasCreditCardToken = { creditCardToken: string; creditCardBrand?: string; creditCardNumber?: string }
 
 export async function findAsaasCustomerByExternalReference(externalReference: string) {
   const response = await asaasRequest<{ data?: AsaasCustomer[] }>('/customers', { query: { externalReference, limit: 1 } })
+  return response.data?.[0] ?? null
+}
+
+export async function findAsaasPaymentByExternalReference(externalReference: string) {
+  const response = await asaasRequest<{ data?: AsaasPayment[] }>('/payments', { query: { externalReference, limit: 1 } })
+  return response.data?.[0] ?? null
+}
+
+export async function findAsaasSubscriptionByExternalReference(externalReference: string) {
+  const response = await asaasRequest<{ data?: AsaasSubscription[] }>('/subscriptions', { query: { externalReference, limit: 1 } })
   return response.data?.[0] ?? null
 }
 
@@ -110,6 +120,8 @@ export async function createCreditCardPayment(input: {
   externalReference: string
   description: string
 }) {
+  const existing = await findAsaasPaymentByExternalReference(input.externalReference)
+  if (existing) return existing
   return asaasRequest<AsaasPayment>('/payments', {
     method: 'POST',
     body: {
@@ -134,6 +146,8 @@ export async function createCreditCardSubscription(input: {
   externalReference: string
   description: string
 }) {
+  const existing = await findAsaasSubscriptionByExternalReference(input.externalReference)
+  if (existing) return existing
   return asaasRequest<AsaasSubscription>('/subscriptions', {
     method: 'POST',
     body: {
