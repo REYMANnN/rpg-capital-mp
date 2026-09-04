@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import ManageShell from '@/components/accounts/ManageShell'
 import { getAccountState, getCurrentUser, getManagementContext } from '@/lib/accounts/currentUser'
+import { getBusinessBillingState, hasBillingAccess } from '@/lib/billing/access'
 
 export default async function ManagePage() {
   const user = await getCurrentUser()
@@ -9,5 +10,9 @@ export default async function ManagePage() {
   if (!state.onboarded) redirect('/onboarding')
   const businesses = await getManagementContext(user.id)
   if (!businesses.length) redirect('/onboarding')
+
+  const billing = await getBusinessBillingState(businesses[0].id, user.email)
+  if (!hasBillingAccess(billing)) redirect('/billing')
+
   return <ManageShell userName={user.user_metadata?.full_name ?? user.user_metadata?.name ?? user.email ?? 'Você'} businesses={businesses} />
 }
