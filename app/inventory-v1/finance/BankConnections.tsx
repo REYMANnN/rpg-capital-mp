@@ -27,6 +27,25 @@ type ConnectionsPayload = {
   error?: string
 }
 
+type BillingPayload = {
+  ok?: boolean
+  bypass?: boolean
+  allowed?: boolean
+  availableSlots?: number
+  nextBankCount?: number
+  nextAmountCents?: number
+  error?: string
+}
+
+type AddBankPayload = {
+  ok?: boolean
+  bypass?: boolean
+  chargeRequired?: boolean
+  readyToConnect?: boolean
+  checkoutUrl?: string
+  error?: string
+}
+
 type MalvoConnectHandle = { close?: () => void }
 type MalvoConnectApi = {
   init: (options: {
@@ -131,6 +150,9 @@ export default function BankConnections({
     setLoading(true)
     void load()
     void loadMalvoWidget().catch(() => undefined)
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('billing') === 'success') {
+      setNotice('Pagamento enviado. Assim que o Asaas confirmar, a nova conexão ficará liberada; se necessário, aguarde alguns segundos e clique em “Adicionar conta” novamente.')
+    }
   }, [storeId])
 
   const activeCount = useMemo(() => connections.filter((connection) => connection.status !== 'disconnected').length, [connections])
@@ -149,45 +171,79 @@ export default function BankConnections({
     onFinanceChanged?.()
   }
 
+  async function openMalvo() {
+    const [widget, response] = await Promise.all([
+      loadMalvoWidget(),
+      fetch('/api/balcao/finance/malvo/connect-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId: storeId || null, returnTo }),
+      }),
+    ])
+    const payload = await response.json().catch(() => ({})) as { accessToken?: string; error?: string }
+    if (!response.ok || !payload.accessToken) throw new Error(payload.error || 'Não foi possível iniciar a conexão bancária.')
+
+    widget.init({
+      connectToken: payload.accessToken,
+      countries: ['BR'],
+      connectorTypes: ['BUSINESS_BANK', 'PERSONAL_BANK'],
+      language: 'pt',
+      includeSandbox: false,
+      onSuccess: (data) => {
+        const itemId = data.item?.id
+        if (!itemId) {
+          setError('A autorização terminou, mas a Malvo não informou o identificador da conexão.')
+          return
+        }
+        void finalizeConnection(itemId).catch((caught) => {
+          setError(caught instanceof Error ? caught.message : 'Não foi possível salvar a conexão bancária.')
+        })
+      },
+      onError: (widgetError) => setError(widgetError.message || 'A conexão bancária não foi concluída.'),
+      onClose: () => {
+        setConnecting(false)
+        window.setTimeout(() => { void load(); onFinanceChanged?.() }, 1000)
+      },
+    })
+  }
+
   async function connectBank() {
     if (!canManage || connecting) return
     setConnecting(true)
     setError('')
     setNotice('')
     try {
-      const [widget, response] = await Promise.all([
-        loadMalvoWidget(),
-        fetch('/api/balcao/finance/malvo/connect-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storeId: storeId || null, returnTo }),
-        }),
-      ])
-      const payload = await response.json().catch(() => ({})) as { accessToken?: string; error?: string }
-      if (!response.ok || !payload.accessToken) throw new Error(payload.error || 'Não foi possível iniciar a conexão bancária.')
+      if (returnTo !== 'onboarding') {
+        const billingResponse = await fetch(`/api/balcao/billing${query()}`, { cache: 'no-store' })
+        const billing = await billingResponse.json().catch(() => ({})) as BillingPayload
+        if (!billingResponse.ok) throw new Error(billing.error || 'Não foi possível consultar sua assinatura.')
 
-      widget.init({
-        connectToken: payload.accessToken,
-        countries: ['BR'],
-        connectorTypes: ['BUSINESS_BANK', 'PERSONAL_BANK'],
-        language: 'pt',
-        includeSandbox: false,
-        onSuccess: (data) => {
-          const itemId = data.item?.id
-          if (!itemId) {
-            setError('A autorização terminou, mas a Malvo não informou o identificador da conexão.')
+        const alreadyPaid = Boolean(billing.bypass) || (billing.availableSlots ?? 0) > 0
+        if (!alreadyPaid) {
+          const nextCount = Math.max(1, (billing.nextBankCount ?? activeCount) + 1)
+          const nextAmount = (nextCount * 5.99).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+          const confirmed = window.confirm(`Adicionar uma nova conta custa R$ 5,99 agora. Sua próxima mensalidade passará para ${nextAmount}. Continuar para o pagamento?`)
+          if (!confirmed) {
+            setConnecting(false)
             return
           }
-          void finalizeConnection(itemId).catch((caught) => {
-            setError(caught instanceof Error ? caught.message : 'Não foi possível salvar a conexão bancária.')
+
+          const addResponse = await fetch('/api/balcao/billing/banks/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ storeId: storeId || null }),
           })
-        },
-        onError: (widgetError) => setError(widgetError.message || 'A conexão bancária não foi concluída.'),
-        onClose: () => {
-          setConnecting(false)
-          window.setTimeout(() => { void load(); onFinanceChanged?.() }, 1000)
-        },
-      })
+          const add = await addResponse.json().catch(() => ({})) as AddBankPayload
+          if (!addResponse.ok) throw new Error(add.error || 'Não foi possível iniciar o pagamento da nova conta.')
+          if (add.checkoutUrl) {
+            window.location.assign(add.checkoutUrl)
+            return
+          }
+          if (!add.readyToConnect && !add.bypass) throw new Error('O pagamento ainda não liberou a nova conexão.')
+        }
+      }
+
+      await openMalvo()
     } catch (caught) {
       setConnecting(false)
       setError(caught instanceof Error ? caught.message : 'Não foi possível iniciar a conexão bancária.')
@@ -219,16 +275,18 @@ export default function BankConnections({
 
   async function disconnect(connection: Connection) {
     if (!canManage || disconnectingId) return
-    const ok = window.confirm(`Remover a conexão com ${connection.institutionName || 'esta conta'}? O consentimento Open Finance será revogado.`)
+    const ok = window.confirm(`Desconectar ${connection.institutionName || 'esta conta'}? A conexão será removida agora. Não há estorno do período atual, pois ele já foi contratado. Sua próxima mensalidade ficará R$ 5,99 menor.`)
     if (!ok) return
     setDisconnectingId(connection.id)
     setError('')
     setNotice('')
     try {
       const response = await fetch(`/api/balcao/finance/connections/${encodeURIComponent(connection.id)}`, { method: 'DELETE' })
-      const payload = await response.json().catch(() => ({})) as { error?: string }
+      const payload = await response.json().catch(() => ({})) as { error?: string; billingSyncPending?: boolean }
       if (!response.ok) throw new Error(payload.error || 'Não foi possível remover a conexão.')
-      setNotice('Conexão removida e consentimento Open Finance revogado.')
+      setNotice(payload.billingSyncPending
+        ? 'Conexão removida. A próxima mensalidade será R$ 5,99 menor; a atualização no Asaas será repetida pelo sistema.'
+        : 'Conexão removida. Não houve estorno do período atual e sua próxima mensalidade será R$ 5,99 menor.')
       await load()
       onFinanceChanged?.()
     } catch (caught) {
@@ -245,9 +303,9 @@ export default function BankConnections({
           <div className="max-w-2xl">
             <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-300">Open Finance</p>
             <h2 className="mt-3 text-2xl font-black tracking-tight sm:text-3xl">Contas bancárias conectadas</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-300">Adicione quantas contas quiser. O Balcão recebe saldos e movimentações em modo somente leitura. A autorização acontece no ambiente do banco e da Malvo; o Balcão não recebe sua senha bancária.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Cada conta custa R$ 5,99 por mês. O Balcão recebe saldos e movimentações em modo somente leitura. A autorização acontece no ambiente do banco e da Malvo; o Balcão não recebe sua senha bancária.</p>
           </div>
-          {canManage ? <button aria-label="Conectar conta bancária" onClick={() => void connectBank()} disabled={connecting || !configured} className="min-h-11 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">{connecting ? 'Abrindo conexão…' : 'Adicionar conta'}</button> : null}
+          {canManage ? <button aria-label="Conectar conta bancária" onClick={() => void connectBank()} disabled={connecting || !configured} className="min-h-11 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">{connecting ? 'Preparando…' : returnTo === 'onboarding' ? 'Conectar conta' : 'Adicionar conta · R$ 5,99'}</button> : null}
         </div>
         <div className="mt-6 flex flex-wrap gap-3 border-t border-white/10 pt-5 text-xs text-slate-300">
           <span className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" />Somente leitura</span>
@@ -283,7 +341,7 @@ export default function BankConnections({
               </div>
             </article>
           })}
-        </div> : <div className="p-8 text-center sm:p-12"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100"><Link2 className="h-5 w-5 text-slate-500" /></div><h4 className="mt-4 text-base font-black text-slate-900">Nenhuma conta conectada</h4><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">Adicione uma conta bancária para trazer saldo, entradas, saídas e movimentações reais para o Financeiro.</p>{canManage ? <button aria-label="Conectar conta bancária" onClick={() => void connectBank()} disabled={connecting || !configured} className="mt-5 min-h-11 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-black text-white disabled:opacity-40">{connecting ? 'Abrindo conexão…' : 'Adicionar conta'}</button> : null}</div>}
+        </div> : <div className="p-8 text-center sm:p-12"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100"><Link2 className="h-5 w-5 text-slate-500" /></div><h4 className="mt-4 text-base font-black text-slate-900">Nenhuma conta conectada</h4><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">Adicione uma conta bancária para trazer saldo, entradas, saídas e movimentações reais para o Financeiro.</p>{canManage ? <button aria-label="Conectar conta bancária" onClick={() => void connectBank()} disabled={connecting || !configured} className="mt-5 min-h-11 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-black text-white disabled:opacity-40">{connecting ? 'Preparando…' : returnTo === 'onboarding' ? 'Conectar conta' : 'Adicionar conta · R$ 5,99'}</button> : null}</div>}
       </section>
     </div>
   )
