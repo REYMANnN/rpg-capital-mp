@@ -17,7 +17,6 @@ function config() {
   const environment = process.env.ASAAS_ENV?.trim().toLowerCase() === 'production' ? 'production' : 'sandbox'
   return {
     apiKey,
-    environment,
     baseUrl: environment === 'production' ? 'https://api.asaas.com/v3' : 'https://api-sandbox.asaas.com/v3',
   }
 }
@@ -57,8 +56,8 @@ async function asaasRequest<T>(path: string, init: { method?: 'GET' | 'POST' | '
 }
 
 export type AsaasCustomer = { id: string; name?: string; externalReference?: string }
-export type AsaasCheckout = { id: string; link?: string | null; status?: string; externalReference?: string; customer?: string | null }
-export type AsaasSubscription = { id: string; status?: string; value?: number; nextDueDate?: string; externalReference?: string }
+export type AsaasCheckout = { id: string; link?: string | null; status?: string; customer?: string | null }
+export type AsaasSubscription = { id: string; customer?: string; status?: string; value?: number; nextDueDate?: string; externalReference?: string }
 
 export async function findAsaasCustomerByExternalReference(externalReference: string) {
   const response = await asaasRequest<{ data?: AsaasCustomer[] }>('/customers', { query: { externalReference, limit: 1 } })
@@ -86,9 +85,7 @@ export async function ensureAsaasCustomer(input: { name: string; cpfCnpj: string
 
 function checkoutUrl(checkout: AsaasCheckout) {
   if (checkout.link) return checkout.link
-  const { environment } = config()
-  if (environment === 'production') return `https://asaas.com/checkoutSession/show?id=${encodeURIComponent(checkout.id)}`
-  return `https://sandbox.asaas.com/checkoutSession/show/${encodeURIComponent(checkout.id)}`
+  return `https://asaas.com/checkoutSession/show?id=${encodeURIComponent(checkout.id)}`
 }
 
 export async function createRecurringCheckout(input: {
@@ -99,6 +96,8 @@ export async function createRecurringCheckout(input: {
   successUrl: string
   cancelUrl: string
   expiredUrl: string
+  itemName?: string
+  itemDescription?: string
 }) {
   const checkout = await asaasRequest<AsaasCheckout>('/checkouts', {
     method: 'POST',
@@ -114,8 +113,8 @@ export async function createRecurringCheckout(input: {
         expiredUrl: input.expiredUrl,
       },
       items: [{
-        name: 'BALCÃO - conta bancária',
-        description: 'Assinatura mensal do BALCÃO por conta bancária conectada',
+        name: input.itemName || 'BALCÃO - conta bancária',
+        description: input.itemDescription || 'Assinatura mensal do BALCÃO por conta bancária conectada',
         quantity: 1,
         value: input.valueCents / 100,
       }],
@@ -128,44 +127,6 @@ export async function createRecurringCheckout(input: {
   return { ...checkout, url: checkoutUrl(checkout) }
 }
 
-export async function createDetachedCheckout(input: {
-  customer: string
-  valueCents: number
-  externalReference: string
-  successUrl: string
-  cancelUrl: string
-  expiredUrl: string
-}) {
-  const checkout = await asaasRequest<AsaasCheckout>('/checkouts', {
-    method: 'POST',
-    body: {
-      billingTypes: ['CREDIT_CARD'],
-      chargeTypes: ['DETACHED'],
-      minutesToExpire: 60,
-      externalReference: input.externalReference,
-      customer: input.customer,
-      callback: {
-        successUrl: input.successUrl,
-        cancelUrl: input.cancelUrl,
-        expiredUrl: input.expiredUrl,
-      },
-      items: [{
-        name: 'BALCÃO - nova conta bancária',
-        description: 'Ativação de uma nova conta bancária no período atual',
-        quantity: 1,
-        value: input.valueCents / 100,
-      }],
-    },
-  })
-  return { ...checkout, url: checkoutUrl(checkout) }
-}
-
-export async function updateSubscriptionValue(subscriptionId: string, valueCents: number) {
-  return asaasRequest<AsaasSubscription>(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
-    method: 'PUT',
-    body: {
-      value: valueCents / 100,
-      updatePendingPayments: false,
-    },
-  })
+export async function deleteSubscription(subscriptionId: string) {
+  return asaasRequest<Record<string, unknown>>(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: 'DELETE' })
 }
