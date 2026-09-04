@@ -39,7 +39,7 @@ export default function OnboardingBankStep({ storeId, userName }: { storeId: str
     <header className="mb-7 px-1">
       <p className="text-sm font-bold tracking-[0.18em] text-blue-700">BALCÃO</p>
       <div className="mt-5 flex items-center justify-between gap-4 text-sm font-medium text-slate-600">
-        <span>Etapa 5 de 5</span><span>100%</span>
+        <span>Etapa 6 de 6</span><span>100%</span>
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full w-full rounded-full bg-blue-700" /></div>
     </header>
@@ -47,7 +47,7 @@ export default function OnboardingBankStep({ storeId, userName }: { storeId: str
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
       <p className="text-sm font-semibold text-blue-700">Conta bancária</p>
       <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{userName ? `${userName.split(' ')[0]}, ` : ''}conecte a conta do seu negócio.</h1>
-      <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">É obrigatório conectar pelo menos uma conta bancária. Depois da primeira, você pode adicionar quantas contas quiser. A autorização acontece diretamente no seu banco pelo Open Finance; o BALCÃO não recebe sua senha.</p>
+      <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">Sua primeira conexão já está liberada. Autorize pelo Open Finance para concluir o cadastro. O BALCÃO recebe dados em modo somente leitura e nunca recebe sua senha bancária.</p>
 
       <div className="mt-7">
         <BankConnections
