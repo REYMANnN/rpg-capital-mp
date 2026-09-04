@@ -1,25 +1,17 @@
 -- BALCÃO billing / Asaas.
--- One billing account per business, paid bank entitlements (slots), idempotent operations and webhook journal.
+-- Each paid bank slot has its own R$5.99 recurring Asaas subscription.
+-- This avoids depending on credit-card tokenization to resize one aggregate subscription.
 
 create table if not exists public.balcao_billing_accounts (
   business_id uuid primary key references public.balcao_businesses(id) on delete cascade,
   provider text not null default 'asaas' check (provider = 'asaas'),
   asaas_customer_id text unique,
-  asaas_subscription_id text unique,
-  credit_card_token text,
-  card_brand text,
-  card_last4 text,
-  card_expiry_month text,
-  card_expiry_year text,
   status text not null default 'pending_setup' check (status in ('pending_setup','pending_payment','active','past_due','blocked','canceled')),
   price_per_bank_cents integer not null default 599 check (price_per_bank_cents > 0),
   current_bank_count integer not null default 0 check (current_bank_count >= 0),
   next_bank_count integer not null default 0 check (next_bank_count >= 0),
   current_amount_cents integer not null default 0 check (current_amount_cents >= 0),
   next_amount_cents integer not null default 0 check (next_amount_cents >= 0),
-  current_period_start date,
-  current_period_end date,
-  paid_until date,
   provider_sync_error text,
   past_due_at timestamptz,
   blocked_at timestamptz,
@@ -50,12 +42,13 @@ create table if not exists public.balcao_billing_operations (
 create table if not exists public.balcao_billing_slots (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.balcao_businesses(id) on delete cascade,
-  operation_id uuid references public.balcao_billing_operations(id) on delete set null,
+  operation_id uuid unique references public.balcao_billing_operations(id) on delete set null,
   finance_connection_id uuid unique references public.balcao_finance_connections(id) on delete set null,
+  asaas_subscription_id text unique,
   status text not null default 'available' check (status in ('available','reserved','connected','retired')),
+  payment_status text not null default 'active' check (payment_status in ('active','past_due','blocked','canceled')),
   paid_amount_cents integer not null default 599 check (paid_amount_cents >= 0),
-  billing_period_start date,
-  billing_period_end date,
+  next_due_date date,
   reserved_at timestamptz,
   reservation_expires_at timestamptz,
   connected_at timestamptz,
@@ -78,7 +71,7 @@ create table if not exists public.balcao_billing_webhook_events (
 );
 
 create index if not exists balcao_billing_slots_business_status_idx
-  on public.balcao_billing_slots(business_id, status, created_at);
+  on public.balcao_billing_slots(business_id, status, payment_status, created_at);
 create index if not exists balcao_billing_operations_business_idx
   on public.balcao_billing_operations(business_id, created_at desc);
 create index if not exists balcao_billing_webhook_payment_idx
@@ -99,7 +92,7 @@ grant all on table public.balcao_billing_operations to service_role;
 grant all on table public.balcao_billing_slots to service_role;
 grant all on table public.balcao_billing_webhook_events to service_role;
 
--- Atomically reserve one paid entitlement. Expired reservations are released first.
+-- Atomically reserve one PAID entitlement. Expired reservations are released first.
 create or replace function public.balcao_reserve_billing_slot(p_business_id uuid)
 returns uuid
 language plpgsql
@@ -113,12 +106,14 @@ begin
      set status = 'available', reserved_at = null, reservation_expires_at = null, updated_at = now()
    where business_id = p_business_id
      and status = 'reserved'
+     and payment_status = 'active'
      and reservation_expires_at < now();
 
   select id into v_slot_id
     from public.balcao_billing_slots
    where business_id = p_business_id
      and status = 'available'
+     and payment_status = 'active'
    order by created_at asc
    for update skip locked
    limit 1;
@@ -146,6 +141,7 @@ begin
     from public.balcao_billing_slots
    where business_id = p_business_id
      and status = 'reserved'
+     and payment_status = 'active'
      and reservation_expires_at >= now()
    order by reserved_at asc
    for update skip locked
@@ -170,7 +166,7 @@ as $$
 begin
   update public.balcao_billing_slots
      set status = 'available', reserved_at = null, reservation_expires_at = null, updated_at = now()
-   where id = p_slot_id and business_id = p_business_id and status = 'reserved';
+   where id = p_slot_id and business_id = p_business_id and status = 'reserved' and payment_status = 'active';
   return found;
 end;
 $$;
@@ -185,7 +181,7 @@ declare
   v_slot_id uuid;
 begin
   update public.balcao_billing_slots
-     set status = 'retired', retired_at = now(), updated_at = now()
+     set status = 'retired', payment_status = 'canceled', retired_at = now(), updated_at = now()
    where finance_connection_id = p_finance_connection_id and status in ('connected','reserved')
    returning id into v_slot_id;
   return v_slot_id;
