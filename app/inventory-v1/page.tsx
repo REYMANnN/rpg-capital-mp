@@ -5,6 +5,7 @@ import FinanceOnlyShell from './FinanceOnlyShell'
 import InventoryRoleGate from '@/components/accounts/InventoryRoleGate'
 import { permissionsForRole } from '@/lib/accounts/access'
 import { authorizeInventoryContext } from '@/lib/accounts/requestContext'
+import { getBusinessBillingState, hasBillingAccess } from '@/lib/billing/access'
 import { INVENTORY_INSTALLATION_COOKIE, STAFF_SESSION_COOKIE, TERMINAL_COOKIE } from '@/lib/accounts/terminal'
 
 export const metadata = {
@@ -27,6 +28,13 @@ export default async function Page() {
   if (!context.authorized) {
     if (context.terminal) redirect('/work')
     redirect('/login')
+  }
+
+  if (!context.store?.business_id) redirect('/login')
+  const billing = await getBusinessBillingState(context.store.business_id, context.user?.email)
+  if (!hasBillingAccess(billing)) {
+    if (context.user) redirect('/billing')
+    redirect('/work?billing=blocked')
   }
 
   const isStaff = context.mode === 'staff'
