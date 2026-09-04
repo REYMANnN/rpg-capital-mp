@@ -66,7 +66,6 @@ async function recomputeBusinessStatus(businessId: string) {
     status,
     next_bank_count: count,
     next_amount_cents: amount,
-    provider_sync_error: null,
     past_due_at: pastDue ? new Date().toISOString() : null,
     blocked_at: blocked ? new Date().toISOString() : null,
     updated_at: new Date().toISOString(),
@@ -89,10 +88,10 @@ async function disconnectSlotMalvo(slot: { id: string; business_id: string; fina
       const remoteStatus = (caught as Error & { status?: number })?.status
       if (remoteStatus !== 404) throw caught
     }
-    await admin.from('balcao_finance_connections').update({ status: 'disconnected', updated_at: new Date().toISOString() }).eq('id', connection.id)
-    await admin.from('balcao_finance_accounts').update({ status: 'disconnected', updated_at: new Date().toISOString() })
-      .eq('business_id', slot.business_id)
-      .eq('provider', 'malvo')
+    await admin.from('balcao_finance_connections').update({
+      status: 'disconnected',
+      updated_at: new Date().toISOString(),
+    }).eq('id', connection.id)
   }
 
   await admin.from('balcao_billing_slots').update({
