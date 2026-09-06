@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { billingAllowsBusinessAccess } from '@/lib/billing/server'
 import { getCurrentUser } from './currentUser'
 import { decideOperationalAccess } from './contextPolicy'
 import { permissionsForRole, type Permission, type StaffRole } from './access'
@@ -59,10 +60,15 @@ export async function authorizeInventoryContext(input: { installationId?: string
   const admin = createAdminClient()
   const terminal = await validateTerminalCredential(input.terminalCookie)
   const installationId = input.installationId || terminal?.installationId || null
-  if (!installationId) return { authorized: false as const, mode: null, store: null, terminal, staff: null, user: null }
+  if (!installationId) return { authorized: false as const, billingBlocked: false, mode: null, store: null, terminal, staff: null, user: null }
 
   const { data: store } = await admin.from('inventory_v1_stores').select('id, business_id, installation_id, display_name').eq('installation_id', installationId).eq('active', true).maybeSingle()
-  if (!store?.business_id) return { authorized: false as const, mode: null, store: null, terminal, staff: null, user: null }
+  if (!store?.business_id) return { authorized: false as const, billingBlocked: false, mode: null, store: null, terminal, staff: null, user: null }
+
+  const billingAllowed = await billingAllowsBusinessAccess(store.business_id, admin)
+  if (!billingAllowed) {
+    return { authorized: false as const, billingBlocked: true, mode: null, store, terminal: terminal && terminal.storeId === store.id ? terminal : null, staff: null, user: null }
+  }
 
   const user = await getCurrentUser()
   let googleMember = false
@@ -74,5 +80,5 @@ export async function authorizeInventoryContext(input: { installationId?: string
   const terminalMatches = Boolean(terminal && terminal.storeId === store.id)
   const staff = terminalMatches && terminal ? await validateStaffSession(terminal, input.staffCookie) : null
   const decision = decideOperationalAccess({ hasInstallationCookie: Boolean(input.installationId), googleMember, terminalValid: terminalMatches, staffSessionValid: Boolean(staff) })
-  return { ...decision, store, terminal: terminalMatches ? terminal : null, staff, user }
+  return { ...decision, billingBlocked: false, store, terminal: terminalMatches ? terminal : null, staff, user }
 }

@@ -25,6 +25,7 @@ export default async function Page() {
   })
 
   if (!context.authorized) {
+    if (context.billingBlocked) redirect('/billing-blocked')
     if (context.terminal) redirect('/work')
     redirect('/login')
   }
