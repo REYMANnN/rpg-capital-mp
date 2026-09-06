@@ -5,5 +5,11 @@
   "preview_urls": true,
   "assets": {
     "directory": "./cloudflare-landing"
-  }
+  },
+  "routes": [
+    {
+      "pattern": "landing.rpgcapital.com.br",
+      "custom_domain": true
+    }
+  ]
 }
