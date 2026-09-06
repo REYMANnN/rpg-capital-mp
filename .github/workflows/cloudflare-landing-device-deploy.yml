@@ -26,7 +26,38 @@ jobs:
           node-version: '24'
 
       - name: Authorize Cloudflare with device code
-        run: env -u CI npx -y wrangler@latest login --device --browser=false --no-use-keyring
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > /tmp/cf-login.log
+          env -u CI stdbuf -oL -eL npx -y wrangler@latest login --device --browser=false --no-use-keyring 2>&1 | tee /tmp/cf-login.log &
+          login_pid=$!
+
+          auth_url=""
+          code=""
+          for _ in $(seq 1 90); do
+            auth_url=$(grep -Eo 'https://dash\.cloudflare\.com/oauth2/device(\?user_code=[A-Za-z0-9_-]+)?' /tmp/cf-login.log | tail -1 || true)
+            if [[ "$auth_url" == *"user_code="* ]]; then
+              code="${auth_url##*user_code=}"
+            fi
+            if [[ -z "$code" ]]; then
+              code=$(awk 'tolower($0) ~ /enter the code/ {getline; gsub(/[[:space:]]/, ""); print; exit}' /tmp/cf-login.log || true)
+            fi
+            if [[ -n "$auth_url" && -n "$code" ]]; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [[ -z "$auth_url" || -z "$code" ]]; then
+            echo 'Could not extract Cloudflare device authorization data.'
+            cat /tmp/cf-login.log
+            kill "$login_pid" || true
+            exit 1
+          fi
+
+          echo "::notice title=Cloudflare Authorization::Open ${auth_url} and authorize code ${code}"
+          wait "$login_pid"
 
       - name: Deploy static landing to Cloudflare Pages
         run: env -u CI npx -y wrangler@latest pages deploy cloudflare-landing --project-name=rpg-para-balcoes --branch=main --commit-hash=${{ github.sha }}
