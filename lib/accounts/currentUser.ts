@@ -19,6 +19,13 @@ export type ManagementBusiness = {
   stores: ManagementStore[]
 }
 
+export type AccountState = {
+  onboarded: boolean
+  hasBusiness: boolean
+  businessId: string | null
+  billingConfigured: boolean
+}
+
 export async function getCurrentUser(): Promise<User | null> {
   const supabase = await createServerClient()
   const { data, error } = await supabase.auth.getUser()
@@ -26,7 +33,7 @@ export async function getCurrentUser(): Promise<User | null> {
   return data.user ?? null
 }
 
-export async function getAccountState(userId: string): Promise<{ onboarded: boolean; hasBusiness: boolean }> {
+export async function getAccountState(userId: string): Promise<AccountState> {
   const supabase = await createServerClient()
   const [{ data: profile, error: profileError }, { data: member, error: memberError }] = await Promise.all([
     supabase.from('balcao_profiles').select('onboarding_completed').eq('user_id', userId).maybeSingle(),
@@ -34,7 +41,24 @@ export async function getAccountState(userId: string): Promise<{ onboarded: bool
   ])
   if (profileError) throw profileError
   if (memberError) throw memberError
-  return { onboarded: profile?.onboarding_completed === true, hasBusiness: Boolean(member?.business_id) }
+
+  const businessId = member?.business_id ?? null
+  let billingConfigured = false
+  if (businessId) {
+    const { data: billing, error: billingError } = await supabase.from('balcao_billing_accounts')
+      .select('status')
+      .eq('business_id', businessId)
+      .maybeSingle()
+    if (billingError && billingError.code !== '42P01') throw billingError
+    billingConfigured = Boolean(billing && ['configured', 'active', 'past_due', 'cancelled'].includes(billing.status))
+  }
+
+  return {
+    onboarded: profile?.onboarding_completed === true,
+    hasBusiness: Boolean(businessId),
+    businessId,
+    billingConfigured,
+  }
 }
 
 export async function getBusinessRole(userId: string, businessId: string): Promise<BusinessRole | null> {
