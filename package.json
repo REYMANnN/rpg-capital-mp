@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "node -e \"console.log('RPG para Balcoes: static landing, no build required')\""
+    "build": "wrangler deploy"
   },
   "devDependencies": {
     "wrangler": "^4.128.0"
