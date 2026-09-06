@@ -69,6 +69,12 @@ export async function POST(request: Request) {
       expectedStoreId: storeId,
       supabase,
     })
+
+    const { error: billingReconnectError } = await supabase.rpc('balcao_mark_billing_reconnected', { p_store_id: storeId })
+    if (billingReconnectError && !billingReconnectError.message.includes('BALCAO_BILLING_RECONNECT_REQUIRES_ACTIVE_BANK')) {
+      throw billingReconnectError
+    }
+
     return NextResponse.json({ ok: true, result }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (caught) {
     console.error('BALCAO Malvo completion sync failed', caught)
