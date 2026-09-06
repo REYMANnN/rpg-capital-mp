@@ -39,8 +39,6 @@ export async function getBusinessBillingState(businessId: string, client?: Admin
     .maybeSingle()
 
   if (error) throw error
-
-  // Existing accounts created before Asaas billing remain accessible until they are migrated explicitly.
   if (!data) {
     return {
       present: false,
@@ -71,14 +69,13 @@ export async function billingAllowsBusinessAccess(businessId: string, client?: A
   return (await getBusinessBillingState(businessId, client)).allowed
 }
 
-export async function disconnectMalvoForBillingFailure(businessId: string) {
+async function disconnectMalvoItems(businessId: string, reason: 'billing_past_due' | 'account_closed') {
   const admin = createAdminClient()
   const { data: connections, error } = await admin.from('balcao_finance_connections')
     .select('id,store_id,provider_item_id,status')
     .eq('business_id', businessId)
     .eq('provider', 'malvo')
     .neq('status', 'disconnected')
-
   if (error) throw error
 
   for (const connection of connections ?? []) {
@@ -86,7 +83,6 @@ export async function disconnectMalvoForBillingFailure(businessId: string) {
       await deleteMalvoItem(connection.provider_item_id)
     } catch (caught) {
       const status = (caught as Error & { status?: number })?.status
-      // Already absent at Malvo is equivalent to disconnected for cost control.
       if (status !== 404) throw caught
     }
 
@@ -94,9 +90,11 @@ export async function disconnectMalvoForBillingFailure(businessId: string) {
     const { error: connectionError } = await admin.from('balcao_finance_connections')
       .update({
         status: 'disconnected',
-        execution_status: 'billing_blocked',
-        last_error_code: 'billing_past_due',
-        last_error_message: 'Conexão removida automaticamente por pagamento pendente do BALCÃO.',
+        execution_status: reason === 'billing_past_due' ? 'billing_blocked' : 'account_closed',
+        last_error_code: reason,
+        last_error_message: reason === 'billing_past_due'
+          ? 'Conexão removida automaticamente por pagamento pendente do BALCÃO.'
+          : 'Conexão removida porque a conta BALCÃO foi encerrada.',
         updated_at: now,
       })
       .eq('id', connection.id)
@@ -109,11 +107,72 @@ export async function disconnectMalvoForBillingFailure(businessId: string) {
       .eq('provider', 'malvo')
     if (accountError) throw accountError
   }
+}
 
+export async function disconnectMalvoForBillingFailure(businessId: string) {
+  await disconnectMalvoItems(businessId, 'billing_past_due')
+  const admin = createAdminClient()
   const { error: billingError } = await admin.from('balcao_billing_accounts')
     .update({ status: 'past_due', reconnect_required: true, updated_at: new Date().toISOString() })
     .eq('business_id', businessId)
   if (billingError) throw billingError
+}
+
+export async function disconnectMalvoForAccountClosure(businessId: string) {
+  await disconnectMalvoItems(businessId, 'account_closed')
+}
+
+export async function closeBusinessAccount(input: { businessId: string; ownerUserId: string }) {
+  const admin = createAdminClient()
+  const now = new Date().toISOString()
+
+  const { data: stores, error: storesReadError } = await admin.from('inventory_v1_stores')
+    .select('id')
+    .eq('business_id', input.businessId)
+  if (storesReadError) throw storesReadError
+  const storeIds = (stores ?? []).map((store) => store.id)
+
+  let terminalIds: string[] = []
+  if (storeIds.length) {
+    const { data: terminals, error: terminalsReadError } = await admin.from('balcao_terminals')
+      .select('id')
+      .in('store_id', storeIds)
+    if (terminalsReadError) throw terminalsReadError
+    terminalIds = (terminals ?? []).map((terminal) => terminal.id)
+  }
+
+  if (terminalIds.length) {
+    const { error: sessionsError } = await admin.from('balcao_staff_sessions')
+      .update({ revoked_at: now })
+      .in('terminal_id', terminalIds)
+      .is('revoked_at', null)
+    if (sessionsError) throw sessionsError
+  }
+
+  if (storeIds.length) {
+    const { error: terminalsError } = await admin.from('balcao_terminals').update({ active: false, updated_at: now }).in('store_id', storeIds)
+    if (terminalsError) throw terminalsError
+    const { error: storesError } = await admin.from('inventory_v1_stores').update({ active: false, updated_at: now }).in('id', storeIds)
+    if (storesError) throw storesError
+  }
+
+  const { error: staffError } = await admin.from('balcao_staff_profiles').update({ active: false, updated_at: now }).eq('business_id', input.businessId)
+  if (staffError) throw staffError
+  const { error: membersError } = await admin.from('balcao_business_members').update({ active: false, updated_at: now }).eq('business_id', input.businessId)
+  if (membersError) throw membersError
+  const { error: businessError } = await admin.from('balcao_businesses').update({ active: false, updated_at: now }).eq('id', input.businessId)
+  if (businessError) throw businessError
+  const { error: billingError } = await admin.from('balcao_billing_accounts').update({
+    status: 'cancelled',
+    access_until: null,
+    reconnect_required: false,
+    overdue_payment_id: null,
+    overdue_invoice_url: null,
+    updated_at: now,
+  }).eq('business_id', input.businessId)
+  if (billingError) throw billingError
+  const { error: profileError } = await admin.from('balcao_profiles').update({ onboarding_completed: false, updated_at: now }).eq('user_id', input.ownerUserId)
+  if (profileError) throw profileError
 }
 
 export async function markBillingPastDue(input: {
@@ -146,8 +205,6 @@ export async function markBillingPaid(input: {
     .maybeSingle()
   if (currentError) throw currentError
   if (!current) return
-
-  // If a different charge is still the known overdue charge, do not unlock on an unrelated payment.
   if (current.status === 'past_due' && current.overdue_payment_id && current.overdue_payment_id !== input.paymentId) return
 
   const { error } = await admin.from('balcao_billing_accounts')
@@ -156,8 +213,6 @@ export async function markBillingPaid(input: {
       overdue_payment_id: null,
       overdue_invoice_url: null,
       next_due_date: input.nextDueDate ?? undefined,
-      // Normal payments do not manufacture a reconnect warning. If billing failure disconnected
-      // Open Finance earlier, that marker remains true until the user authorizes Malvo again.
       reconnect_required: current.reconnect_required === true,
       updated_at: new Date().toISOString(),
     })
