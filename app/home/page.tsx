@@ -20,7 +20,7 @@ export default function PublicHomePage() {
               Minha Conta
             </Link>
             <Link
-              href="/login?intent=signup"
+              href="/auth/signup/reset"
               className="flex min-h-14 items-center justify-center rounded-2xl border border-slate-300 bg-white px-6 py-4 text-base font-semibold text-slate-950 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
             >
               Criar Conta
