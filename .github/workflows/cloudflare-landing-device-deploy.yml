@@ -1,0 +1,32 @@
+name: Deploy RPG para Balcoes landing to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - cloudflare-landing-deploy
+    paths:
+      - .github/workflows/cloudflare-landing-device-deploy.yml
+      - cloudflare-landing/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout landing
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Authorize Cloudflare with device code
+        run: env -u CI npx -y wrangler@latest login --device --browser=false --no-use-keyring
+
+      - name: Deploy static landing to Cloudflare Pages
+        run: env -u CI npx -y wrangler@latest pages deploy cloudflare-landing --project-name=rpg-para-balcoes --branch=main --commit-hash=${{ github.sha }}
