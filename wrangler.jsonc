@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rpg-capital-dev",
+  "compatibility_date": "2026-09-06",
+  "preview_urls": true,
+  "assets": {
+    "directory": "./cloudflare-landing"
+  }
+}
