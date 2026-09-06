@@ -65,6 +65,15 @@ test('payment confirmation restores access but never silently reconnects Open Fi
   assert.doesNotMatch(server, /createMalvoConnectToken/)
 })
 
+test('manual Malvo reconnection clears only the reconnect marker after the user authorizes again', () => {
+  const route = source('app/api/balcao/finance/malvo/complete/route.ts')
+  const sql = source('supabase/migrations/20260906_balcao_asaas_billing.sql')
+  assert.match(route, /balcao_mark_billing_reconnected/)
+  assert.match(sql, /create or replace function public\.balcao_mark_billing_reconnected/)
+  assert.match(sql, /reconnect_required\s*=\s*false/)
+  assert.match(sql, /balcao_finance_connections/)
+})
+
 test('operational context and management page enforce billing server-side', () => {
   const requestContext = source('lib/accounts/requestContext.ts')
   const manage = source('app/manage/page.tsx')
