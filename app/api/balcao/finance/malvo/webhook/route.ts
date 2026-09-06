@@ -1,11 +1,18 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { markMalvoConnectionError, syncMalvoItem } from '@/lib/malvo/sync'
+import { getSupabaseUrl } from '@/lib/supabase/config'
+import { collectMalvoSnapshot } from '@/lib/malvo/managementSync'
 import { parseMalvoClientUserId } from '@/lib/malvo/client'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+
+const SYNC_EVENTS = new Set([
+  'item/created',
+  'item/updated',
+  'transactions/created',
+  'transactions/updated',
+])
 
 function safeEqual(value: string, expected: string) {
   const left = Buffer.from(value)
@@ -28,96 +35,83 @@ function authorized(request: Request) {
   return true
 }
 
-async function deleteRemoteTransactions(itemId: string, clientUserId: unknown, transactionIds: unknown) {
-  if (!Array.isArray(transactionIds) || !transactionIds.length) return
-  const context = parseMalvoClientUserId(clientUserId)
-  if (!context) return
-  const admin = createAdminClient()
-  const { data: accounts } = await admin.from('balcao_finance_accounts')
-    .select('id')
-    .eq('business_id', context.businessId)
-    .eq('store_id', context.storeId)
-    .eq('provider', 'malvo')
-  const accountIds = (accounts || []).map((row) => row.id)
-  if (!accountIds.length) return
-  await admin.from('balcao_finance_transactions')
-    .delete()
-    .in('account_id', accountIds)
-    .in('external_id', transactionIds.map(String))
+function validUuid(value: unknown) {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
-async function markDeleted(itemId: string, clientUserId: unknown) {
-  const context = parseMalvoClientUserId(clientUserId)
-  if (!context) return
-  const admin = createAdminClient()
-  await admin.from('balcao_finance_connections')
-    .update({ status: 'disconnected', updated_at: new Date().toISOString() })
-    .eq('provider', 'malvo')
-    .eq('provider_item_id', itemId)
-  await admin.from('balcao_finance_accounts')
-    .update({ status: 'disconnected', updated_at: new Date().toISOString() })
-    .eq('business_id', context.businessId)
-    .eq('store_id', context.storeId)
-    .eq('provider', 'malvo')
+async function persistViaSupabaseEdge(input: Record<string, unknown>) {
+  const oidcToken = process.env.VERCEL_OIDC_TOKEN?.trim()
+  if (!oidcToken) throw new Error('VERCEL_OIDC_TOKEN is not available')
+
+  const response = await fetch(`${getSupabaseUrl()}/functions/v1/balcao-malvo-webhook`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${oidcToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  })
+
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>
+  if (!response.ok) {
+    throw new Error(typeof body.error === 'string' ? body.error : `Supabase webhook handoff failed (${response.status})`)
+  }
+  return body
 }
 
 export async function POST(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const payload = await request.json().catch(() => null) as Record<string, any> | null
-  if (!payload || typeof payload.event !== 'string' || typeof payload.eventId !== 'string') {
+  if (!payload || typeof payload.event !== 'string' || !validUuid(payload.eventId)) {
     return NextResponse.json({ error: 'Invalid webhook payload' }, { status: 400 })
   }
 
-  const admin = createAdminClient()
-  const eventId = payload.eventId
   const eventType = payload.event
-  const itemId = typeof payload.itemId === 'string' ? payload.itemId : null
+  const itemId = typeof payload.itemId === 'string' ? payload.itemId : ''
+  const clientUserId = typeof payload.clientUserId === 'string' ? payload.clientUserId : ''
 
-  const { error: insertError } = await admin.from('balcao_finance_webhook_events').insert({
-    provider: 'malvo',
-    event_id: eventId,
-    event_type: eventType,
-    provider_item_id: itemId,
-    client_user_id: typeof payload.clientUserId === 'string' ? payload.clientUserId : null,
-    payload,
-  })
-
-  if (insertError?.code === '23505') return NextResponse.json({ ok: true, duplicate: true })
-  if (insertError) {
-    console.error('BALCAO Malvo webhook journal failed', insertError)
-    return NextResponse.json({ error: 'Webhook journal failed' }, { status: 500 })
+  // `all` also delivers connector-level events. They have no Balcao Item and
+  // do not mutate a merchant's financial snapshot.
+  if (!itemId || !clientUserId) {
+    return NextResponse.json({ ok: true, ignored: true })
   }
 
-  try {
-    if (eventType === 'transactions/deleted' && itemId) {
-      await deleteRemoteTransactions(itemId, payload.clientUserId, payload.transactionIds)
-    } else if (eventType === 'item/deleted' && itemId) {
-      await markDeleted(itemId, payload.clientUserId)
-    } else if (eventType === 'item/error' && itemId) {
-      await markMalvoConnectionError({
-        itemId,
-        clientUserId: payload.clientUserId,
-        code: payload.error?.code || null,
-        message: payload.error?.message || null,
-      })
-    } else if (itemId && [
-      'item/created',
-      'item/updated',
-      'transactions/created',
-      'transactions/updated',
-    ].includes(eventType)) {
-      await syncMalvoItem({ itemId, clientUserId: payload.clientUserId })
-    }
+  const context = parseMalvoClientUserId(clientUserId)
+  if (!context) return NextResponse.json({ error: 'Invalid Balcao clientUserId' }, { status: 400 })
 
-    await admin.from('balcao_finance_webhook_events')
-      .update({ processed_at: new Date().toISOString() })
-      .eq('event_id', eventId)
-    return NextResponse.json({ ok: true })
+  try {
+    const snapshot = SYNC_EVENTS.has(eventType)
+      ? await collectMalvoSnapshot({
+          itemId,
+          expectedBusinessId: context.businessId,
+          expectedStoreId: context.storeId,
+        })
+      : null
+
+    const result = await persistViaSupabaseEdge({
+      p_event_id: payload.eventId,
+      p_event_type: eventType,
+      p_item_id: itemId,
+      p_client_user_id: clientUserId,
+      p_triggered_by: typeof payload.triggeredBy === 'string' ? payload.triggeredBy : null,
+      p_payload: payload,
+      p_snapshot: snapshot,
+      p_transaction_ids: Array.isArray(payload.transactionIds) ? payload.transactionIds : [],
+      p_error_code: typeof payload.error?.code === 'string' ? payload.error.code : null,
+      p_error_message: typeof payload.error?.message === 'string' ? payload.error.message : null,
+    })
+
+    return NextResponse.json({
+      ok: true,
+      duplicate: result.duplicate === true,
+      ignored: result.ignored === true,
+    })
   } catch (caught) {
     console.error('BALCAO Malvo webhook processing failed', caught)
-    // Allow Malvo redelivery to retry instead of permanently deduplicating a failed attempt.
-    await admin.from('balcao_finance_webhook_events').delete().eq('event_id', eventId)
+    // A non-2xx response tells Malvo to redeliver the same eventId.
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 })
   }
 }

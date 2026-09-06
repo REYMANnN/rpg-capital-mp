@@ -58,15 +58,21 @@ test('authenticated management can mint a connect token but finance staff cannot
 
 test('webhook requires a shared secret, deduplicates eventId, and synchronizes authoritative item updates', () => {
   const webhook = source('app/api/balcao/finance/malvo/webhook/route.ts')
+  const edge = source('supabase/functions/balcao-malvo-webhook/index.ts')
+  const worker = source('supabase/migrations/20260906_balcao_malvo_webhook_autosync.sql')
   assert.match(webhook, /MALVO_WEBHOOK_SECRET/)
   assert.match(webhook, /timingSafeEqual/)
   assert.match(webhook, /eventId/)
-  assert.match(webhook, /balcao_finance_webhook_events/)
   assert.match(webhook, /item\/created/)
   assert.match(webhook, /item\/updated/)
   assert.match(webhook, /transactions\/created/)
   assert.match(webhook, /transactions\/updated/)
-  assert.match(webhook, /syncMalvoItem/)
+  assert.match(webhook, /collectMalvoSnapshot/)
+  assert.match(webhook, /functions\/v1\/balcao-malvo-webhook/)
+  assert.match(edge, /balcao_process_malvo_webhook/)
+  assert.match(worker, /balcao_finance_webhook_events/)
+  assert.match(worker, /unique_violation/)
+  assert.match(worker, /on conflict \(account_id, external_id\) do update/)
 })
 
 test('finance UI has a real bank connections area and uses the hosted Malvo Connect widget', () => {

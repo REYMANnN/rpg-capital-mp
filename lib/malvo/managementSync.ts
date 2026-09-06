@@ -53,12 +53,26 @@ function isInternalTransfer(transaction: any, ownerDocuments: Set<string>) {
   return Boolean(payer && receiver && ownerDocuments.has(payer) && ownerDocuments.has(receiver))
 }
 
-export async function syncMalvoItemAsManagement(input: {
+export type MalvoSnapshot = {
+  itemId: string
+  clientUserId: string
+  businessId: string
+  storeId: string
+  institutionName: string | null
+  institutionLogoUrl: string | null
+  status: string
+  executionStatus: string | null
+  consentExpiresAt: string | null
+  lastSyncedAt: string
+  accounts: Array<Record<string, unknown>>
+  transactions: Array<Record<string, unknown>>
+}
+
+export async function collectMalvoSnapshot(input: {
   itemId: string
   expectedBusinessId: string
   expectedStoreId: string
-  supabase: SupabaseClient
-}) {
+}): Promise<MalvoSnapshot> {
   const item = await getMalvoItem(input.itemId)
   const clientUserId = String(item.clientUserId || '')
   const context = parseMalvoClientUserId(clientUserId)
@@ -106,18 +120,42 @@ export async function syncMalvoItemAsManagement(input: {
     }
   }
 
+  return {
+    itemId: input.itemId,
+    clientUserId,
+    businessId: context.businessId,
+    storeId: context.storeId,
+    institutionName: item?.connector?.name || null,
+    institutionLogoUrl: item?.connector?.imageUrl || null,
+    status: connectionStatus(item),
+    executionStatus: item?.executionStatus || null,
+    consentExpiresAt: item?.consentExpiresAt || null,
+    lastSyncedAt: item?.lastUpdatedAt || new Date().toISOString(),
+    accounts,
+    transactions,
+  }
+}
+
+export async function syncMalvoItemAsManagement(input: {
+  itemId: string
+  expectedBusinessId: string
+  expectedStoreId: string
+  supabase: SupabaseClient
+}) {
+  const snapshot = await collectMalvoSnapshot(input)
+
   const { data, error } = await input.supabase.rpc('balcao_apply_malvo_snapshot', {
     p_store_id: input.expectedStoreId,
-    p_item_id: input.itemId,
-    p_client_user_id: clientUserId,
-    p_institution_name: item?.connector?.name || null,
-    p_institution_logo_url: item?.connector?.imageUrl || null,
-    p_status: connectionStatus(item),
-    p_execution_status: item?.executionStatus || null,
-    p_consent_expires_at: item?.consentExpiresAt || null,
-    p_last_synced_at: item?.lastUpdatedAt || new Date().toISOString(),
-    p_accounts: accounts,
-    p_transactions: transactions,
+    p_item_id: snapshot.itemId,
+    p_client_user_id: snapshot.clientUserId,
+    p_institution_name: snapshot.institutionName,
+    p_institution_logo_url: snapshot.institutionLogoUrl,
+    p_status: snapshot.status,
+    p_execution_status: snapshot.executionStatus,
+    p_consent_expires_at: snapshot.consentExpiresAt,
+    p_last_synced_at: snapshot.lastSyncedAt,
+    p_accounts: snapshot.accounts,
+    p_transactions: snapshot.transactions,
   })
 
   if (error) throw error
