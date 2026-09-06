@@ -42,8 +42,8 @@ export type AsaasSubscriptionInput = {
 }
 
 function requiredApiKey() {
-  const value = process.env.ASAAS_API_KEY?.trim() || process.env.ASAAS_API_KEY_balcao?.trim()
-  if (!value) throw new Error('ASAAS_API_KEY is not configured')
+  const value = process.env.ASAAS_API_KEY_balcao?.trim()
+  if (!value) throw new Error('ASAAS_API_KEY_balcao is not configured')
   return value
 }
 
@@ -72,7 +72,7 @@ async function asaasRequest(path: string, init: RequestInit = {}) {
   const response = await fetch(`${apiBase()}${path}`, {
     ...init,
     headers: {
-      'User-Agent': 'BALCAO/0.2 (Next.js)',
+      'User-Agent': 'BALCAO/0.3 (Next.js)',
       access_token: requiredApiKey(),
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers || {}),
