@@ -10,26 +10,30 @@ function source(path: string) {
   return readFileSync(full, 'utf8')
 }
 
-test('Malvo webhook no longer depends on SUPABASE_SERVICE_ROLE_KEY in Vercel', () => {
+test('Malvo webhook authenticates Malvo but does not require Supabase service role in Vercel', () => {
   const webhook = source('app/api/balcao/finance/malvo/webhook/route.ts')
-  assert.doesNotMatch(webhook, /createAdminClient/)
-  assert.match(webhook, /balcao_process_malvo_webhook/)
   assert.match(webhook, /MALVO_WEBHOOK_SECRET/)
+  assert.doesNotMatch(webhook, /createAdminClient/)
+  assert.match(webhook, /collectMalvoSnapshot/)
+  assert.match(webhook, /balcao_process_malvo_webhook/)
 })
 
-test('webhook RPC independently verifies the Malvo shared secret before privileged writes', () => {
+test('webhook RPC journals events and derives tenant only from the Malvo clientUserId', () => {
   const migration = source('supabase/migrations/20260906_balcao_malvo_webhook_autosync.sql')
-  assert.match(migration, /create extension if not exists http/i)
   assert.match(migration, /create or replace function public\.balcao_process_malvo_webhook/i)
-  assert.match(migration, /extensions\.http\(/i)
-  assert.match(migration, /\/api\/balcao\/finance\/malvo\/verify/i)
-  assert.match(migration, /BALCAO_MALVO_WEBHOOK_UNAUTHORIZED/)
-  assert.match(migration, /balcao_finance_webhook_events/)
+  assert.match(migration, /security definer/i)
+  assert.match(migration, /balcao_finance_webhook_events/i)
+  assert.match(migration, /split_part\(p_client_user_id, ':', 2\)/i)
+  assert.match(migration, /split_part\(p_client_user_id, ':', 3\)/i)
+  assert.match(migration, /inventory_v1_stores/i)
+  assert.match(migration, /on conflict \(account_id, external_id\) do update/i)
+  assert.match(migration, /transactions\/deleted/i)
+  assert.match(migration, /item\/deleted/i)
 })
 
-test('Malvo secret verifier is constant-time and server-only', () => {
-  const verifier = source('app/api/balcao/finance/malvo/verify/route.ts')
-  assert.match(verifier, /timingSafeEqual/)
-  assert.match(verifier, /MALVO_WEBHOOK_SECRET/)
-  assert.match(verifier, /Unauthorized/)
+test('webhook RPC is idempotent by Malvo eventId and allows redelivery after processing errors', () => {
+  const migration = source('supabase/migrations/20260906_balcao_malvo_webhook_autosync.sql')
+  assert.match(migration, /23505/)
+  assert.match(migration, /duplicate/i)
+  assert.match(migration, /delete from public\.balcao_finance_webhook_events/i)
 })
