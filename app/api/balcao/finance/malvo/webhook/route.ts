@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { createClient as createServerClient } from '@/lib/supabase/server'
+import { getSupabaseUrl } from '@/lib/supabase/config'
 import { collectMalvoSnapshot } from '@/lib/malvo/managementSync'
 import { parseMalvoClientUserId } from '@/lib/malvo/client'
 
@@ -40,6 +40,27 @@ function validUuid(value: unknown) {
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+async function persistViaSupabaseEdge(input: Record<string, unknown>) {
+  const oidcToken = process.env.VERCEL_OIDC_TOKEN?.trim()
+  if (!oidcToken) throw new Error('VERCEL_OIDC_TOKEN is not available')
+
+  const response = await fetch(`${getSupabaseUrl()}/functions/v1/balcao-malvo-webhook`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${oidcToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  })
+
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>
+  if (!response.ok) {
+    throw new Error(typeof body.error === 'string' ? body.error : `Supabase webhook handoff failed (${response.status})`)
+  }
+  return body
+}
+
 export async function POST(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -70,8 +91,7 @@ export async function POST(request: Request) {
         })
       : null
 
-    const supabase = await createServerClient()
-    const { data, error } = await supabase.rpc('balcao_process_malvo_webhook', {
+    const result = await persistViaSupabaseEdge({
       p_event_id: payload.eventId,
       p_event_type: eventType,
       p_item_id: itemId,
@@ -83,13 +103,6 @@ export async function POST(request: Request) {
       p_error_code: typeof payload.error?.code === 'string' ? payload.error.code : null,
       p_error_message: typeof payload.error?.message === 'string' ? payload.error.message : null,
     })
-
-    if (error) throw error
-    const result = data && typeof data === 'object' ? data as Record<string, unknown> : {}
-    if (result.ok === false) {
-      console.error('BALCAO Malvo webhook RPC requested retry', result.error || 'unknown_error')
-      return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 })
-    }
 
     return NextResponse.json({
       ok: true,
