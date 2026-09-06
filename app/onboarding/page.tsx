@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import OnboardingWizard from '@/components/accounts/OnboardingWizard'
+import OnboardingBillingStep from '@/components/accounts/OnboardingBillingStep'
 import OnboardingBankStep from '@/components/accounts/OnboardingBankStep'
 import { getAccountState, getCurrentUser, getManagementContext } from '@/lib/accounts/currentUser'
 
@@ -13,7 +14,13 @@ export default async function OnboardingPage() {
   if (!state.onboarded && state.hasBusiness) {
     const businesses = await getManagementContext(user.id)
     const store = businesses[0]?.stores[0]
+    const billingConfigured = state.billingConfigured
     if (store) {
+      if (!billingConfigured) {
+        return <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950">
+          <OnboardingBillingStep storeId={store.id} userName={userName} userEmail={user.email ?? ''} />
+        </main>
+      }
       return <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950"><OnboardingBankStep userName={userName} storeId={store.id} /></main>
     }
   }
