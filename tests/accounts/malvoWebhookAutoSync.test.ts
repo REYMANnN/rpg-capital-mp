@@ -10,15 +10,27 @@ function source(path: string) {
   return readFileSync(full, 'utf8')
 }
 
-test('Malvo webhook authenticates Malvo but does not require Supabase service role in Vercel', () => {
+test('Malvo webhook authenticates Malvo and hands persistence to Supabase with Vercel OIDC', () => {
   const webhook = source('app/api/balcao/finance/malvo/webhook/route.ts')
   assert.match(webhook, /MALVO_WEBHOOK_SECRET/)
   assert.doesNotMatch(webhook, /createAdminClient/)
   assert.match(webhook, /collectMalvoSnapshot/)
-  assert.match(webhook, /balcao_process_malvo_webhook/)
+  assert.match(webhook, /VERCEL_OIDC_TOKEN/)
+  assert.match(webhook, /functions\/v1\/balcao-malvo-webhook/)
+  assert.doesNotMatch(webhook, /supabase\.rpc\('balcao_process_malvo_webhook'/)
 })
 
-test('webhook RPC journals events and derives tenant only from the Malvo clientUserId', () => {
+test('Supabase Edge Function verifies the exact production Vercel workload before service-role writes', () => {
+  const edge = source('supabase/functions/balcao-malvo-webhook/index.ts')
+  assert.match(edge, /jwtVerify/)
+  assert.match(edge, /https:\/\/oidc\.vercel\.com\/renanguadalupe05-5169s-projects/)
+  assert.match(edge, /https:\/\/vercel\.com\/renanguadalupe05-5169s-projects/)
+  assert.match(edge, /owner:renanguadalupe05-5169s-projects:project:rpg-capital-mp-25zw:environment:production/)
+  assert.match(edge, /SUPABASE_SERVICE_ROLE_KEY/)
+  assert.match(edge, /balcao_process_malvo_webhook/)
+})
+
+test('webhook RPC journals events, derives tenant from Malvo clientUserId, and is service-role only', () => {
   const migration = source('supabase/migrations/20260906_balcao_malvo_webhook_autosync.sql')
   assert.match(migration, /create or replace function public\.balcao_process_malvo_webhook/i)
   assert.match(migration, /security definer/i)
@@ -29,11 +41,14 @@ test('webhook RPC journals events and derives tenant only from the Malvo clientU
   assert.match(migration, /on conflict \(account_id, external_id\) do update/i)
   assert.match(migration, /transactions\/deleted/i)
   assert.match(migration, /item\/deleted/i)
+  assert.match(migration, /revoke all[\s\S]*from public, anon, authenticated/i)
+  assert.match(migration, /grant execute[\s\S]*to service_role/i)
+  assert.doesNotMatch(migration, /to anon, authenticated, service_role/i)
 })
 
 test('webhook RPC is idempotent by Malvo eventId and allows redelivery after processing errors', () => {
   const migration = source('supabase/migrations/20260906_balcao_malvo_webhook_autosync.sql')
-  assert.match(migration, /23505/)
+  assert.match(migration, /unique_violation/)
   assert.match(migration, /duplicate/i)
   assert.match(migration, /delete from public\.balcao_finance_webhook_events/i)
 })
