@@ -14,6 +14,9 @@ export async function POST(request: Request) {
 
   const { error } = await supabase.rpc('balcao_complete_open_finance_onboarding', { p_store_id: storeId })
   if (error) {
+    if (error.message.includes('BALCAO_BILLING_REQUIRED')) {
+      return NextResponse.json({ error: 'Configure a cobrança do BALCÃO antes de concluir o cadastro.' }, { status: 409 })
+    }
     if (error.message.includes('BALCAO_OPEN_FINANCE_REQUIRED')) {
       return NextResponse.json({ error: 'Conecte pelo menos uma conta bancária para concluir o cadastro.' }, { status: 409 })
     }
