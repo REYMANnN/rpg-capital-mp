@@ -43,6 +43,14 @@ test('Malvo token and completion are both blocked until billing is configured', 
   assert.match(complete, /balcao_billing_allows_bank_connection/)
 })
 
+test('final onboarding completion cannot bypass billing', () => {
+  const sql = source('supabase/migrations/20260906_balcao_asaas_before_malvo.sql')
+  const route = source('app/api/balcao/onboarding/complete/route.ts')
+  assert.match(sql, /BALCAO_BILLING_REQUIRED/)
+  assert.match(sql, /balcao_complete_open_finance_onboarding/)
+  assert.match(route, /BALCAO_BILLING_REQUIRED/)
+})
+
 test('Asaas client accepts the production BALCAO key name', () => {
   const client = source('lib/asaas/client.ts')
   assert.match(client, /ASAAS_API_KEY/)
