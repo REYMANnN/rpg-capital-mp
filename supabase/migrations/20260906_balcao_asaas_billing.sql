@@ -1,5 +1,5 @@
 -- BALCÃO / Asaas SaaS billing.
--- Card PAN/CVV are never stored here; only provider identifiers and billing state.
+-- Sensitive card credentials are never stored here; only provider identifiers and billing state.
 
 create table if not exists public.balcao_billing_accounts (
   business_id uuid primary key references public.balcao_businesses(id) on delete cascade,
@@ -77,3 +77,49 @@ drop policy if exists balcao_billing_payments_member_read on public.balcao_billi
 create policy balcao_billing_payments_member_read
   on public.balcao_billing_payments for select to authenticated
   using ((select private.balcao_is_business_member(business_id)));
+
+create or replace function public.balcao_mark_billing_reconnected(p_store_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_business_id uuid;
+begin
+  select s.business_id into v_business_id
+  from public.inventory_v1_stores s
+  join public.balcao_business_members m
+    on m.business_id = s.business_id
+   and m.user_id = auth.uid()
+   and m.active
+  where s.id = p_store_id
+    and s.active
+    and m.role in ('owner', 'admin', 'manager')
+  limit 1;
+
+  if v_business_id is null then
+    raise exception 'BALCAO_BILLING_RECONNECT_FORBIDDEN';
+  end if;
+
+  if not exists (
+    select 1
+    from public.balcao_finance_connections c
+    where c.business_id = v_business_id
+      and c.store_id = p_store_id
+      and c.provider = 'malvo'
+      and c.status in ('pending', 'active', 'updating')
+  ) then
+    raise exception 'BALCAO_BILLING_RECONNECT_REQUIRES_ACTIVE_BANK';
+  end if;
+
+  update public.balcao_billing_accounts
+  set reconnect_required = false,
+      updated_at = now()
+  where business_id = v_business_id
+    and status in ('configured', 'active');
+end;
+$$;
+
+revoke all on function public.balcao_mark_billing_reconnected(uuid) from public, anon;
+grant execute on function public.balcao_mark_billing_reconnected(uuid) to authenticated;
