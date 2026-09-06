@@ -50,6 +50,7 @@ test('every page inherits a visible Balcao software version and deployment commi
   const pkg = source('package.json')
 
   assert.match(pkg, /"version":\s*"0\.3\.0"/)
+  assert.match(layout, /const softwareVersion = "0\.3\.0"/)
   assert.match(layout, /BALCÃO/)
   assert.match(layout, /VERCEL_GIT_COMMIT_SHA/)
   assert.match(layout, /data-build-version/)
