@@ -11,13 +11,14 @@ test('root sends visitors to the stable public home', () => {
   assert.match(root, /redirect\(['"]\/home['"]\)/)
 })
 
-test('public home offers existing-account and signup paths', () => {
+test('public home offers existing-account and fresh signup paths', () => {
   const home = source('app/home/page.tsx')
 
   assert.match(home, /Minha Conta/)
   assert.match(home, /Criar Conta/)
   assert.match(home, /\/login\?intent=login/)
-  assert.match(home, /\/login\?intent=signup/)
+  assert.match(home, /\/auth\/signup\/reset/)
+  assert.doesNotMatch(home, /href=["']\/login\?intent=signup["']/)
 })
 
 test('public home keeps a temporary test-account button that goes straight to manage', () => {
