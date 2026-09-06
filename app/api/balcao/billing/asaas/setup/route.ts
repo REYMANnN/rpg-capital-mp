@@ -3,6 +3,7 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 import { getBusinessRole, getStoreBusiness } from '@/lib/accounts/currentUser'
 import { normalizeDigits } from '@/lib/accounts/validation'
 import { buildBillingPlan } from '@/lib/billing/policy'
+import { validateAndNormalizeBillingInput } from '@/lib/billing/cardValidation'
 import {
   ensureAsaasCreditCardSubscription,
   ensureAsaasCustomer,
@@ -37,38 +38,10 @@ function clientIp(request: Request) {
     || ''
 }
 
-function cleanCard(value: Partial<AsaasCreditCard> | null | undefined): AsaasCreditCard | null {
-  const holderName = typeof value?.holderName === 'string' ? value.holderName.trim() : ''
-  const number = typeof value?.number === 'string' ? normalizeDigits(value.number) : ''
-  const expiryMonth = typeof value?.expiryMonth === 'string' ? normalizeDigits(value.expiryMonth).padStart(2, '0').slice(-2) : ''
-  const expiryYear = typeof value?.expiryYear === 'string' ? normalizeDigits(value.expiryYear) : ''
-  const ccv = typeof value?.ccv === 'string' ? normalizeDigits(value.ccv) : ''
-  if (holderName.length < 3 || number.length < 13 || number.length > 19 || !/^\d{2}$/.test(expiryMonth) || !/^\d{4}$/.test(expiryYear) || !/^\d{3,4}$/.test(ccv)) return null
-  const month = Number(expiryMonth)
-  if (month < 1 || month > 12) return null
-  return { holderName, number, expiryMonth, expiryYear, ccv }
-}
-
-function cleanHolder(value: Partial<AsaasCreditCardHolderInfo> | null | undefined): AsaasCreditCardHolderInfo | null {
-  const name = typeof value?.name === 'string' ? value.name.trim() : ''
-  const email = typeof value?.email === 'string' ? value.email.trim().toLowerCase() : ''
-  const cpfCnpj = typeof value?.cpfCnpj === 'string' ? normalizeDigits(value.cpfCnpj) : ''
-  const postalCode = typeof value?.postalCode === 'string' ? normalizeDigits(value.postalCode) : ''
-  const addressNumber = typeof value?.addressNumber === 'string' ? value.addressNumber.trim() : ''
-  const addressComplement = typeof value?.addressComplement === 'string' ? value.addressComplement.trim() : ''
-  const phone = typeof value?.phone === 'string' ? normalizeDigits(value.phone) : ''
-  const mobilePhone = typeof value?.mobilePhone === 'string' ? normalizeDigits(value.mobilePhone) : ''
-  if (name.length < 3 || !email.includes('@') || ![11, 14].includes(cpfCnpj.length) || postalCode.length !== 8 || !addressNumber) return null
-  return {
-    name,
-    email,
-    cpfCnpj,
-    postalCode,
-    addressNumber,
-    ...(addressComplement ? { addressComplement } : {}),
-    ...(phone ? { phone } : {}),
-    ...(mobilePhone ? { mobilePhone } : {}),
-  }
+function asaasUserMessage(message: string) {
+  const detail = message.replace(/\s+/g, ' ').trim().slice(0, 280)
+  if (!detail || /^Asaas request failed \(\d+\)$/i.test(detail)) return 'O Asaas recusou os dados informados.'
+  return `O Asaas recusou a configuração: ${detail}`
 }
 
 export async function POST(request: Request) {
@@ -81,9 +54,16 @@ export async function POST(request: Request) {
   if (!storeId) return NextResponse.json({ error: 'Loja não identificada.' }, { status: 400 })
   if (body.acceptedRecurringBilling !== true) return NextResponse.json({ error: 'Confirme a autorização da cobrança recorrente para continuar.' }, { status: 400 })
 
-  const card = cleanCard(body.creditCard)
-  const holder = cleanHolder(body.creditCardHolderInfo)
-  if (!card || !holder) return NextResponse.json({ error: 'Confira os dados do cartão e do titular.' }, { status: 400 })
+  const validation = validateAndNormalizeBillingInput(body.creditCard, body.creditCardHolderInfo)
+  if (!validation.creditCard || !validation.creditCardHolderInfo) {
+    const validationMessages = Object.values(validation.errors).filter((message): message is string => Boolean(message))
+    return NextResponse.json({
+      error: validationMessages[0] || 'Confira os dados do cartão e do titular.',
+      fieldErrors: validation.errors,
+    }, { status: 400 })
+  }
+  const card = validation.creditCard
+  const holder = validation.creditCardHolderInfo
 
   const store = await getStoreBusiness(storeId)
   if (!store) return NextResponse.json({ error: 'Loja não encontrada.' }, { status: 404 })
@@ -166,10 +146,10 @@ export async function POST(request: Request) {
     })
   } catch (caught) {
     const error = caught as Error & { status?: number }
-    const missingConfig = /ASAAS_API_KEY.*not configured/i.test(error.message)
+    const missingConfig = /ASAAS_API_KEY_balcao.*not configured/i.test(error.message)
     console.error('BALCAO Asaas billing setup failed', { status: error.status ?? null, missingConfig })
     if (missingConfig) return NextResponse.json({ error: 'A cobrança ainda não está configurada no servidor.' }, { status: 503 })
-    if (error.status === 400 || error.status === 422) return NextResponse.json({ error: 'O Asaas recusou os dados informados. Confira o cartão e os dados do titular.' }, { status: 400 })
+    if (error.status === 400 || error.status === 422) return NextResponse.json({ error: asaasUserMessage(error.message) }, { status: 400 })
     return NextResponse.json({ error: 'Não foi possível configurar a cobrança agora. Nenhum dado de cartão foi armazenado; tente novamente.' }, { status: 502 })
   }
 }
