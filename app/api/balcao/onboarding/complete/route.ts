@@ -20,8 +20,11 @@ export async function POST(request: Request) {
     if (error.message.includes('BALCAO_OPEN_FINANCE_REQUIRED')) {
       return NextResponse.json({ error: 'Conecte pelo menos uma conta bancária para concluir o cadastro.' }, { status: 409 })
     }
+    if (error.message.includes('BALCAO_ONBOARDING_DRAFT_REQUIRED')) {
+      return NextResponse.json({ error: 'Os dados iniciais do cadastro não foram encontrados. Volte ao início do onboarding e confirme seus dados.' }, { status: 409 })
+    }
     if (error.message.includes('BALCAO_OPEN_FINANCE_FORBIDDEN')) {
-      return NextResponse.json({ error: 'Seu perfil não pode concluir este cadastro.' }, { status: 403 })
+      return NextResponse.json({ error: 'Sua conta não pode concluir este cadastro.' }, { status: 403 })
     }
     console.error('BALCAO Open Finance onboarding completion failed', { code: error.code })
     return NextResponse.json({ error: 'Não conseguimos concluir o cadastro agora. Tente novamente.' }, { status: 500 })
