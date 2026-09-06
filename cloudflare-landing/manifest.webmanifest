@@ -1,0 +1,19 @@
+{
+  "name": "RPG para Balcões",
+  "short_name": "Balcões",
+  "description": "Gestão de inventário, vendas, finanças e equipe para pequenos varejistas.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0756d8",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

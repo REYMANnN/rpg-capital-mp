@@ -1,0 +1,46 @@
+# RPG para Balcões
+
+RPG para Balcões é um software web de gestão para pequenos varejistas brasileiros, criado pela RPG Capital.
+
+## Proposta
+
+Tudo que sua loja precisa para vender, controlar e crescer.
+
+O sistema reúne inventário, vendas, finanças, equipe e outras rotinas de gestão da loja em um só lugar, com foco em simplicidade para quem trabalha no balcão.
+
+## Preço
+
+R$ 5,99 por mês.
+
+A proposta comercial é custar menos de um cafezinho por mês para permitir que o comerciante gerencie toda a loja.
+
+## Pix
+
+A RPG para Balcões não cobra taxa sobre as vendas em Pix realizadas pelo fluxo do produto. O objetivo é permitir cobrança no balcão sem taxa da RPG sobre o Pix.
+
+## Principais funcionalidades
+
+- Inventário e controle de produtos.
+- Registro de vendas e atualização de estoque.
+- Visão financeira da loja.
+- Gestão de equipe e acessos.
+- Cobrança Pix sem taxa da RPG.
+- Leitura e cadastro de produtos por código de barras.
+- Uso no celular e no computador.
+
+## Público
+
+Pequenos comércios e varejistas brasileiros que precisam organizar a operação sem depender de software caro ou complexo.
+
+## Site oficial
+
+https://rpgcapital.com.br/
+
+## Acesso ao produto
+
+Login: https://www.rpgcapital.com.br/login?intent=login
+Cadastro: https://www.rpgcapital.com.br/auth/signup/reset
+
+## Contato comercial
+
+comercial@rpgcapital.com.br
