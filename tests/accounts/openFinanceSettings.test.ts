@@ -35,15 +35,18 @@ test('Malvo can revoke an item and management route exposes disconnect', () => {
   assert.match(ui, /confirm/)
 })
 
-test('new onboarding routes incomplete businesses to a required fifth bank step', () => {
+test('new onboarding routes incomplete businesses through billing to the required sixth bank step', () => {
   const page = source('app/onboarding/page.tsx')
+  const billingStep = source('components/accounts/OnboardingBillingStep.tsx')
   const bankStep = source('components/accounts/OnboardingBankStep.tsx')
   const onboardingRoute = source('app/api/balcao/onboarding/route.ts')
   const completeRoute = source('app/api/balcao/onboarding/complete/route.ts')
   const managePage = source('app/manage/page.tsx')
   assert.match(page, /!state\.onboarded && state\.hasBusiness/)
+  assert.match(page, /OnboardingBillingStep/)
   assert.match(page, /OnboardingBankStep/)
-  assert.match(bankStep, /Etapa 5 de 5/)
+  assert.match(billingStep, /Etapa 5 de 6/)
+  assert.match(bankStep, /Etapa 6 de 6/)
   assert.match(bankStep, /BankConnections/)
   assert.match(bankStep, /returnTo="onboarding"/)
   assert.match(bankStep, /\/api\/balcao\/onboarding\/complete/)

@@ -62,6 +62,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Somente a conta principal pode conectar contas bancárias.' }, { status: 403 })
   }
 
+  const { data: billingAllowed, error: billingError } = await supabase.rpc('balcao_billing_allows_bank_connection', { p_store_id: storeId })
+  if (billingError || billingAllowed !== true) {
+    return NextResponse.json({ error: 'Configure a cobrança do BALCÃO antes de conectar sua conta bancária.' }, { status: 402 })
+  }
+
   try {
     const result = await syncMalvoItemAsManagement({
       itemId,

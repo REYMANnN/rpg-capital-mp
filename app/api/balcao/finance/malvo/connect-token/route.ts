@@ -56,6 +56,11 @@ export async function POST(request: Request) {
   }
   if (!businessId || !storeId) return NextResponse.json({ error: 'Não foi possível identificar a loja.' }, { status: 400 })
 
+  const { data: billingAllowed, error: billingError } = await supabase.rpc('balcao_billing_allows_bank_connection', { p_store_id: storeId })
+  if (billingError || billingAllowed !== true) {
+    return NextResponse.json({ error: 'Configure a cobrança do BALCÃO antes de conectar sua conta bancária.' }, { status: 402 })
+  }
+
   try {
     const origin = new URL(request.url).origin
     const accessToken = await createMalvoConnectToken({
