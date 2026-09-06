@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createMalvoConnectToken } from '@/lib/malvo/client'
+import { bootstrapMalvoEdgeRuntime, getMalvoEdgeWebhookUrl } from '@/lib/malvo/edgeRuntime'
 import { getBusinessRole, getStoreBusiness } from '@/lib/accounts/currentUser'
 import { hashSecret, INVENTORY_INSTALLATION_COOKIE, STAFF_SESSION_COOKIE, TERMINAL_COOKIE, unpackCredential } from '@/lib/accounts/terminal'
 
@@ -63,10 +64,11 @@ export async function POST(request: Request) {
 
   try {
     const origin = new URL(request.url).origin
+    await bootstrapMalvoEdgeRuntime(request)
     const accessToken = await createMalvoConnectToken({
       businessId,
       storeId,
-      webhookUrl: `${origin}/api/balcao/finance/malvo/webhook`,
+      webhookUrl: getMalvoEdgeWebhookUrl(),
       oauthRedirectUri: returnTo === 'onboarding' ? `${origin}/onboarding?step=bank` : `${origin}/inventory-v1?finance=connections`,
     })
     return NextResponse.json({ ok: true, accessToken, expiresIn: 1800 }, {
