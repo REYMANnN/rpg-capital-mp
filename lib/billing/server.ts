@@ -156,8 +156,9 @@ export async function markBillingPaid(input: {
       overdue_payment_id: null,
       overdue_invoice_url: null,
       next_due_date: input.nextDueDate ?? undefined,
-      // Payment restores BALCÃO access. Open Finance stays disconnected until the user authorizes it again.
-      reconnect_required: true,
+      // Normal payments do not manufacture a reconnect warning. If billing failure disconnected
+      // Open Finance earlier, that marker remains true until the user authorizes Malvo again.
+      reconnect_required: current.reconnect_required === true,
       updated_at: new Date().toISOString(),
     })
     .eq('business_id', input.businessId)
