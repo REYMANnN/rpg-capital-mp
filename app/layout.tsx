@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const softwareVersion = "0.2.0";
+const softwareVersion = "0.3.0";
 const deploymentCommit = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || "local";
 
 export const metadata: Metadata = {
