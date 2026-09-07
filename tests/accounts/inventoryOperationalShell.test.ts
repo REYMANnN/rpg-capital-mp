@@ -41,10 +41,11 @@ test('the original inventory header exposes staff profile and logout', () => {
   assert.match(gate, /createPortal/)
 })
 
-test('inventory is always wrapped and google management keeps management access when enforcement is off', () => {
+test('inventory always requires an authorized Balcão context', () => {
   const page = source('app/inventory-v1/page.tsx')
-  assert.match(page, /BALCAO_ACCOUNTS_ENFORCED/)
-  assert.match(page, /return <InventoryRoleGate role="manager" managementAccess><InventoryV1 \/><\/InventoryRoleGate>/)
+  assert.doesNotMatch(page, /BALCAO_ACCOUNTS_ENFORCED/)
+  assert.match(page, /authorizeInventoryContext/)
+  assert.match(page, /redirect\(['"]\/login['"]\)/)
 })
 
 test('finance-only staff are routed without mounting InventoryV1', () => {

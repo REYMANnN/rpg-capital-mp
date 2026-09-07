@@ -1,8 +1,10 @@
-name: BALCAO v10.6 Accounts CI
+name: BALCAO Accounts and Security CI
 
 on:
   push:
-    branches: [balcao-v10.6-accounts-impl]
+    branches:
+      - balcao-v10.6-accounts-impl
+      - security/production-hardening-2026-09-07
   pull_request:
     branches: [master]
 
@@ -15,10 +17,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm install
-      - name: Accounts unit tests
-        run: npx tsx --test tests/accounts/*.test.ts
-      - name: Existing inventory tests
-        run: npx tsx --test tests/nfeKey.test.ts tests/nfe.test.ts tests/purchaseMath.test.ts tests/productMatcher.test.ts tests/invoiceReview.test.ts tests/catalog*.test.ts tests/productLifecycle.test.ts
+      - run: npm ci
+      - name: Repository tests
+        run: npx tsx --test tests/accounts/*.test.ts tests/*.test.ts
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
       - name: Production build
         run: npm run build
