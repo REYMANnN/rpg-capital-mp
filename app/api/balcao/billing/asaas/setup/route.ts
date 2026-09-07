@@ -5,6 +5,11 @@ import { normalizeDigits } from '@/lib/accounts/validation'
 import { buildBillingPlan } from '@/lib/billing/policy'
 import { validateAndNormalizeBillingInput } from '@/lib/billing/cardValidation'
 import {
+  DATA_TERMS_VERSION,
+  PAYMENT_TERMS_VERSION,
+  PLATFORM_TERMS_VERSION,
+} from '@/lib/legal/terms'
+import {
   ensureAsaasCreditCardSubscription,
   ensureAsaasCustomer,
   type AsaasCreditCard,
@@ -17,6 +22,12 @@ export const maxDuration = 60
 type SetupBody = {
   storeId?: unknown
   acceptedRecurringBilling?: unknown
+  acceptedPaymentTerms?: unknown
+  acceptedDataTerms?: unknown
+  acceptedPlatformTerms?: unknown
+  paymentTermsVersion?: unknown
+  dataTermsVersion?: unknown
+  platformTermsVersion?: unknown
   creditCard?: Partial<AsaasCreditCard> | null
   creditCardHolderInfo?: Partial<AsaasCreditCardHolderInfo> | null
 }
@@ -44,6 +55,16 @@ function asaasUserMessage(message: string) {
   return `O Asaas recusou a configuração: ${detail}`
 }
 
+function hasCurrentLegalAcceptance(body: SetupBody) {
+  return body.acceptedRecurringBilling === true
+    && body.acceptedPaymentTerms === true
+    && body.acceptedDataTerms === true
+    && body.acceptedPlatformTerms === true
+    && body.paymentTermsVersion === PAYMENT_TERMS_VERSION
+    && body.dataTermsVersion === DATA_TERMS_VERSION
+    && body.platformTermsVersion === PLATFORM_TERMS_VERSION
+}
+
 export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -52,7 +73,9 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as SetupBody
   const storeId = typeof body.storeId === 'string' ? body.storeId : ''
   if (!storeId) return NextResponse.json({ error: 'Loja não identificada.' }, { status: 400 })
-  if (body.acceptedRecurringBilling !== true) return NextResponse.json({ error: 'Confirme a autorização da cobrança recorrente para continuar.' }, { status: 400 })
+  if (!hasCurrentLegalAcceptance(body)) {
+    return NextResponse.json({ error: 'Os termos obrigatórios não foram aceitos ou foram atualizados. Recarregue a página, leia as versões atuais e confirme os três aceites.' }, { status: 400 })
+  }
 
   const validation = validateAndNormalizeBillingInput(body.creditCard, body.creditCardHolderInfo)
   if (!validation.creditCard || !validation.creditCardHolderInfo) {
@@ -77,12 +100,26 @@ export async function POST(request: Request) {
   if (businessError || !business) return NextResponse.json({ error: 'Não foi possível carregar os dados do negócio.' }, { status: 500 })
   if (currentError) return NextResponse.json({ error: 'Não foi possível preparar a cobrança.' }, { status: 500 })
 
+  const remoteIp = clientIp(request)
+  if (!remoteIp) return NextResponse.json({ error: 'Não foi possível validar a origem da configuração do cartão. Atualize a página e tente novamente.' }, { status: 400 })
+  const userAgent = request.headers.get('user-agent')?.slice(0, 512) ?? ''
+
+  const { error: legalAcceptanceError } = await supabase.rpc('balcao_record_legal_acceptances', {
+    p_store_id: storeId,
+    p_payment_version: PAYMENT_TERMS_VERSION,
+    p_data_version: DATA_TERMS_VERSION,
+    p_platform_version: PLATFORM_TERMS_VERSION,
+    p_ip_address: remoteIp,
+    p_user_agent: userAgent,
+  })
+  if (legalAcceptanceError) {
+    console.error('BALCAO legal acceptance persistence failed', { code: legalAcceptanceError.code ?? null })
+    return NextResponse.json({ error: 'Não foi possível registrar seu aceite dos termos. Nenhuma cobrança foi criada. Atualize a página e tente novamente.' }, { status: 500 })
+  }
+
   if (current && ['configured', 'active'].includes(current.status) && current.asaas_recurring_subscription_id) {
     return NextResponse.json({ ok: true, alreadyConfigured: true, firstDueDate: current.first_due_date, nextDueDate: current.next_due_date })
   }
-
-  const remoteIp = clientIp(request)
-  if (!remoteIp) return NextResponse.json({ error: 'Não foi possível validar a origem da configuração do cartão. Atualize a página e tente novamente.' }, { status: 400 })
 
   try {
     const customer = await ensureAsaasCustomer({
