@@ -77,6 +77,25 @@ test('inventory authorization cannot be disabled by environment configuration', 
   assert.match(stateRoute, /authorizeInventoryContext/)
 })
 
+test('catalog and supplier APIs require an authorized inventory request before database or external lookup', () => {
+  const guarded = [
+    'app/api/products/lookup/route.ts',
+    'app/api/products/lookup/batch/route.ts',
+    'app/api/inventory/catalog-search/route.ts',
+    'app/api/inventory/nfe/by-key/route.ts',
+    'app/api/inventory/supplier-alias/route.ts',
+  ]
+
+  const helper = source('lib/accounts/inventoryApiAccess.ts')
+  assert.match(helper, /authorizeInventoryContext/)
+  assert.match(helper, /inventory\.view/)
+  assert.match(helper, /inventory\.write/)
+
+  for (const file of guarded) {
+    assert.match(source(file), /authorizeInventoryRequest/, `${file} must authorize inventory access`)
+  }
+})
+
 test('global security headers protect the app while preserving barcode camera access', () => {
   const config = source('next.config.ts')
 
