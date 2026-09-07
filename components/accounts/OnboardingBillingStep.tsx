@@ -12,6 +12,11 @@ import {
   validateAndNormalizeBillingInput,
   type BillingFieldErrors,
 } from '@/lib/billing/cardValidation'
+import {
+  DATA_TERMS_VERSION,
+  PAYMENT_TERMS_VERSION,
+  PLATFORM_TERMS_VERSION,
+} from '@/lib/legal/terms'
 
 export default function OnboardingBillingStep({
   storeId,
@@ -26,9 +31,12 @@ export default function OnboardingBillingStep({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<BillingFieldErrors>({})
-  const [accepted, setAccepted] = useState(false)
+  const [acceptedPaymentTerms, setAcceptedPaymentTerms] = useState(false)
+  const [acceptedDataTerms, setAcceptedDataTerms] = useState(false)
+  const [acceptedPlatformTerms, setAcceptedPlatformTerms] = useState(false)
   const [card, setCard] = useState({ holderName: userName, number: '', expiryMonth: '', expiryYear: '', ccv: '' })
   const [holder, setHolder] = useState({ name: userName, email: userEmail, cpfCnpj: '', postalCode: '', addressNumber: '', addressComplement: '', mobilePhone: '' })
+  const allAccepted = acceptedPaymentTerms && acceptedDataTerms && acceptedPlatformTerms
 
   function clearFieldError(field: keyof BillingFieldErrors) {
     setFieldErrors((current) => {
@@ -40,11 +48,15 @@ export default function OnboardingBillingStep({
     setError('')
   }
 
+  function clearAcceptanceError(value: boolean) {
+    if (value) setError('')
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (busy) return
-    if (!accepted) {
-      setError('Confirme a autorização da cobrança recorrente para continuar.')
+    if (!allAccepted) {
+      setError('Leia e aceite os três documentos obrigatórios para continuar.')
       return
     }
 
@@ -65,6 +77,12 @@ export default function OnboardingBillingStep({
         body: JSON.stringify({
           storeId,
           acceptedRecurringBilling: true,
+          acceptedPaymentTerms,
+          acceptedDataTerms,
+          acceptedPlatformTerms,
+          paymentTermsVersion: PAYMENT_TERMS_VERSION,
+          dataTermsVersion: DATA_TERMS_VERSION,
+          platformTermsVersion: PLATFORM_TERMS_VERSION,
           creditCard: validation.creditCard,
           creditCardHolderInfo: validation.creditCardHolderInfo,
         }),
@@ -89,6 +107,8 @@ export default function OnboardingBillingStep({
   const errorInputClass = 'border-rose-400 focus:border-rose-600 focus:ring-rose-100'
   const fieldErrorClass = 'mt-2 text-sm font-medium text-rose-700'
   const fieldClass = (field: keyof BillingFieldErrors) => `${inputClass} ${fieldErrors[field] ? errorInputClass : ''}`
+  const termsLinkClass = 'font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-800'
+  const termsBoxClass = 'flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 text-slate-700'
 
   return <div className="mx-auto w-full max-w-3xl">
     <header className="mb-7 px-1">
@@ -100,7 +120,7 @@ export default function OnboardingBillingStep({
     </header>
 
     <form onSubmit={submit} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-      <p className="text-sm font-semibold text-blue-700">Plano e cobrança</p>
+      <p className="text-sm font-semibold text-blue-700">Plano, cobrança e termos</p>
       <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Balcão — R$ 5,99/mês</h1>
       <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">Cobrança mensal todo dia 1. Não usamos proporcionalidade.</p>
       <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
@@ -173,19 +193,36 @@ export default function OnboardingBillingStep({
         </div>
       </div>
 
-      <label className="mt-7 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 text-slate-700">
-        <input type="checkbox" checked={accepted} onChange={(e) => { setAccepted(e.target.checked); if (e.target.checked) setError('') }} className="mt-1 h-4 w-4" />
-        <span>Ao continuar, você autoriza a cobrança recorrente do BALCÃO de R$ 5,99 todo dia 1, conforme as condições apresentadas acima.</span>
-      </label>
+      <div className="mt-8 border-t border-slate-200 pt-7">
+        <h2 className="text-lg font-bold text-slate-950">Termos obrigatórios</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Abra os documentos se quiser consultar o texto completo. Eles abrem em outra aba para não apagar os dados deste formulário.</p>
 
-      <p className="mt-4 text-xs leading-5 text-slate-500">Os dados completos do cartão são enviados diretamente ao Asaas pelo servidor do BALCÃO e não são armazenados no nosso banco de dados.</p>
+        <div className="mt-5 space-y-3">
+          <label className={termsBoxClass}>
+            <input type="checkbox" checked={acceptedPaymentTerms} onChange={(e) => { setAcceptedPaymentTerms(e.target.checked); clearAcceptanceError(e.target.checked) }} className="mt-1 h-4 w-4 shrink-0" />
+            <span>Li e concordo com os <a className={termsLinkClass} href="/termos/pagamento" target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()}>Termos de Pagamento e Cobrança</a>, inclusive a cobrança recorrente do Balcão conforme as condições apresentadas.</span>
+          </label>
+
+          <label className={termsBoxClass}>
+            <input type="checkbox" checked={acceptedDataTerms} onChange={(e) => { setAcceptedDataTerms(e.target.checked); clearAcceptanceError(e.target.checked) }} className="mt-1 h-4 w-4 shrink-0" />
+            <span>Li e concordo com os <a className={termsLinkClass} href="/termos/dados" target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()}>Termos de Tratamento e Uso de Dados</a>.</span>
+          </label>
+
+          <label className={termsBoxClass}>
+            <input type="checkbox" checked={acceptedPlatformTerms} onChange={(e) => { setAcceptedPlatformTerms(e.target.checked); clearAcceptanceError(e.target.checked) }} className="mt-1 h-4 w-4 shrink-0" />
+            <span>Li e concordo com os <a className={termsLinkClass} href="/termos/uso" target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()}>Termos de Uso da Plataforma</a>.</span>
+          </label>
+        </div>
+      </div>
+
+      <p className="mt-5 text-xs leading-5 text-slate-500">Os dados completos do cartão são enviados diretamente ao Asaas pelo servidor do BALCÃO e não são armazenados no nosso banco de dados. O aceite dos documentos é registrado com a versão, data e metadados técnicos necessários para segurança e prova contratual.</p>
       {error ? <div role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">
         <p>{error}</p>
         {Object.keys(fieldErrors).length ? <ul className="mt-2 list-disc space-y-1 pl-5 font-medium">{Object.entries(fieldErrors).map(([field, message]) => <li key={field}>{message}</li>)}</ul> : null}
       </div> : null}
 
       <div className="mt-7 flex justify-end">
-        <button type="submit" disabled={busy || !accepted} className="min-h-12 rounded-xl bg-blue-700 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Configurando…' : 'Continuar para conectar o banco'}</button>
+        <button type="submit" disabled={busy || !allAccepted} className="min-h-12 rounded-xl bg-blue-700 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Configurando…' : 'Continuar para conectar o banco'}</button>
       </div>
     </form>
   </div>
