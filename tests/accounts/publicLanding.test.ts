@@ -73,3 +73,15 @@ test('a raiz publica define metadata propria da RPG para Balcoes', () => {
   assert.match(page, /rpgcapital\.com\.br/)
   assert.match(page, /SoftwareApplication/)
 })
+
+test('a Vercel publica robots sitemap e llms na raiz do dominio', () => {
+  const robots = readRoot('public/robots.txt')
+  const sitemap = readRoot('public/sitemap.xml')
+  const llms = readRoot('public/llms.txt')
+
+  assert.match(robots, /OAI-SearchBot/)
+  assert.match(robots, /Sitemap: https:\/\/rpgcapital\.com\.br\/sitemap\.xml/)
+  assert.match(sitemap, /https:\/\/rpgcapital\.com\.br\//)
+  assert.match(llms, /RPG para Balcões/)
+  assert.match(llms, /R\$ 5,99/)
+})
