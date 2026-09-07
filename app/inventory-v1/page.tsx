@@ -13,10 +13,6 @@ export const metadata = {
 }
 
 export default async function Page() {
-  if (process.env.BALCAO_ACCOUNTS_ENFORCED !== 'true') {
-    return <InventoryRoleGate role="manager" managementAccess><InventoryV1 /></InventoryRoleGate>
-  }
-
   const jar = await cookies()
   const context = await authorizeInventoryContext({
     installationId: jar.get(INVENTORY_INSTALLATION_COOKIE)?.value,

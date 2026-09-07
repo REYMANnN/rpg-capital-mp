@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { authorizeInventoryRequest, INVENTORY_WRITE_PERMISSION } from '@/lib/accounts/inventoryApiAccess'
 import { DEMO_NFE_ACCESS_KEY, isValidNfeAccessKey, normalizeNfeAccessKey } from '@/lib/inventory/nfeKey'
 import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 
@@ -25,6 +26,9 @@ export async function GET(request: NextRequest) {
   if (!isValidNfeAccessKey(key)) {
     return NextResponse.json({ ok: false, error: 'invalid_nfe_key' }, { status: 400 })
   }
+
+  const access = await authorizeInventoryRequest(request, INVENTORY_WRITE_PERMISSION)
+  if (!access.ok) return access.response
 
   if (key === DEMO_NFE_ACCESS_KEY) {
     return NextResponse.json({ ok: true, demo: true, version: INVENTORY_APP_VERSION, scenarioCount: demoInvoice.items.length, invoice: demoInvoice })

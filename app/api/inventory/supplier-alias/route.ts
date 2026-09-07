@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { authorizeInventoryRequest, INVENTORY_WRITE_PERMISSION } from '@/lib/accounts/inventoryApiAccess'
 import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
 
-const COOKIE_NAME = 'inventory_installation_id'
 const digits = (value: unknown) => String(value ?? '').replace(/\D+/g, '')
 
 export async function GET(request: NextRequest) {
   const supplierDocument = digits(request.nextUrl.searchParams.get('document'))
   const supplierCode = String(request.nextUrl.searchParams.get('code') ?? '').trim().toUpperCase()
-  if (![11, 14].includes(supplierDocument.length) || !supplierCode) {
+  if (![11, 14].includes(supplierDocument.length) || !supplierCode || supplierCode.length > 120) {
     return NextResponse.json({ found: false, error: 'invalid_supplier_key' }, { status: 400 })
   }
+
+  const access = await authorizeInventoryRequest(request, 'products.lookup')
+  if (!access.ok) return access.response
 
   const supabase = createInventoryCloudClient()
   const { data, error } = await supabase
@@ -40,10 +43,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const installationId = request.cookies.get(COOKIE_NAME)?.value ?? ''
-  if (!/^[0-9a-f-]{36}$/i.test(installationId)) {
-    return NextResponse.json({ ok: false, learned: false, error: 'inventory_installation_required' }, { status: 401 })
-  }
+  const access = await authorizeInventoryRequest(request, INVENTORY_WRITE_PERMISSION)
+  if (!access.ok) return access.response
 
   let body: any
   try { body = await request.json() } catch {
@@ -61,7 +62,11 @@ export async function POST(request: NextRequest) {
   if (
     ![11, 14].includes(supplierDocument.length)
     || !supplierCode
+    || supplierCode.length > 120
     || !/^\d{8,14}$/.test(barcode)
+    || canonicalName.length > 240
+    || observedDescription.length > 500
+    || purchaseUnit.length > 12
     || !Number.isFinite(packageFactor)
     || packageFactor <= 0
   ) {
@@ -70,7 +75,7 @@ export async function POST(request: NextRequest) {
 
   const supabase = createInventoryCloudClient()
   const { data, error } = await supabase.rpc('inventory_v1_confirm_supplier_alias_v10_1', {
-    p_installation_id: installationId,
+    p_installation_id: access.installationId,
     p_supplier_document: supplierDocument,
     p_supplier_code: supplierCode,
     p_barcode: barcode,

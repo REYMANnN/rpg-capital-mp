@@ -2,15 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 export async function proxy(request: NextRequest) {
-  const protectedPaths = ['/u', '/app']
-  const isProtected = protectedPaths.some(p => request.nextUrl.pathname.startsWith(p))
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
 
-  // The inventory preview is intentionally local-first and does not require Supabase.
-  // If the legacy app has no Supabase environment yet, keep public routes usable.
   if (!supabaseUrl || !supabaseAnonKey) {
-    if (isProtected) return NextResponse.redirect(new URL('/cadastro', request.url))
     return NextResponse.next({ request })
   }
 
@@ -29,17 +24,26 @@ export async function proxy(request: NextRequest) {
           )
         },
       },
-    }
+    },
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (isProtected && !user) {
-    return NextResponse.redirect(new URL('/cadastro', request.url))
-  }
-
+  // Refresh/validate Supabase auth only on current account and operational routes.
+  // Authorization decisions themselves remain inside server pages and route handlers.
+  await supabase.auth.getUser()
   return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|public).*)'],
+  matcher: [
+    '/login/:path*',
+    '/auth/:path*',
+    '/onboarding/:path*',
+    '/manage/:path*',
+    '/work/:path*',
+    '/inventory-v1/:path*',
+    '/activate/:path*',
+    '/api/balcao/:path*',
+    '/api/inventory/:path*',
+    '/api/products/:path*',
+  ],
 }

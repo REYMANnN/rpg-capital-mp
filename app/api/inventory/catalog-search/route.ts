@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { authorizeInventoryRequest } from '@/lib/accounts/inventoryApiAccess'
 import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
+
+const MAX_QUERY_LENGTH = 120
 
 export async function GET(request: NextRequest) {
   const q = String(request.nextUrl.searchParams.get('q') ?? '').trim()
   if (q.length < 3) return NextResponse.json({ items: [] })
+  if (q.length > MAX_QUERY_LENGTH) return NextResponse.json({ items: [], error: 'query_too_long' }, { status: 400 })
+
+  const access = await authorizeInventoryRequest(request, 'products.lookup')
+  if (!access.ok) return access.response
 
   const supabase = createInventoryCloudClient()
   const { data, error } = await supabase.rpc('inventory_v1_search_catalog_candidates', {

@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import TestGoogleLoginButton from '@/components/accounts/TestGoogleLoginButton'
 
 export default function PublicHomePage() {
   return (
@@ -26,8 +25,6 @@ export default function PublicHomePage() {
               Criar Conta
             </Link>
           </div>
-
-          <TestGoogleLoginButton />
 
           <p className="mt-8 text-sm leading-6 text-slate-500">
             O acesso de gestão usa sua Conta Google. Você não precisa criar outra senha.

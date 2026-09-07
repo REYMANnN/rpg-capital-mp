@@ -1,32 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { authorizeInventoryRequest } from '@/lib/accounts/inventoryApiAccess'
 import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
 import { BatchLimitError, resolveCatalogBatch } from '@/lib/inventory/catalog/batch'
 import { resolveUniversalProduct } from '@/lib/inventory/catalog/resolver'
 import type { CatalogCacheRow } from '@/lib/inventory/catalog/cache'
 
 const CACHE_COLUMNS = [
-  'barcode',
-  'name',
-  'brand',
-  'image_url',
-  'source',
-  'raw_metadata',
-  'system_tag',
-  'checked_at',
-  'manufacturer',
-  'category_general',
-  'category_raw',
-  'confidence_score',
-  'cache_status',
-  'miss_expires_at',
-  'canonical_updated_at',
+  'barcode', 'name', 'brand', 'image_url', 'source', 'raw_metadata', 'system_tag', 'checked_at',
+  'manufacturer', 'category_general', 'category_raw', 'confidence_score', 'cache_status',
+  'miss_expires_at', 'canonical_updated_at',
 ].join(',')
 
+const MAX_REQUEST_BYTES = 64 * 1024
+const MAX_BARCODES = 100
+
 export async function POST(request: NextRequest) {
+  const declaredLength = Number(request.headers.get('content-length') || 0)
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+    return NextResponse.json({ ok: false, error: 'request_too_large' }, { status: 413 })
+  }
+
   const body = await request.json().catch(() => null) as { barcodes?: unknown } | null
   if (!body || !Array.isArray(body.barcodes)) {
     return NextResponse.json({ ok: false, error: 'invalid_body' }, { status: 400 })
   }
+  if (body.barcodes.length > MAX_BARCODES) {
+    return NextResponse.json({ ok: false, error: 'batch_limit_exceeded', maxUniqueBarcodes: MAX_BARCODES }, { status: 413 })
+  }
+
+  const access = await authorizeInventoryRequest(request, 'products.lookup')
+  if (!access.ok) return access.response
 
   const barcodes = body.barcodes
   const supabase = createInventoryCloudClient()
@@ -59,7 +62,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     if (error instanceof BatchLimitError) {
-      return NextResponse.json({ ok: false, error: 'batch_limit_exceeded', maxUniqueBarcodes: 100 }, { status: 413 })
+      return NextResponse.json({ ok: false, error: 'batch_limit_exceeded', maxUniqueBarcodes: MAX_BARCODES }, { status: 413 })
     }
     console.error('inventory batch lookup failed', error)
     return NextResponse.json({ ok: false, error: 'lookup_failed' }, { status: 500 })

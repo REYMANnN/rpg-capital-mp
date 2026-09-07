@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { authorizeInventoryRequest } from '@/lib/accounts/inventoryApiAccess'
 import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
 import { normalizeBarcode } from '@/lib/inventory/catalog/normalize'
 import { resolveUniversalProduct } from '@/lib/inventory/catalog/resolver'
@@ -19,6 +20,9 @@ export async function GET(request: NextRequest) {
   if (!code) {
     return NextResponse.json({ found: false, error: 'invalid_barcode' }, { status: 400 })
   }
+
+  const access = await authorizeInventoryRequest(request, 'products.lookup')
+  if (!access.ok) return access.response
 
   const supabase = createInventoryCloudClient()
   const { data: cachedData, error: cacheReadError } = await supabase

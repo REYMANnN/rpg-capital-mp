@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
@@ -23,19 +22,9 @@ type CloudStateResponse = {
   state?: unknown
 }
 
-function accountsEnforced() {
-  return process.env.BALCAO_ACCOUNTS_ENFORCED === 'true'
-}
-
 function existingInstallationId(request: NextRequest) {
   const existing = request.cookies.get(COOKIE_NAME)?.value
   return existing && /^[0-9a-f-]{36}$/i.test(existing) ? existing : null
-}
-
-function getInstallationId(request: NextRequest) {
-  const existing = existingInstallationId(request)
-  if (existing) return { id: existing, fresh: false }
-  return { id: randomUUID(), fresh: true }
 }
 
 function withInstallationCookie(response: NextResponse, id: string, fresh: boolean) {
@@ -72,13 +61,14 @@ async function authorizedInstallation(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  let installation = getInstallationId(request)
-  if (accountsEnforced()) {
-    const authorized = await authorizedInstallation(request)
-    if (!authorized.installation || !authorized.context.authorized) return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
-    if (authorized.context.mode === 'staff' && !authorized.context.staff?.permissions.has('inventory.view')) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
-    installation = authorized.installation
+  const authorized = await authorizedInstallation(request)
+  if (!authorized.installation || !authorized.context.authorized) {
+    return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
   }
+  if (authorized.context.mode === 'staff' && !authorized.context.staff?.permissions.has('inventory.view')) {
+    return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  }
+  const installation = authorized.installation
 
   const supabase = createInventoryCloudClient()
   const { data, error } = await supabase.rpc('inventory_v1_get_state', { p_installation_id: installation.id })
@@ -106,27 +96,24 @@ export async function PUT(request: NextRequest) {
   }
   if (!isState(state)) return NextResponse.json({ ok: false, error: 'invalid_state' }, { status: 400 })
 
-  let installation = getInstallationId(request)
-  let access: Awaited<ReturnType<typeof authorizeInventoryContext>> | null = null
+  const authorized = await authorizedInstallation(request)
+  if (!authorized.installation || !authorized.context.authorized || !authorized.context.store) {
+    return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
+  }
+  const installation = authorized.installation
+  const access = authorized.context
   let required: Permission[] = []
   const supabase = createInventoryCloudClient()
 
-  if (accountsEnforced()) {
-    const authorized = await authorizedInstallation(request)
-    if (!authorized.installation || !authorized.context.authorized) return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
-    installation = authorized.installation
-    access = authorized.context
+  const { data: currentData } = await supabase.rpc('inventory_v1_get_state', { p_installation_id: installation.id })
+  const current = (currentData ?? {}) as CloudStateResponse
+  const before: StoreData = current.found && isState(current.state) ? current.state : { products: [], sales: [], movements: [], scaleRule: undefined }
+  required = requiredPermissionsForStateChange(before, state)
 
-    const { data: currentData } = await supabase.rpc('inventory_v1_get_state', { p_installation_id: installation.id })
-    const current = (currentData ?? {}) as CloudStateResponse
-    const before: StoreData = current.found && isState(current.state) ? current.state : { products: [], sales: [], movements: [], scaleRule: undefined }
-    required = requiredPermissionsForStateChange(before, state)
-
-    if (access.mode === 'staff') {
-      const permissions = access.staff?.permissions
-      if (!permissions || required.some((permission) => !permissions.has(permission))) {
-        return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
-      }
+  if (access.mode === 'staff') {
+    const permissions = access.staff?.permissions
+    if (!permissions || required.some((permission) => !permissions.has(permission))) {
+      return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
     }
   }
 
@@ -141,19 +128,17 @@ export async function PUT(request: NextRequest) {
     return withInstallationCookie(NextResponse.json({ ok: false, error: 'sync_failed' }, { status: 500 }), installation.id, installation.fresh)
   }
 
-  if (access?.store) {
-    await writeAuditEvent({
-      businessId: String(access.store.business_id),
-      storeId: String(access.store.id),
-      actorUserId: access.mode === 'google' ? access.user?.id ?? null : null,
-      actorStaffId: access.mode === 'staff' ? access.staff?.staffId ?? null : null,
-      terminalId: access.terminal?.terminalId ?? null,
-      action: 'inventory.state_changed',
-      entityType: 'store',
-      entityId: String(access.store.id),
-      metadata: { requiredPermissions: required },
-    }).catch(() => {})
-  }
+  await writeAuditEvent({
+    businessId: String(access.store.business_id),
+    storeId: String(access.store.id),
+    actorUserId: access.mode === 'google' ? access.user?.id ?? null : null,
+    actorStaffId: access.mode === 'staff' ? access.staff?.staffId ?? null : null,
+    terminalId: access.terminal?.terminalId ?? null,
+    action: 'inventory.state_changed',
+    entityType: 'store',
+    entityId: String(access.store.id),
+    metadata: { requiredPermissions: required },
+  }).catch(() => {})
 
   return withInstallationCookie(NextResponse.json({ ok: true, storeId: data, version: INVENTORY_APP_VERSION }), installation.id, installation.fresh)
 }
