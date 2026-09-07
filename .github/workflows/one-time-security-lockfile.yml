@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   refresh-lockfile:
@@ -24,11 +24,14 @@ jobs:
           npm audit fix --package-lock-only --ignore-scripts
       - name: Audit resolved production graph
         run: npm audit --omit=dev --audit-level=high
-      - name: Upload lockfile
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-package-lock
-          path: package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit lockfile if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfile already current."
+          else
+            git commit -m "security: refresh audited package lock"
+            git push
+          fi
