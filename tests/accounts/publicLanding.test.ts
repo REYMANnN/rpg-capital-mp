@@ -10,6 +10,10 @@ function read(relative: string) {
   return fs.readFileSync(path.join(landingDir, relative), 'utf8')
 }
 
+function readRoot(relative: string) {
+  return fs.readFileSync(path.join(root, relative), 'utf8')
+}
+
 test('landing apresenta a marca, o preco e o valor principal do produto', () => {
   const html = read('index.html')
 
@@ -42,6 +46,39 @@ test('landing possui arquivos de descoberta para buscadores e IAs', () => {
   assert.match(html, /og:title/)
   assert.match(html, /rel="canonical"/)
   assert.match(robots, /User-agent: \*/)
+  assert.match(robots, /OAI-SearchBot/)
+  assert.match(robots, /Sitemap: https:\/\/rpgcapital\.com\.br\/sitemap\.xml/)
+  assert.match(sitemap, /https:\/\/rpgcapital\.com\.br\//)
+  assert.match(llms, /RPG para Balcões/)
+  assert.match(llms, /R\$ 5,99/)
+})
+
+test('a raiz publica da Vercel renderiza a landing e nao redireciona para a home interna', () => {
+  const page = readRoot('app/page.tsx')
+
+  assert.doesNotMatch(page, /redirect\(['"]\/home['"]\)/)
+  assert.match(page, /RPG para Balcões/)
+  assert.match(page, /Tudo que sua loja precisa para vender, controlar e crescer/)
+  assert.match(page, /href=["']\/login\?intent=login["']/)
+  assert.match(page, /href=["']\/auth\/signup\/reset["']/)
+  assert.match(page, /R\$\s*5,99/)
+  assert.match(page, /Pix sem taxa/i)
+})
+
+test('a raiz publica define metadata propria da RPG para Balcoes', () => {
+  const page = readRoot('app/page.tsx')
+
+  assert.match(page, /export const metadata/)
+  assert.match(page, /RPG para Balcões/)
+  assert.match(page, /rpgcapital\.com\.br/)
+  assert.match(page, /SoftwareApplication/)
+})
+
+test('a Vercel publica robots sitemap e llms na raiz do dominio', () => {
+  const robots = readRoot('public/robots.txt')
+  const sitemap = readRoot('public/sitemap.xml')
+  const llms = readRoot('public/llms.txt')
+
   assert.match(robots, /OAI-SearchBot/)
   assert.match(robots, /Sitemap: https:\/\/rpgcapital\.com\.br\/sitemap\.xml/)
   assert.match(sitemap, /https:\/\/rpgcapital\.com\.br\//)

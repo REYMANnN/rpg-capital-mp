@@ -6,9 +6,13 @@ function source(path: string) {
   return fs.readFileSync(path, 'utf8')
 }
 
-test('root sends visitors to the stable public home', () => {
+test('legacy public home remains available while the root serves the Balcoes landing', () => {
   const root = source('app/page.tsx')
-  assert.match(root, /redirect\(['"]\/home['"]\)/)
+  const home = source('app/home/page.tsx')
+
+  assert.doesNotMatch(root, /redirect\(['"]\/home['"]\)/)
+  assert.match(root, /RPG para Balcões/)
+  assert.match(home, /Minha Conta/)
 })
 
 test('public home offers existing-account and fresh signup paths', () => {
