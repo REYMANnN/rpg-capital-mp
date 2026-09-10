@@ -46,6 +46,25 @@ export type ScanResult =
   | { kind: 'barcode'; code: string }
   | { kind: 'scale'; productCode: string; encodedValue: number; quantity?: number; encodedPriceCents?: number }
 
+export function searchProducts<T extends Pick<Product, 'name' | 'barcode' | 'scaleCode'>>(products: T[], query: string) {
+  const normalizedQuery = query
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+
+  if (!normalizedQuery) return products
+
+  return products.filter((product) => {
+    const searchable = [product.name, product.barcode, product.scaleCode || '']
+      .join(' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase('pt-BR')
+    return searchable.includes(normalizedQuery)
+  })
+}
+
 export function parseScaleLabel(code: string, rule: ScaleRule): ScanResult {
   const normalized = code.trim()
   if (!normalized.startsWith(rule.prefix)) return { kind: 'barcode', code: normalized }
