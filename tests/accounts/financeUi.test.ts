@@ -90,3 +90,12 @@ test('google management keeps settings while staff manager remains operational o
   assert.match(page, /managementAccess/)
   assert.match(page, /InventoryRoleGate[\s\S]*managementAccess/)
 })
+
+test('finance UI exposes checkout payment and card settlement insights', () => {
+  const dashboard = source('app/inventory-v1/FinanceDashboard.tsx')
+  assert.match(dashboard, /Saldo a receber antes das taxas/)
+  assert.match(dashboard, /Vendas por forma de pagamento/)
+  assert.match(dashboard, /Taxa efetiva estimada/)
+  assert.match(dashboard, /Últimas vendas/)
+  assert.match(dashboard, /Repasses de cartão identificados/)
+})

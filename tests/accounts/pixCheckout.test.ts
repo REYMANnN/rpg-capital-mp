@@ -78,11 +78,13 @@ test('checkout Pix database function allows only roles with checkout permission'
   assert.match(migration, /pix_key/)
 })
 
-test('checkout UI opens Pix charge before recording the sale', () => {
+test('checkout UI keeps Pix charge before recording the sale through the payment selector', () => {
   const inventory = source('app/inventory-v1/InventoryV1.tsx')
-  assert.match(inventory, /COBRAR NO PIX/)
+  assert.match(inventory, /Como o cliente vai pagar\?/)
+  assert.match(inventory, /choosePayment\('pix'\)/)
   assert.match(inventory, /PAGAMENTO RECEBIDO/)
   assert.match(inventory, /Pix Copia e Cola/)
   assert.match(inventory, /\/api\/balcao\/checkout\/pix/)
   assert.match(inventory, /JSON\.stringify\(\{ amountCents: total \}\)/)
+  assert.doesNotMatch(inventory, /COBRAR NO PIX/)
 })

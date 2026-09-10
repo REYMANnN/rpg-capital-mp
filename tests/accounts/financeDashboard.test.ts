@@ -130,3 +130,79 @@ test('dashboard marks historical margin as estimated when an old sale has no cos
   assert.equal(dashboard.summary.grossProfitCents, 700)
   assert.equal(dashboard.summary.marginEstimated, true)
 })
+
+test('dashboard separates card, Pix, cash and legacy sales by checkout payment method', () => {
+  const input = baseInput()
+  input.dailyMetrics = []
+  input.inventoryState = {
+    products: [{ id: 'p1', stockMilli: 1000, averageCostCents: 600 }],
+    sales: [
+      { id: 'card-1', createdAt: '2026-08-30T10:00:00Z', totalCents: 10000, cogsCents: 6000, grossProfitCents: 4000, items: [], payment: { method: 'card', confirmedAt: '2026-08-30T10:00:00Z' } },
+      { id: 'pix-1', createdAt: '2026-08-30T11:00:00Z', totalCents: 5000, cogsCents: 2000, grossProfitCents: 3000, items: [], payment: { method: 'pix', confirmedAt: '2026-08-30T11:00:00Z' } },
+      { id: 'cash-1', createdAt: '2026-08-31T10:00:00Z', totalCents: 3000, cogsCents: 1000, grossProfitCents: 2000, items: [], payment: { method: 'cash', confirmedAt: '2026-08-31T10:00:00Z' } },
+      { id: 'legacy-1', createdAt: '2026-08-31T11:00:00Z', totalCents: 2000, cogsCents: 1000, grossProfitCents: 1000, items: [] },
+    ],
+  } as any
+
+  const dashboard = buildFinanceDashboard(input as any)
+
+  assert.equal(dashboard.paymentSummary.cardSalesCents, 10000)
+  assert.equal(dashboard.paymentSummary.pixSalesCents, 5000)
+  assert.equal(dashboard.paymentSummary.cashSalesCents, 3000)
+  assert.equal(dashboard.paymentSummary.legacySalesCents, 2000)
+  assert.equal(dashboard.card.grossCardSalesCents, 10000)
+  assert.equal(dashboard.card.pendingGrossCents, 10000)
+  assert.equal(dashboard.recentSales.length, 4)
+  assert.equal(dashboard.recentSales[0].id, 'legacy-1')
+})
+
+test('recognized Getnet settlement reconciles conservatively without becoming a second sale or profit', () => {
+  const input = baseInput()
+  input.dailyMetrics = []
+  input.transactions = [
+    { id: 'getnet-1', accountId: 'a1', postedAt: '2026-08-31T18:00:00Z', amountCents: 9700, description: 'CREDITO GETNET', counterpartyName: 'Getnet', category: 'Recebimentos', source: 'malvo' as const },
+    { id: 'customer-1', accountId: 'a1', postedAt: '2026-08-31T19:00:00Z', amountCents: 5000, description: 'PIX CLIENTE', counterpartyName: 'Cliente comum', category: 'Recebimentos', source: 'malvo' as const },
+  ]
+  input.inventoryState = {
+    products: [],
+    sales: [
+      { id: 'card-30', createdAt: '2026-08-30T12:00:00Z', totalCents: 10000, cogsCents: 6000, grossProfitCents: 4000, items: [], payment: { method: 'card', confirmedAt: '2026-08-30T12:00:00Z' } },
+      { id: 'card-31', createdAt: '2026-08-31T20:00:00Z', totalCents: 5000, cogsCents: 3000, grossProfitCents: 2000, items: [], payment: { method: 'card', confirmedAt: '2026-08-31T20:00:00Z' } },
+    ],
+  } as any
+
+  const dashboard = buildFinanceDashboard(input as any)
+
+  assert.equal(dashboard.summary.salesCents, 15000)
+  assert.equal(dashboard.summary.grossProfitCents, 6000)
+  assert.equal(dashboard.card.grossCardSalesCents, 15000)
+  assert.equal(dashboard.card.recognizedSettlementCents, 9700)
+  assert.equal(dashboard.card.reconciledGrossCents, 10000)
+  assert.equal(dashboard.card.reconciledSettlementCents, 9700)
+  assert.equal(dashboard.card.estimatedFeeCents, 300)
+  assert.equal(dashboard.card.estimatedFeeRateBps, 300)
+  assert.equal(dashboard.card.pendingGrossCents, 5000)
+  assert.equal(dashboard.card.settlements.length, 1)
+  assert.equal(dashboard.card.settlements[0].provider, 'Getnet')
+  assert.equal(dashboard.card.settlements[0].status, 'reconciled')
+})
+
+test('unknown bank inflow is not classified as a card settlement', () => {
+  const input = baseInput()
+  input.dailyMetrics = []
+  input.transactions = [
+    { id: 'unknown-1', accountId: 'a1', postedAt: '2026-08-31T18:00:00Z', amountCents: 9700, description: 'TED RECEBIDA', counterpartyName: 'Cliente XYZ', category: 'Recebimentos', source: 'malvo' as const },
+  ]
+  input.inventoryState = {
+    products: [],
+    sales: [
+      { id: 'card-30', createdAt: '2026-08-30T12:00:00Z', totalCents: 10000, cogsCents: 6000, grossProfitCents: 4000, items: [], payment: { method: 'card', confirmedAt: '2026-08-30T12:00:00Z' } },
+    ],
+  } as any
+
+  const dashboard = buildFinanceDashboard(input as any)
+  assert.equal(dashboard.card.recognizedSettlementCents, 0)
+  assert.equal(dashboard.card.reconciledGrossCents, 0)
+  assert.equal(dashboard.card.pendingGrossCents, 10000)
+  assert.equal(dashboard.card.estimatedFeeRateBps, null)
+})
