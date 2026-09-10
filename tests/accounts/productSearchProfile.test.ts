@@ -47,6 +47,7 @@ test('stock and checkout share product search and can open the product profile',
   assert.match(ui, /function ProductSearch/)
   assert.equal(searchUses.length, 2)
   assert.match(ui, /Buscar produto por nome ou código/)
+  assert.match(ui, /Digite o nome, EAN ou código do produto/)
   assert.match(ui, /Perfil do produto/)
   assert.match(ui, /Histórico do item/)
   assert.match(ui, /Custo médio/)
