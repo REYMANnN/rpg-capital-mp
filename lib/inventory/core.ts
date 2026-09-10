@@ -33,6 +33,13 @@ export interface SaleItem {
   lineCostCents: number
 }
 
+export type PaymentMethod = 'pix' | 'card' | 'cash'
+
+export interface SalePayment {
+  method: PaymentMethod
+  confirmedAt: string
+}
+
 export interface Sale {
   id: string
   createdAt: string
@@ -40,6 +47,7 @@ export interface Sale {
   cogsCents: number
   grossProfitCents: number
   items: SaleItem[]
+  payment?: SalePayment
 }
 
 export type ScanResult =
@@ -95,7 +103,7 @@ export function parseScaleLabel(code: string, rule: ScaleRule): ScanResult {
   }
 }
 
-export function completeSale(products: Product[], lines: CartInput[], saleId: string) {
+export function completeSale(products: Product[], lines: CartInput[], saleId: string, payment?: SalePayment) {
   if (!lines.length) throw new Error('Adicione pelo menos um produto à venda.')
   const quantities = new Map<string, number>()
   for (const line of lines) {
@@ -140,6 +148,7 @@ export function completeSale(products: Product[], lines: CartInput[], saleId: st
       cogsCents,
       grossProfitCents: totalCents - cogsCents,
       items,
+      ...(payment ? { payment } : {}),
     } satisfies Sale,
   }
 }
