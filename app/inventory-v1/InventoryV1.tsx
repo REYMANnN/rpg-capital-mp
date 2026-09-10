@@ -13,13 +13,14 @@ import {
   Pencil,
   RotateCcw,
   ScanLine,
+  Search,
   Settings,
   ShoppingCart,
   WalletCards,
   Trash2,
   X,
 } from 'lucide-react'
-import { completeSale, type Product, type Sale, type ScaleRule } from '@/lib/inventory/core'
+import { completeSale, searchProducts, type Product, type Sale, type ScaleRule } from '@/lib/inventory/core'
 import { calculatePurchaseUpdate } from '@/lib/inventory/intake'
 import { parseNfeXml, type ParsedNfe, type ParsedNfeItem } from '@/lib/inventory/nfe'
 import { validateNewProductCommercialData, validateSalePrice } from '@/lib/inventory/productRules'
@@ -168,6 +169,7 @@ export default function InventoryV1() {
   const [invoiceReview, setInvoiceReview] = useState<InvoiceReview | null>(null)
   const [invoiceLoading, setInvoiceLoading] = useState(false)
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null)
+  const [profileProductId, setProfileProductId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -241,6 +243,16 @@ export default function InventoryV1() {
 
   const visibleProducts = useMemo(() => activeProducts(data.products), [data.products])
   const pendingPriceCount = useMemo(() => visibleProducts.filter((p) => p.priceCents <= 0).length, [visibleProducts])
+  const profileProduct = useMemo(
+    () => profileProductId ? visibleProducts.find((product) => product.id === profileProductId) || null : null,
+    [profileProductId, visibleProducts],
+  )
+  const profileMovements = useMemo(
+    () => profileProduct
+      ? data.movements.filter((movement) => movement.productId === profileProduct.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      : [],
+    [data.movements, profileProduct],
+  )
 
   function flash(message: string) {
     setError('')
@@ -810,6 +822,7 @@ export default function InventoryV1() {
             close={closeProductPanel}
             scan={() => { setScanTarget('product'); setScannerOpen(true) }}
             edit={editProduct}
+            view={(product) => setProfileProductId(product.id)}
             deleteCurrent={requestDeleteCurrentProduct}
           />
         )}
@@ -830,6 +843,8 @@ export default function InventoryV1() {
             total={totalCents}
             scan={() => { setScanTarget('checkout'); setScannerOpen(true) }}
             manual={handleCode}
+            add={(product) => addCart(product, 1000)}
+            view={(product) => setProfileProductId(product.id)}
             change={(id, delta) => setCart((current) => current.map((line) => line.productId === id ? { ...line, quantityMilli: Math.max(0, line.quantityMilli + delta) } : line).filter((line) => line.quantityMilli > 0))}
             remove={(id) => setCart((current) => current.filter((line) => line.productId !== id))}
             checkout={checkout}
@@ -871,6 +886,19 @@ export default function InventoryV1() {
         </div>
       )}
 
+      {profileProduct && (
+        <ProductProfile
+          product={profileProduct}
+          movements={profileMovements}
+          close={() => setProfileProductId(null)}
+          edit={() => {
+            setProfileProductId(null)
+            setTab('stock')
+            editProduct(profileProduct)
+          }}
+        />
+      )}
+
       {scannerOpen && <QuaggaScanner onCode={handleCode} close={() => setScannerOpen(false)} />}
     </div>
   )
@@ -907,6 +935,7 @@ function Stock({
   close,
   scan,
   edit,
+  view,
   deleteCurrent,
 }: {
   products: AppProduct[]
@@ -919,9 +948,12 @@ function Stock({
   close: () => void
   scan: () => void
   edit: (product: AppProduct) => void
+  view: (product: AppProduct) => void
   deleteCurrent: () => void
 }) {
   const manualName = mode === 'new' && lookup.status === 'new'
+  const [query, setQuery] = useState('')
+  const filteredProducts = useMemo(() => searchProducts(products, query), [products, query])
   return (
     <>
       <section className={styles.hero}>
@@ -933,6 +965,8 @@ function Stock({
         </div>
         <button className={styles.primary} onClick={scan}><Camera />Escanear produto</button>
       </section>
+
+      <ProductSearch query={query} setQuery={setQuery} resultCount={filteredProducts.length} />
 
       {mode && (
         <section className={styles.card}>
@@ -969,7 +1003,9 @@ function Stock({
       <section className={styles.productlist}>
         {products.length === 0 ? (
           <div className={styles.empty}><Boxes /><b>Nenhum produto</b><span>Escaneie um produto ou importe uma NF-e para começar.</span></div>
-        ) : products.map((product) => (
+        ) : filteredProducts.length === 0 ? (
+          <div className={styles.empty}><Search /><b>Nenhum resultado</b><span>Tente outro nome ou código.</span></div>
+        ) : filteredProducts.map((product) => (
           <article className={styles.product} key={product.id}>
             <div className={styles.productPhoto}>{product.catalogImageUrl ? <img src={product.catalogImageUrl} alt="" /> : <Barcode />}</div>
             <div className={styles.grow}>
@@ -981,7 +1017,10 @@ function Stock({
               </div>
             </div>
             <div className={product.stockMilli <= product.minStockMilli ? styles.low : styles.stockqty}><strong>{qty(product.stockMilli, product.unit)}</strong><small>{product.stockMilli <= product.minStockMilli ? 'Estoque baixo' : 'Disponível'}</small></div>
-            <button className={styles.editButton} onClick={() => edit(product)}><Pencil />Editar</button>
+            <div className={styles.productActions}>
+              <button className={styles.profileButton} onClick={() => view(product)}>Ver perfil</button>
+              <button className={styles.editButton} onClick={() => edit(product)}><Pencil />Editar</button>
+            </div>
           </article>
         ))}
       </section>
@@ -1063,8 +1102,19 @@ function Intake({
   )
 }
 
-function Checkout({ products, cart, total, scan, manual, change, remove, checkout }: { products: AppProduct[]; cart: CartLine[]; total: number; scan: () => void; manual: (value: string) => void | Promise<void>; change: (id: string, delta: number) => void; remove: (id: string) => void; checkout: () => void }) {
+function ProductSearch({ query, setQuery, resultCount }: { query: string; setQuery: (value: string) => void; resultCount: number }) {
+  return (
+    <section className={styles.productSearch} aria-label="Pesquisa de produtos">
+      <div className={styles.productSearchInput}><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar produto por nome ou código" autoComplete="off" /></div>
+      <small>{query.trim() ? resultCount + ' resultado(s)' : 'Digite o nome, EAN ou código do produto.'}</small>
+    </section>
+  )
+}
+
+function Checkout({ products, cart, total, scan, manual, add, view, change, remove, checkout }: { products: AppProduct[]; cart: CartLine[]; total: number; scan: () => void; manual: (value: string) => void | Promise<void>; add: (product: AppProduct) => void; view: (product: AppProduct) => void; change: (id: string, delta: number) => void; remove: (id: string) => void; checkout: () => void }) {
   const [code, setCode] = useState('')
+  const [productQuery, setProductQuery] = useState('')
+  const searchResults = useMemo(() => searchProducts(products, productQuery), [products, productQuery])
   const [pixCharge, setPixCharge] = useState<{ amountCents: number; payload: string; qrDataUrl: string } | null>(null)
   const [pixBusy, setPixBusy] = useState(false)
   const [pixError, setPixError] = useState('')
@@ -1111,6 +1161,18 @@ function Checkout({ products, cart, total, scan, manual, change, remove, checkou
     <>
       <section className={styles.hero}><div><span>Checkout</span><h1>Caixa</h1><p>Leia o código do produto. SKU sem preço de venda abre automaticamente no editor antes de entrar no carrinho.</p></div><button className={styles.primary} onClick={scan}><ScanLine />Escanear item</button></section>
       <section className={styles.scanbar}><input inputMode="numeric" placeholder="Leitor USB / código manual" value={code} onChange={(event) => setCode(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && code.trim()) { void manual(code); setCode('') } }} /><button onClick={() => { void manual(code); setCode('') }}>Adicionar</button></section>
+      <ProductSearch query={productQuery} setQuery={setProductQuery} resultCount={searchResults.length} />
+      {productQuery.trim() && (
+        <section className={styles.searchResults}>
+          {searchResults.length === 0 ? <div className={styles.empty}><Search /><b>Nenhum resultado</b><span>Tente outro nome ou código.</span></div> : searchResults.slice(0, 8).map((product) => (
+            <article className={styles.searchResult} key={product.id}>
+              <div className={styles.productPhoto}>{product.catalogImageUrl ? <img src={product.catalogImageUrl} alt="" /> : <Barcode />}</div>
+              <div className={styles.grow}><b>{product.name}</b><small>{product.catalogBrand ? product.catalogBrand + ' · ' : ''}EAN {product.barcode}</small><small>{money(product.priceCents)} · {qty(product.stockMilli, product.unit)} em estoque</small></div>
+              <div className={styles.searchActions}><button className={styles.profileButton} onClick={() => view(product)}>Ver perfil</button><button className={styles.primary} disabled={product.stockMilli <= 0 || product.priceCents <= 0} onClick={() => { add(product); setProductQuery('') }}>Adicionar</button></div>
+            </article>
+          ))}
+        </section>
+      )}
       <section className={styles.checkoutgrid}>
         <div className={styles.productlist}>{cart.length === 0 ? <div className={styles.empty}><ShoppingCart /><b>Carrinho vazio</b><span>Toque em “Escanear item”.</span></div> : cart.map((line) => { const product = products.find((candidate) => candidate.id === line.productId); if (!product) return null; return <article className={styles.cartline} key={line.productId}><div className={styles.grow}><b>{product.name}</b><small>{qty(line.quantityMilli, product.unit)}</small></div><div className={styles.cartstep}><button onClick={() => change(product.id, -1000)}>−</button><strong>{qty(line.quantityMilli, product.unit)}</strong><button onClick={() => change(product.id, 1000)}>+</button></div><b>{money(Math.round((product.priceCents * line.quantityMilli) / 1000))}</b><button className={styles.trash} onClick={() => remove(product.id)}><Trash2 /></button></article> })}</div>
         <aside className={styles.total}><span>Total</span><strong>{money(total)}</strong><button className={styles.pay} disabled={!cart.length || pixBusy} onClick={() => void chargePix()}>{pixBusy ? 'GERANDO PIX…' : 'COBRAR NO PIX'}</button>{pixError ? <small role="alert" style={{ color: '#fecaca', opacity: 1 }}>{pixError}</small> : <small>A venda só é concluída depois que o operador confirmar o recebimento.</small>}</aside>
@@ -1137,6 +1199,49 @@ function Checkout({ products, cart, total, scan, manual, change, remove, checkou
         </div>
       )}
     </>
+  )
+}
+
+function ProductProfile({ product, movements, close, edit }: { product: AppProduct; movements: Movement[]; close: () => void; edit: () => void }) {
+  const marginCents = product.priceCents - product.averageCostCents
+  const marginPercent = product.priceCents > 0 ? (marginCents / product.priceCents) * 100 : 0
+  const stockCostCents = Math.round((product.averageCostCents * product.stockMilli) / 1000)
+  const stockRetailCents = Math.round((product.priceCents * product.stockMilli) / 1000)
+  const movementLabel: Record<Movement['type'], string> = { initial: 'Estoque inicial', purchase: 'Entrada', sale: 'Venda', adjustment: 'Ajuste' }
+
+  return (
+    <div className={styles.deleteOverlay} role="presentation" onClick={close}>
+      <section className={styles.productProfile} role="dialog" aria-modal="true" aria-labelledby="product-profile-title" onClick={(event) => event.stopPropagation()}>
+        <div className={styles.profileHeader}>
+          <div className={styles.identityMedia}>{product.catalogImageUrl ? <img src={product.catalogImageUrl} alt="" /> : <Barcode />}</div>
+          <div className={styles.grow}><span className={styles.eyebrow}>Perfil do produto</span><h2 id="product-profile-title">{product.name}</h2><p>{product.catalogBrand || 'Marca não informada'} · EAN {product.barcode}{product.scaleCode ? ' · Código ' + product.scaleCode : ''}</p></div>
+          <button className={styles.iconButton} onClick={close} aria-label="Fechar perfil"><X /></button>
+        </div>
+
+        <div className={styles.profileGrid}>
+          <div><span>Preço de venda</span><strong>{product.priceCents > 0 ? money(product.priceCents) : 'Pendente'}</strong></div>
+          <div><span>Custo médio</span><strong>{product.averageCostCents > 0 ? money(product.averageCostCents) : 'Não informado'}</strong></div>
+          <div><span>Margem bruta</span><strong>{product.priceCents > 0 ? money(marginCents) + ' · ' + marginPercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—'}</strong></div>
+          <div><span>Quantidade</span><strong>{qty(product.stockMilli, product.unit)}</strong></div>
+          <div><span>Estoque mínimo</span><strong>{qty(product.minStockMilli, product.unit)}</strong></div>
+          <div><span>Unidade</span><strong>{product.unit}</strong></div>
+          <div><span>Valor em estoque · custo</span><strong>{money(stockCostCents)}</strong></div>
+          <div><span>Valor em estoque · venda</span><strong>{money(stockRetailCents)}</strong></div>
+          <div><span>Fonte do cadastro</span><strong>{product.catalogSource || 'Cadastro manual'}</strong></div>
+        </div>
+
+        <div className={styles.profileSectionTitle}><div><span className={styles.eyebrow}>Histórico do item</span><h3>Movimentações</h3></div><button className={styles.editButton} onClick={edit}><Pencil />Editar produto</button></div>
+        <div className={styles.movementList}>
+          {movements.length === 0 ? <div className={styles.empty}><Boxes /><b>Sem movimentações</b><span>O histórico aparece conforme entradas, vendas e ajustes forem registrados.</span></div> : movements.slice(0, 50).map((movement) => (
+            <article className={styles.movementRow} key={movement.id}>
+              <div><b>{movementLabel[movement.type]}</b><small>{new Date(movement.createdAt).toLocaleString('pt-BR')}</small></div>
+              <div className={styles.grow}><small>{movement.note}</small>{movement.supplierName && <small>{movement.supplierName}{movement.invoiceNumber ? ' · NF ' + movement.invoiceNumber : ''}</small>}</div>
+              <strong className={movement.quantityMilli < 0 ? styles.negativeMovement : styles.positiveMovement}>{movement.quantityMilli > 0 ? '+' : ''}{qty(movement.quantityMilli, product.unit)}</strong>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
   )
 }
 
