@@ -6,12 +6,30 @@ import { join } from 'node:path'
 const root = process.cwd()
 const source = (path: string) => readFileSync(join(root, path), 'utf8')
 
-test('Pix checkout uses the same operational Caixa authorization context as the UI', () => {
+test('Pix checkout does not require the Vercel service-role secret', () => {
   const route = source('app/api/balcao/checkout/pix/route.ts')
 
-  assert.match(route, /authorizeInventoryContext/)
+  assert.match(route, /createServerClient/)
+  assert.match(route, /balcao_checkout_pix_context/)
   assert.match(route, /INVENTORY_INSTALLATION_COOKIE/)
-  assert.match(route, /checkout\.sell/)
-  assert.match(route, /context\.mode\s*===\s*['"]staff['"]/)
-  assert.doesNotMatch(route, /balcao_checkout_pix_context/)
+  assert.match(route, /balcao_businesses/)
+  assert.doesNotMatch(route, /createAdminClient/)
+  assert.doesNotMatch(route, /authorizeInventoryContext/)
+})
+
+test('Pix checkout preserves the Caixa total as the fixed QR amount', () => {
+  const inventory = source('app/inventory-v1/InventoryV1.tsx')
+  const route = source('app/api/balcao/checkout/pix/route.ts')
+
+  assert.match(inventory, /JSON\.stringify\(\{ amountCents: total \}\)/)
+  assert.match(route, /buildStaticPixPayload\(\{[\s\S]*amountCents,/)
+})
+
+test('Pix endpoint converts unexpected backend failures into a readable JSON error', () => {
+  const route = source('app/api/balcao/checkout/pix/route.ts')
+
+  assert.match(route, /return await handlePixRequest\(request\)/)
+  assert.match(route, /catch \(cause\)/)
+  assert.match(route, /servidor encontrou um erro interno/i)
+  assert.match(route, /NextResponse\.json/)
 })
