@@ -46,11 +46,16 @@ test('Pix payload CRC is calculated over the payload ending in 6304', () => {
   assert.equal(payload.slice(-4), crc16Ccitt(body))
 })
 
-test('checkout Pix endpoint requires operational session and server-side business key lookup', () => {
+test('checkout Pix endpoint follows operational Caixa permissions and server-side business key lookup', () => {
   const route = source('app/api/balcao/checkout/pix/route.ts')
+  assert.match(route, /authorizeInventoryContext/)
+  assert.match(route, /INVENTORY_INSTALLATION_COOKIE/)
   assert.match(route, /TERMINAL_COOKIE/)
   assert.match(route, /STAFF_SESSION_COOKIE/)
-  assert.match(route, /balcao_checkout_pix_context/)
+  assert.match(route, /checkout\.sell/)
+  assert.match(route, /createAdminClient/)
+  assert.match(route, /balcao_businesses/)
+  assert.doesNotMatch(route, /balcao_checkout_pix_context/)
   assert.match(route, /amountCents/)
   assert.match(route, /QRCode\.toDataURL/)
 })
