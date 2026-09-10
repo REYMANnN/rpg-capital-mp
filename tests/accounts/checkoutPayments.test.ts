@@ -43,10 +43,13 @@ test('legacy three-argument completeSale call remains valid', () => {
   assert.equal('payment' in result.sale, false)
 })
 
-test('checkout source will expose one COBRAR action and Pix, Cartão, Dinheiro choices', () => {
+test('checkout source exposes one COBRAR action and Pix, Cartão, Dinheiro choices', () => {
   const checkout = source('app/inventory-v1/InventoryV1.tsx')
   assert.match(checkout, /COBRAR/)
+  assert.match(checkout, /Como o cliente vai pagar\?/)
   assert.match(checkout, /Cartão/)
   assert.match(checkout, /Dinheiro/)
   assert.match(checkout, /Pagamento aprovado na maquininha/)
+  assert.match(checkout, /finishSale\('pix'\)/)
+  assert.doesNotMatch(checkout, /COBRAR NO PIX/)
 })
