@@ -23,6 +23,17 @@ test('Pix payload fixes the exact checkout amount in BRL', () => {
   assert.match(payload, /6304[0-9A-F]{4}$/)
 })
 
+test('Pix payload embeds R$ 20,00 when the Caixa total is 2000 cents', () => {
+  const payload = buildStaticPixPayload({
+    pixKey: 'teste@example.com',
+    amountCents: 2000,
+    merchantName: 'Balcao',
+    merchantCity: 'Sao Paulo',
+  })
+
+  assert.match(payload, /540520\.00/)
+})
+
 test('Pix payload normalizes merchant fields for EMV limits', () => {
   const payload = buildStaticPixPayload({
     pixKey: 'teste@example.com',
@@ -46,16 +57,15 @@ test('Pix payload CRC is calculated over the payload ending in 6304', () => {
   assert.equal(payload.slice(-4), crc16Ccitt(body))
 })
 
-test('checkout Pix endpoint follows operational Caixa permissions and server-side business key lookup', () => {
+test('checkout Pix endpoint supports staff Caixa and authenticated management without service role', () => {
   const route = source('app/api/balcao/checkout/pix/route.ts')
-  assert.match(route, /authorizeInventoryContext/)
+  assert.match(route, /createServerClient/)
   assert.match(route, /INVENTORY_INSTALLATION_COOKIE/)
   assert.match(route, /TERMINAL_COOKIE/)
   assert.match(route, /STAFF_SESSION_COOKIE/)
-  assert.match(route, /checkout\.sell/)
-  assert.match(route, /createAdminClient/)
+  assert.match(route, /balcao_checkout_pix_context/)
   assert.match(route, /balcao_businesses/)
-  assert.doesNotMatch(route, /balcao_checkout_pix_context/)
+  assert.doesNotMatch(route, /createAdminClient/)
   assert.match(route, /amountCents/)
   assert.match(route, /QRCode\.toDataURL/)
 })
@@ -74,4 +84,5 @@ test('checkout UI opens Pix charge before recording the sale', () => {
   assert.match(inventory, /PAGAMENTO RECEBIDO/)
   assert.match(inventory, /Pix Copia e Cola/)
   assert.match(inventory, /\/api\/balcao\/checkout\/pix/)
+  assert.match(inventory, /JSON\.stringify\(\{ amountCents: total \}\)/)
 })
