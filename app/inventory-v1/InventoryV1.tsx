@@ -20,7 +20,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { completeSale, searchProducts, type Product, type Sale, type ScaleRule } from '@/lib/inventory/core'
+import { completeSale, searchProducts, type PaymentMethod, type Product, type Sale, type ScaleRule } from '@/lib/inventory/core'
 import { calculatePurchaseUpdate } from '@/lib/inventory/intake'
 import { parseNfeXml, type ParsedNfe, type ParsedNfeItem } from '@/lib/inventory/nfe'
 import { validateNewProductCommercialData, validateSalePrice } from '@/lib/inventory/productRules'
@@ -723,18 +723,23 @@ export default function InventoryV1() {
     })
   }
 
-  function checkout() {
-    if (!cart.length) return
+  function checkout(method: PaymentMethod) {
+    if (!cart.length) return false
     const pendingProduct = cart
       .map((line) => data.products.find((product) => product.id === line.productId))
       .find((product) => product && product.priceCents <= 0)
-    if (pendingProduct) return fail(`Defina o preço de venda de ${pendingProduct.name} antes de concluir.`)
+    if (pendingProduct) {
+      fail(`Defina o preço de venda de ${pendingProduct.name} antes de concluir.`)
+      return false
+    }
 
     try {
+      const confirmedAt = new Date().toISOString()
       const result = completeSale(
         data.products,
         cart.map((line) => ({ productId: line.productId, quantityMilli: line.quantityMilli })),
         uid(),
+        { method, confirmedAt },
       )
       const byId = new Map(result.products.map((product) => [product.id, product]))
       const nextProducts = data.products.map((product) => ({
@@ -757,8 +762,10 @@ export default function InventoryV1() {
       }))
       setCart([])
       flash(`Venda registrada: ${money(result.sale.totalCents)}.`)
+      return true
     } catch (cause) {
       fail(cause instanceof Error ? cause.message : 'Falha ao concluir venda.')
+      return false
     }
   }
 
@@ -1111,7 +1118,7 @@ function ProductSearch({ query, setQuery, resultCount }: { query: string; setQue
   )
 }
 
-function Checkout({ products, cart, total, scan, manual, add, view, change, remove, checkout }: { products: AppProduct[]; cart: CartLine[]; total: number; scan: () => void; manual: (value: string) => void | Promise<void>; add: (product: AppProduct) => void; view: (product: AppProduct) => void; change: (id: string, delta: number) => void; remove: (id: string) => void; checkout: () => void }) {
+function Checkout({ products, cart, total, scan, manual, add, view, change, remove, checkout }: { products: AppProduct[]; cart: CartLine[]; total: number; scan: () => void; manual: (value: string) => void | Promise<void>; add: (product: AppProduct) => void; view: (product: AppProduct) => void; change: (id: string, delta: number) => void; remove: (id: string) => void; checkout: (method: PaymentMethod) => boolean }) {
   const [code, setCode] = useState('')
   const [productQuery, setProductQuery] = useState('')
   const searchResults = useMemo(() => searchProducts(products, productQuery), [products, productQuery])
@@ -1119,6 +1126,9 @@ function Checkout({ products, cart, total, scan, manual, add, view, change, remo
   const [pixBusy, setPixBusy] = useState(false)
   const [pixError, setPixError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [paymentOpen, setPaymentOpen] = useState(false)
+  const [paymentConfirm, setPaymentConfirm] = useState<'card' | 'cash' | null>(null)
+  const [saleBusy, setSaleBusy] = useState(false)
 
   async function chargePix() {
     if (!cart.length || total <= 0) return
@@ -1151,10 +1161,36 @@ function Checkout({ products, cart, total, scan, manual, add, view, change, remo
     }
   }
 
+  function finishSale(method: PaymentMethod) {
+    if (saleBusy) return false
+    setSaleBusy(true)
+    try {
+      const completed = checkout(method)
+      if (completed) {
+        setPaymentOpen(false)
+        setPaymentConfirm(null)
+        setProductQuery('')
+      }
+      return completed
+    } finally {
+      setSaleBusy(false)
+    }
+  }
+
   function confirmPixPayment() {
+    if (!finishSale('pix')) return
     setPixCharge(null)
     setCopied(false)
-    checkout()
+  }
+
+  function choosePayment(method: PaymentMethod) {
+    if (method === 'pix') {
+      setPaymentOpen(false)
+      void chargePix()
+      return
+    }
+    setPaymentOpen(false)
+    setPaymentConfirm(method)
   }
 
   return (
@@ -1175,11 +1211,41 @@ function Checkout({ products, cart, total, scan, manual, add, view, change, remo
       )}
       <section className={styles.checkoutgrid}>
         <div className={styles.productlist}>{cart.length === 0 ? <div className={styles.empty}><ShoppingCart /><b>Carrinho vazio</b><span>Toque em “Escanear item”.</span></div> : cart.map((line) => { const product = products.find((candidate) => candidate.id === line.productId); if (!product) return null; return <article className={styles.cartline} key={line.productId}><div className={styles.grow}><b>{product.name}</b><small>{qty(line.quantityMilli, product.unit)}</small></div><div className={styles.cartstep}><button onClick={() => change(product.id, -1000)}>−</button><strong>{qty(line.quantityMilli, product.unit)}</strong><button onClick={() => change(product.id, 1000)}>+</button></div><b>{money(Math.round((product.priceCents * line.quantityMilli) / 1000))}</b><button className={styles.trash} onClick={() => remove(product.id)}><Trash2 /></button></article> })}</div>
-        <aside className={styles.total}><span>Total</span><strong>{money(total)}</strong><button className={styles.pay} disabled={!cart.length || pixBusy} onClick={() => void chargePix()}>{pixBusy ? 'GERANDO PIX…' : 'COBRAR NO PIX'}</button>{pixError ? <small role="alert" style={{ color: '#fecaca', opacity: 1 }}>{pixError}</small> : <small>A venda só é concluída depois que o operador confirmar o recebimento.</small>}</aside>
+        <aside className={styles.total}><span>Total</span><strong>{money(total)}</strong><button className={styles.pay} disabled={!cart.length || pixBusy || saleBusy} onClick={() => setPaymentOpen(true)}>COBRAR {money(total)}</button>{pixError ? <small role="alert" style={{ color: '#fecaca', opacity: 1 }}>{pixError}</small> : <small>Escolha Pix, Cartão ou Dinheiro. A venda só é concluída após a confirmação.</small>}</aside>
       </section>
 
+      {paymentOpen && (
+        <div className={styles.deleteOverlay} role="presentation" onClick={() => setPaymentOpen(false)}>
+          <div className={styles.deleteDialog} role="dialog" aria-modal="true" aria-labelledby="payment-method-title" onClick={(event) => event.stopPropagation()}>
+            <span className={styles.eyebrow}>Cobrança</span>
+            <h2 id="payment-method-title">Como o cliente vai pagar?</h2>
+            <p>Total da compra: <b>{money(total)}</b></p>
+            <div className={styles.paymentChoices}>
+              <button className={styles.paymentChoice} disabled={pixBusy || saleBusy} onClick={() => choosePayment('pix')}><strong>Pix</strong><span>Gerar QR Code</span></button>
+              <button className={styles.paymentChoice} disabled={pixBusy || saleBusy} onClick={() => choosePayment('card')}><strong>Cartão</strong><span>Pagamento na maquininha</span></button>
+              <button className={styles.paymentChoice} disabled={pixBusy || saleBusy} onClick={() => choosePayment('cash')}><strong>Dinheiro</strong><span>Recebimento em espécie</span></button>
+            </div>
+            <div className={styles.actions}><button className={styles.secondary} onClick={() => setPaymentOpen(false)}>Cancelar</button></div>
+          </div>
+        </div>
+      )}
+
+      {paymentConfirm && (
+        <div className={styles.deleteOverlay} role="presentation" onClick={() => !saleBusy && setPaymentConfirm(null)}>
+          <div className={styles.deleteDialog} role="dialog" aria-modal="true" aria-labelledby="payment-confirm-title" onClick={(event) => event.stopPropagation()}>
+            <span className={styles.eyebrow}>{paymentConfirm === 'card' ? 'Cartão' : 'Dinheiro'}</span>
+            <h2 id="payment-confirm-title">{paymentConfirm === 'card' ? 'Pagamento aprovado na maquininha?' : `Recebeu ${money(total)} em dinheiro?`}</h2>
+            <p>{paymentConfirm === 'card' ? 'Confirme somente depois que a maquininha mostrar que o pagamento foi aprovado.' : 'Ao confirmar, a venda será registrada e os produtos serão baixados do estoque.'}</p>
+            <div className={styles.actions}>
+              <button className={styles.secondary} disabled={saleBusy} onClick={() => setPaymentConfirm(null)}>Voltar</button>
+              <button className={styles.primary} disabled={saleBusy} onClick={() => finishSale(paymentConfirm)}><Check />{saleBusy ? 'REGISTRANDO…' : paymentConfirm === 'card' ? 'PAGAMENTO APROVADO' : 'CONFIRMAR RECEBIMENTO'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pixCharge && (
-        <div className={styles.deleteOverlay} role="presentation" onClick={() => { setPixCharge(null); setCopied(false) }}>
+        <div className={styles.deleteOverlay} role="presentation" onClick={() => { if (!saleBusy) { setPixCharge(null); setCopied(false) } }}>
           <div className={styles.deleteDialog} role="dialog" aria-modal="true" aria-label="Cobrança Pix" onClick={(event) => event.stopPropagation()}>
             <span className={styles.eyebrow}>Cobrança Pix</span>
             <h2>Receber {money(pixCharge.amountCents)}</h2>
@@ -1191,9 +1257,9 @@ function Checkout({ products, cart, total, scan, manual, add, view, change, remo
               <textarea readOnly value={pixCharge.payload} onFocus={(event) => event.currentTarget.select()} style={{ width: '100%', minHeight: 94, boxSizing: 'border-box', resize: 'vertical', border: '1px solid #c8d1ca', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.4 }} />
             </label>
             <div className={styles.actions} style={{ marginTop: 16 }}>
-              <button className={styles.secondary} onClick={() => void copyPix()}>{copied ? 'Código copiado' : 'Copiar código Pix'}</button>
-              <button className={styles.primary} onClick={confirmPixPayment}><Check />PAGAMENTO RECEBIDO</button>
-              <button className={styles.secondary} onClick={() => { setPixCharge(null); setCopied(false) }}>Cancelar</button>
+              <button className={styles.secondary} disabled={saleBusy} onClick={() => void copyPix()}>{copied ? 'Código copiado' : 'Copiar código Pix'}</button>
+              <button className={styles.primary} disabled={saleBusy} onClick={confirmPixPayment}><Check />{saleBusy ? 'REGISTRANDO…' : 'PAGAMENTO RECEBIDO'}</button>
+              <button className={styles.secondary} disabled={saleBusy} onClick={() => { setPixCharge(null); setCopied(false) }}>Cancelar</button>
             </div>
           </div>
         </div>
