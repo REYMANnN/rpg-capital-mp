@@ -22,14 +22,14 @@ test('Pix checkout preserves the Caixa total as the fixed QR amount', () => {
   const route = source('app/api/balcao/checkout/pix/route.ts')
 
   assert.match(inventory, /JSON\.stringify\(\{ amountCents: total \}\)/)
-  assert.match(route, /amountCents/)
   assert.match(route, /buildStaticPixPayload\(\{[\s\S]*amountCents,/)
 })
 
-test('Pix UI handles an empty or invalid server response without exposing JSON parser errors', () => {
-  const inventory = source('app/inventory-v1/InventoryV1.tsx')
+test('Pix endpoint converts unexpected backend failures into a readable JSON error', () => {
+  const route = source('app/api/balcao/checkout/pix/route.ts')
 
-  assert.match(inventory, /await response\.text\(\)/)
-  assert.doesNotMatch(inventory, /const result = await response\.json\(\)/)
-  assert.match(inventory, /servidor respondeu/i)
+  assert.match(route, /return await handlePixRequest\(request\)/)
+  assert.match(route, /catch \(cause\)/)
+  assert.match(route, /servidor encontrou um erro interno/i)
+  assert.match(route, /NextResponse\.json/)
 })
