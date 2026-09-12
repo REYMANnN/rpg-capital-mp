@@ -1,0 +1,4 @@
+import { requirePublicApi, publicApiError } from '@/lib/platform/auth/publicApiContext'
+import { runIdempotent } from '@/lib/platform/idempotency'
+import { applyRecommendedPrice } from '@/lib/platform/services/pricingService'
+export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){ try{ const ctx=await requirePublicApi(request,'pricing:write','write'); const {id}=await params; const raw=await request.text(); const key=request.headers.get('Idempotency-Key')??''; const result=await runIdempotent({businessId:ctx.businessId,storeId:ctx.storeId,apiKeyId:ctx.keyId,key,rawBody:raw||'{}'},async()=>{ const recommendation=await applyRecommendedPrice({storeId:ctx.storeId,businessId:ctx.businessId,productId:id,source:'api'}); return{status:200,body:{data:recommendation}} }); return Response.json(result.body,{status:result.status,headers:{'X-Idempotent-Replay':String(result.replayed)}}) }catch(error){ return publicApiError(error) } }

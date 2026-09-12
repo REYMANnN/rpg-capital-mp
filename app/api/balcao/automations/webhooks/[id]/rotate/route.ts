@@ -1,0 +1,6 @@
+import { randomBytes } from 'node:crypto'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { writeAuditEvent } from '@/lib/accounts/audit'
+import { requireAutomationAccess, automationAccessResponse } from '@/lib/platform/auth/automationsContext'
+import { encryptWebhookSecret } from '@/lib/platform/webhooks/crypto'
+export async function POST(_request:Request,{params}:{params:Promise<{id:string}>}){ try{ const {id}=await params; const admin=createAdminClient(); const {data:row}=await admin.from('balcao_webhook_endpoints').select('business_id,store_id').eq('id',id).maybeSingle(); if(!row?.store_id) return Response.json({error:'Webhook não encontrado.'},{status:404}); const actor=await requireAutomationAccess(String(row.store_id),'webhooks.manage'); const secret=`whsec_${randomBytes(32).toString('base64url')}`; const {error}=await admin.from('balcao_webhook_endpoints').update({secret_ciphertext:encryptWebhookSecret(secret),updated_at:new Date().toISOString()}).eq('id',id).eq('business_id',actor.businessId); if(error) throw error; await writeAuditEvent({businessId:actor.businessId,storeId:actor.storeId,actorUserId:actor.actorUserId,actorStaffId:actor.actorStaffId,action:'webhook.secret_rotated',entityType:'webhook',entityId:id}); return Response.json({id,secret}) }catch(error){ return automationAccessResponse(error) } }
