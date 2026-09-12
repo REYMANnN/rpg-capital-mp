@@ -20,5 +20,7 @@ jobs:
         run: npx tsx --test tests/accounts/*.test.ts
       - name: Existing inventory tests
         run: npx tsx --test tests/nfeKey.test.ts tests/nfe.test.ts tests/purchaseMath.test.ts tests/productMatcher.test.ts tests/invoiceReview.test.ts tests/catalog*.test.ts tests/productLifecycle.test.ts
+      - name: Demo account tests
+        run: npx tsx --test tests/demo-balcao.test.ts
       - name: Production build
         run: npm run build
