@@ -1,5 +1,21 @@
-import { createAdminClient } from '@/lib/supabase/admin'
-import { writeAuditEvent } from '@/lib/accounts/audit'
 import { requireAutomationAccess, automationAccessResponse } from '@/lib/platform/auth/automationsContext'
-export async function DELETE(_request:Request,{params}:{params:Promise<{id:string}>}){ try{ const {id}=await params; const admin=createAdminClient(); const {data:row}=await admin.from('balcao_webhook_endpoints').select('business_id,store_id').eq('id',id).maybeSingle(); if(!row?.store_id) return Response.json({error:'Webhook não encontrado.'},{status:404}); const actor=await requireAutomationAccess(String(row.store_id),'webhooks.manage'); if(String(row.business_id)!==actor.businessId) return Response.json({error:'Webhook não encontrado.'},{status:404}); const {error}=await admin.from('balcao_webhook_endpoints').delete().eq('id',id); if(error) throw error; await writeAuditEvent({businessId:actor.businessId,storeId:actor.storeId,actorUserId:actor.actorUserId,actorStaffId:actor.actorStaffId,action:'webhook.deleted',entityType:'webhook',entityId:id}); return Response.json({ok:true}) }catch(error){ return automationAccessResponse(error) } }
-export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){ try{ const {id}=await params; const admin=createAdminClient(); const {data:row}=await admin.from('balcao_webhook_endpoints').select('business_id,store_id').eq('id',id).maybeSingle(); if(!row?.store_id) return Response.json({error:'Webhook não encontrado.'},{status:404}); const actor=await requireAutomationAccess(String(row.store_id),'webhooks.manage'); const body=await request.json(); const status=body.status==='paused'?'paused':'active'; const {error}=await admin.from('balcao_webhook_endpoints').update({status,consecutive_failures:status==='active'?0:undefined,updated_at:new Date().toISOString()}).eq('id',id).eq('business_id',actor.businessId); if(error) throw error; return Response.json({ok:true,status}) }catch(error){ return automationAccessResponse(error) } }
+import { automationTechnicalRpc } from '@/lib/platform/automation/technical'
+
+function storeIdOf(request:Request){return new URL(request.url).searchParams.get('storeId')??''}
+
+export async function DELETE(request:Request,{params}:{params:Promise<{id:string}>}){
+  try{
+    const storeId=storeIdOf(request),actor=await requireAutomationAccess(storeId,'webhooks.manage'),{id}=await params
+    await automationTechnicalRpc(actor,'balcao_automation_webhook_action',{p_id:id,p_action:'delete',p_status:null,p_secret_ciphertext:null})
+    return Response.json({ok:true})
+  }catch(error){return automationAccessResponse(error)}
+}
+
+export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
+  try{
+    const storeId=storeIdOf(request),actor=await requireAutomationAccess(storeId,'webhooks.manage'),{id}=await params,body=await request.json()
+    const status=body.status==='paused'?'paused':'active'
+    await automationTechnicalRpc(actor,'balcao_automation_webhook_action',{p_id:id,p_action:'status',p_status:status,p_secret_ciphertext:null})
+    return Response.json({ok:true,status})
+  }catch(error){return automationAccessResponse(error)}
+}
