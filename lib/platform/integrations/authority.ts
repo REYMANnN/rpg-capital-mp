@@ -1,0 +1,3 @@
+export type DomainAuthority = { products:'balcao'|'external'|'merge'; inventory:'balcao'|'external'; sales:'balcao'|'external'; pricing:'balcao'|'external'; finance:'balcao' }
+const defaults:DomainAuthority={products:'balcao',inventory:'balcao',sales:'balcao',pricing:'balcao',finance:'balcao'}
+export function normalizeAuthority(value:unknown):DomainAuthority{ const v=(value&&typeof value==='object'?value:{}) as any; return { products:['balcao','external','merge'].includes(v.products)?v.products:defaults.products, inventory:['balcao','external'].includes(v.inventory)?v.inventory:defaults.inventory, sales:['balcao','external'].includes(v.sales)?v.sales:defaults.sales, pricing:['balcao','external'].includes(v.pricing)?v.pricing:defaults.pricing, finance:'balcao' } }

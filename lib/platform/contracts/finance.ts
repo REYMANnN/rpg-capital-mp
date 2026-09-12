@@ -1,0 +1,1 @@
+export type PublicFinanceTransaction = { id: string; accountId: string; postedAt: string; amountCents: number; description: string; counterpartyName?: string | null; counterpartyTaxId?: string | null; category?: string | null; transactionType?: string | null; isInternalTransfer: boolean; source: string }

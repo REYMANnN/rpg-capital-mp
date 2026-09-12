@@ -1,0 +1,1 @@
+export type PublicInventoryMovement = { id: string; productId: string; type: string; quantityMilli: number; createdAt: string; note?: string; supplierDocument?: string; supplierName?: string; invoiceKey?: string; invoiceNumber?: string }
