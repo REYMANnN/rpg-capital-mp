@@ -3,6 +3,7 @@ import styles from './landing.module.css'
 
 const signupHref = '/auth/signup/reset'
 const loginHref = '/login?intent=login'
+const demoHref = '/demo'
 
 export const metadata: Metadata = {
   title: 'RPG para Balcões — Gestão completa da sua loja por R$ 5,99/mês',
@@ -116,8 +117,9 @@ export default function Home() {
             <a href="#produto">Produto</a>
             <a href="#como-funciona">Como funciona</a>
             <a href="#preco">Preço</a>
-            <a className={styles.loginLink} href="/login?intent=login">Entrar</a>
-            <a className={styles.smallButton} href="/auth/signup/reset">Criar conta</a>
+            <a href={demoHref}>Conta de teste</a>
+            <a className={styles.loginLink} href={loginHref}>Entrar</a>
+            <a className={styles.smallButton} href={signupHref}>Criar conta</a>
           </nav>
         </div>
       </header>
@@ -134,8 +136,9 @@ export default function Home() {
                 Completo o bastante para cuidar do negócio.
               </p>
               <div className={styles.heroActions}>
-                <a className={styles.button} href="/auth/signup/reset">Começar agora</a>
-                <a className={styles.textLink} href="/login?intent=login">Já tenho uma conta <span>→</span></a>
+                <a className={styles.button} href={signupHref}>Começar agora</a>
+                <a className={styles.yellowButton} href={demoHref}>Testar conta demo</a>
+                <a className={styles.textLink} href={loginHref}>Já tenho uma conta <span>→</span></a>
               </div>
               <ul className={styles.heroPoints} aria-label="Destaques">
                 <li>✓ R$ 5,99 por mês</li>
@@ -304,7 +307,7 @@ export default function Home() {
         <div className={styles.container + ' ' + styles.footerGrid}>
           <div><a className={styles.brand} href="#topo"><span className={styles.brandMark}>RPG</span><span className={styles.brandCopy}><strong>RPG para Balcões</strong><small>por RPG Capital</small></span></a><p>Gestão simples para quem tem uma loja para tocar.</p></div>
           <div><strong>Produto</strong><a href="#produto">Funcionalidades</a><a href="#preco">Preço</a><a href="#como-funciona">Como funciona</a></div>
-          <div><strong>Acesso</strong><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a></div>
+          <div><strong>Acesso</strong><a href={demoHref}>Conta de teste</a><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a></div>
           <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a></div>
         </div>
         <div className={styles.container + ' ' + styles.footerBottom}><span>© 2026 RPG Capital.</span><span>Feito para o varejo brasileiro.</span></div>
