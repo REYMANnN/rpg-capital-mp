@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { INVENTORY_APP_VERSION } from "@/lib/inventory/version";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,7 +13,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const softwareVersion = "0.3.0";
+const softwareVersion = INVENTORY_APP_VERSION.replace(/^v/, "");
 const deploymentCommit = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || "local";
 
 export const metadata: Metadata = {
