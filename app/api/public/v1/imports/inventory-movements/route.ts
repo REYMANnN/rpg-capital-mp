@@ -1,0 +1,5 @@
+import { requirePublicApi, publicApiError } from '@/lib/platform/auth/publicApiContext'
+import { runIdempotent } from '@/lib/platform/idempotency'
+import { ingestInventoryMovements } from '@/lib/platform/integrations/ingestion'
+export const dynamic='force-dynamic'; const MAX=5*1024*1024
+export async function POST(request:Request){ try{ const ctx=await requirePublicApi(request,'inventory:write'); const raw=await request.text(); if(raw.length>MAX) return Response.json({error:{code:'payload_too_large',message:'O lote deve ter no máximo 5 MB.'}},{status:413}); const key=request.headers.get('Idempotency-Key')??''; const result=await runIdempotent({businessId:ctx.businessId,storeId:ctx.storeId,apiKeyId:ctx.keyId,key,rawBody:raw},async()=>{ const body=JSON.parse(raw); const data=await ingestInventoryMovements({businessId:ctx.businessId,storeId:ctx.storeId,integrationId:body.integrationId,records:body.records}); return {status:200,body:{data}} }); return Response.json(result.body,{status:result.status,headers:{'X-Idempotent-Replay':String(result.replayed)}}) }catch(error){ return publicApiError(error) } }

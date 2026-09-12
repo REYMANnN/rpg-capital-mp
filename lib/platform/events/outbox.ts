@@ -1,0 +1,3 @@
+import { createAdminClient } from '@/lib/supabase/admin'
+import type { WebhookEventType } from './eventTypes'
+export async function emitPlatformEvent(input:{businessId:string;storeId?:string|null;type:WebhookEventType;aggregateType?:string;aggregateId?:string;data?:Record<string,unknown>}){ const {data,error}=await createAdminClient().from('balcao_event_outbox').insert({business_id:input.businessId,store_id:input.storeId??null,event_type:input.type,aggregate_type:input.aggregateType??null,aggregate_id:input.aggregateId??null,data:input.data??{},occurred_at:new Date().toISOString()}).select('id').single(); if(error) throw error; return String(data.id) }

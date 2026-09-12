@@ -7,6 +7,8 @@ import { requiredPermissionsForStateChange } from '@/lib/accounts/statePolicy'
 import type { Permission } from '@/lib/accounts/access'
 import { writeAuditEvent } from '@/lib/accounts/audit'
 import { INVENTORY_INSTALLATION_COOKIE, STAFF_SESSION_COOKIE, TERMINAL_COOKIE } from '@/lib/accounts/terminal'
+import { deriveInventoryStateEvents } from '@/lib/platform/events/inventoryStateEvents'
+import { emitPlatformEvent } from '@/lib/platform/events/outbox'
 
 const COOKIE_NAME = INVENTORY_INSTALLATION_COOKIE
 
@@ -109,6 +111,7 @@ export async function PUT(request: NextRequest) {
   let installation = getInstallationId(request)
   let access: Awaited<ReturnType<typeof authorizeInventoryContext>> | null = null
   let required: Permission[] = []
+  let before: StoreData = { products: [], sales: [], movements: [], scaleRule: undefined }
   const supabase = createInventoryCloudClient()
 
   if (accountsEnforced()) {
@@ -119,7 +122,7 @@ export async function PUT(request: NextRequest) {
 
     const { data: currentData } = await supabase.rpc('inventory_v1_get_state', { p_installation_id: installation.id })
     const current = (currentData ?? {}) as CloudStateResponse
-    const before: StoreData = current.found && isState(current.state) ? current.state : { products: [], sales: [], movements: [], scaleRule: undefined }
+    before = current.found && isState(current.state) ? current.state : before
     required = requiredPermissionsForStateChange(before, state)
 
     if (access.mode === 'staff') {
@@ -142,15 +145,32 @@ export async function PUT(request: NextRequest) {
   }
 
   if (access?.store) {
+    const businessId = access.store.business_id ? String(access.store.business_id) : null
+    const storeId = String(access.store.id)
+    if (businessId) {
+      const events = deriveInventoryStateEvents(before as any, state as any)
+      const results = await Promise.allSettled(events.map((event) => emitPlatformEvent({
+        businessId,
+        storeId,
+        type: event.type,
+        aggregateType: event.aggregateType,
+        aggregateId: event.aggregateId,
+        data: event.data,
+      })))
+      if (results.some((result) => result.status === 'rejected')) {
+        console.error('BALCAO platform outbox failed for inventory state change')
+      }
+    }
+
     await writeAuditEvent({
-      businessId: String(access.store.business_id),
-      storeId: String(access.store.id),
+      businessId,
+      storeId,
       actorUserId: access.mode === 'google' ? access.user?.id ?? null : null,
       actorStaffId: access.mode === 'staff' ? access.staff?.staffId ?? null : null,
       terminalId: access.terminal?.terminalId ?? null,
       action: 'inventory.state_changed',
       entityType: 'store',
-      entityId: String(access.store.id),
+      entityId: storeId,
       metadata: { requiredPermissions: required },
     }).catch(() => {})
   }

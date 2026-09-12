@@ -1,0 +1,1 @@
+export type PublicProduct = { id: string; barcode: string; scaleCode?: string; name: string; unit?: string; brand?: string; imageUrl?: string; priceCents: number; averageCostCents: number; stockMilli: number; minStockMilli: number; active: boolean }

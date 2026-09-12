@@ -1,0 +1,2 @@
+export type PricingReason = 'margin_low' | 'high_demand' | 'slow_stock' | 'healthy'
+export type PricingRecommendation = { productId: string; productName: string; currentPriceCents: number; recommendedPriceCents: number; costCents: number; grossMarginPct: number; expectedGrossMarginPct: number; daysOfInventory: number | null; unitsSold30d: number; confidence: 'low' | 'medium' | 'high'; reasons: PricingReason[]; action: 'raise' | 'lower' | 'keep' }

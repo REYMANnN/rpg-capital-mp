@@ -1,0 +1,4 @@
+export const WEBHOOK_RETRY_SECONDS=[30,120,600,3600,21600] as const
+export const WEBHOOK_FAILURE_PAUSE_THRESHOLD=20
+export function nextWebhookRetry(attemptCount:number,now=Date.now()){ const seconds=WEBHOOK_RETRY_SECONDS[Math.min(Math.max(0,attemptCount-1),WEBHOOK_RETRY_SECONDS.length-1)]; return new Date(now+seconds*1000).toISOString() }
+export function validateWebhookUrl(value:string){ try{ const url=new URL(value); if(url.protocol!=='https:') return false; const host=url.hostname.toLowerCase(); if(host==='localhost'||host.endsWith('.local')||/^127\./.test(host)||/^10\./.test(host)||/^192\.168\./.test(host)||/^169\.254\./.test(host)) return false; const private172=host.match(/^172\.(\d+)\./); if(private172&&Number(private172[1])>=16&&Number(private172[1])<=31) return false; return true }catch{return false} }
