@@ -118,7 +118,7 @@ export default function Home() {
             <a href="#como-funciona">Como funciona</a>
             <a href="#preco">Preço</a>
             <a href={demoHref}>Conta de teste</a>
-            <a className={styles.loginLink} href={loginHref}>Entrar</a>
+            <a className={styles.loginLink} href="/login?intent=login">Entrar</a>
             <a className={styles.smallButton} href={signupHref}>Criar conta</a>
           </nav>
         </div>
