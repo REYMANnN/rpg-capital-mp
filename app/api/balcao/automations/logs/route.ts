@@ -1,3 +1,10 @@
-import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAutomationAccess, automationAccessResponse } from '@/lib/platform/auth/automationsContext'
-export async function GET(request:Request){ try{ const storeId=new URL(request.url).searchParams.get('storeId')??''; const actor=await requireAutomationAccess(storeId,'automations.view'); const admin=createAdminClient(); const {data:endpoints}=await admin.from('balcao_webhook_endpoints').select('id,name').eq('business_id',actor.businessId).eq('store_id',storeId); const ids=(endpoints??[]).map((row:any)=>row.id); if(!ids.length) return Response.json({logs:[]}); const names=new Map((endpoints??[]).map((row:any)=>[String(row.id),String(row.name)])); const {data,error}=await admin.from('balcao_webhook_deliveries').select('id,endpoint_id,event_id,status,attempt_count,response_status,duration_ms,last_error,created_at,delivered_at,balcao_event_outbox(event_type,occurred_at)').in('endpoint_id',ids).order('created_at',{ascending:false}).limit(50); if(error) throw error; return Response.json({logs:(data??[]).map((row:any)=>({...row,endpointName:names.get(String(row.endpoint_id))??'Webhook'}))}) }catch(error){ return automationAccessResponse(error) } }
+import { automationTechnicalRpc } from '@/lib/platform/automation/technical'
+
+export async function GET(request:Request){
+  try{
+    const storeId=new URL(request.url).searchParams.get('storeId')??'',actor=await requireAutomationAccess(storeId,'automations.view')
+    const rows=await automationTechnicalRpc<any[]>(actor,'balcao_automation_delivery_logs',{p_store_id:storeId,p_limit:50})
+    return Response.json({logs:(rows??[]).map((row:any)=>({id:row.id,endpoint_id:row.endpoint_id,endpointName:row.endpoint_name,status:row.status,attempt_count:row.attempt_count,response_status:row.response_status,duration_ms:row.duration_ms,last_error:row.last_error,created_at:row.created_at,delivered_at:row.delivered_at,balcao_event_outbox:{event_type:row.event_type,occurred_at:row.occurred_at}}))})
+  }catch(error){return automationAccessResponse(error)}
+}

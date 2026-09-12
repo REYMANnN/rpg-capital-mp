@@ -1,5 +1,11 @@
-import { createAdminClient } from '@/lib/supabase/admin'
-import { writeAuditEvent } from '@/lib/accounts/audit'
 import { requireAutomationAccess, automationAccessResponse } from '@/lib/platform/auth/automationsContext'
 import { generateApiKey } from '@/lib/platform/auth/apiKeys'
-export async function POST(_request:Request,{params}:{params:Promise<{id:string}>}){ try{ const {id}=await params; const admin=createAdminClient(); const {data:row}=await admin.from('balcao_api_keys').select('business_id,store_id').eq('id',id).maybeSingle(); if(!row?.store_id) return Response.json({error:'Chave não encontrada.'},{status:404}); const actor=await requireAutomationAccess(String(row.store_id),'api_keys.manage'); if(String(row.business_id)!==actor.businessId) return Response.json({error:'Chave não encontrada.'},{status:404}); const key=generateApiKey(); const {error}=await admin.from('balcao_api_keys').update({prefix:key.prefix,secret_hash:key.secretHash,last_used_at:null,updated_at:new Date().toISOString()}).eq('id',id); if(error) throw error; await writeAuditEvent({businessId:actor.businessId,storeId:actor.storeId,actorUserId:actor.actorUserId,actorStaffId:actor.actorStaffId,action:'api_key.rotated',entityType:'api_key',entityId:id,metadata:{prefix:key.prefix}}); return Response.json({id,prefix:key.prefix,secret:key.token}) }catch(error){ return automationAccessResponse(error) } }
+import { automationTechnicalRpc } from '@/lib/platform/automation/technical'
+
+export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){
+  try{
+    const storeId=new URL(request.url).searchParams.get('storeId')??'',actor=await requireAutomationAccess(storeId,'api_keys.manage'),{id}=await params,key=generateApiKey()
+    await automationTechnicalRpc(actor,'balcao_automation_api_key_action',{p_id:id,p_action:'rotate',p_prefix:key.prefix,p_secret_hash:key.secretHash,p_approval_status:null})
+    return Response.json({id,prefix:key.prefix,secret:key.token})
+  }catch(error){return automationAccessResponse(error)}
+}

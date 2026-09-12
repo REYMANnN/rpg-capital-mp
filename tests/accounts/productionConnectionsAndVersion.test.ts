@@ -45,11 +45,11 @@ test('Malvo success can persist a real connection using the authenticated manage
   assert.match(migration, /create or replace function public\.balcao_apply_malvo_snapshot/)
 })
 
-test('every page inherits the visible Balcao app version and deployment commit', () => {
+test('every page inherits the visible Balcao v12 app version and deployment commit', () => {
   const layout = source('app/layout.tsx')
   const inventoryVersion = source('lib/inventory/version.ts')
 
-  assert.match(inventoryVersion, /v11\.0/)
+  assert.match(inventoryVersion, /v12\.0/)
   assert.match(layout, /INVENTORY_APP_VERSION/)
   assert.match(layout, /BALCÃO/)
   assert.match(layout, /VERCEL_GIT_COMMIT_SHA/)

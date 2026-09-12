@@ -1,7 +1,25 @@
-import { createAdminClient } from '@/lib/supabase/admin'
-import { writeAuditEvent } from '@/lib/accounts/audit'
 import { requireAutomationAccess, automationAccessResponse } from '@/lib/platform/auth/automationsContext'
 import { generateApiKey, isSensitiveScope, normalizeScopes } from '@/lib/platform/auth/apiKeys'
+import { automationTechnicalRpc } from '@/lib/platform/automation/technical'
 export const dynamic='force-dynamic'
-export async function GET(request:Request){ try{ const storeId=new URL(request.url).searchParams.get('storeId')??''; const actor=await requireAutomationAccess(storeId,'api_keys.manage'); const {data,error}=await createAdminClient().from('balcao_api_keys').select('id,name,prefix,scopes,status,approval_status,expires_at,last_used_at,created_at').eq('business_id',actor.businessId).eq('store_id',storeId).order('created_at',{ascending:false}); if(error) throw error; return Response.json({keys:(data??[]).map((row:any)=>({id:row.id,name:row.name,prefix:row.prefix,scopes:row.scopes,status:row.status,approvalStatus:row.approval_status,expiresAt:row.expires_at,lastUsedAt:row.last_used_at,createdAt:row.created_at}))}) }catch(error){ return automationAccessResponse(error) } }
-export async function POST(request:Request){ try{ const body=await request.json(); const storeId=String(body.storeId??''); const actor=await requireAutomationAccess(storeId,'api_keys.manage'); const scopes=normalizeScopes(body.scopes); if(!String(body.name??'').trim()||!scopes.length) return Response.json({error:'Informe nome e pelo menos uma permissão.'},{status:400}); const key=generateApiKey(); const pending=scopes.some(isSensitiveScope)&&!actor.canApproveSensitive; const {data,error}=await createAdminClient().from('balcao_api_keys').insert({business_id:actor.businessId,store_id:storeId,name:String(body.name).trim().slice(0,120),prefix:key.prefix,secret_hash:key.secretHash,scopes,status:'active',approval_status:pending?'pending':'approved',expires_at:body.expiresAt||null,created_by_user_id:actor.actorUserId,created_by_staff_id:actor.actorStaffId}).select('id').single(); if(error) throw error; await writeAuditEvent({businessId:actor.businessId,storeId,actorUserId:actor.actorUserId,actorStaffId:actor.actorStaffId,action:'api_key.created',entityType:'api_key',entityId:String(data.id),metadata:{prefix:key.prefix,scopes,approvalStatus:pending?'pending':'approved'}}); return Response.json({id:data.id,prefix:key.prefix,secret:key.token,approvalStatus:pending?'pending':'approved'},{status:201}) }catch(error){ return automationAccessResponse(error) } }
+
+export async function GET(request:Request){
+  try{
+    const storeId=new URL(request.url).searchParams.get('storeId')??''
+    const actor=await requireAutomationAccess(storeId,'api_keys.manage')
+    const rows=await automationTechnicalRpc<any[]>(actor,'balcao_automation_api_keys_state',{p_store_id:storeId})
+    return Response.json({keys:(rows??[]).map((row:any)=>({id:row.id,name:row.name,prefix:row.prefix,scopes:row.scopes??[],status:row.status,approvalStatus:row.approval_status,expiresAt:row.expires_at,lastUsedAt:row.last_used_at,createdAt:row.created_at}))})
+  }catch(error){return automationAccessResponse(error)}
+}
+
+export async function POST(request:Request){
+  try{
+    const body=await request.json(),storeId=String(body.storeId??'')
+    const actor=await requireAutomationAccess(storeId,'api_keys.manage')
+    const scopes=normalizeScopes(body.scopes)
+    if(!String(body.name??'').trim()||!scopes.length)return Response.json({error:{code:'AUT-KEY-VALIDATION',message:'Informe nome e pelo menos uma permissão.'}},{status:400})
+    const key=generateApiKey(),pending=scopes.some(isSensitiveScope)&&!actor.canApproveSensitive
+    const data=await automationTechnicalRpc<any>(actor,'balcao_automation_api_key_create',{p_store_id:storeId,p_name:String(body.name).trim().slice(0,120),p_prefix:key.prefix,p_secret_hash:key.secretHash,p_scopes:scopes,p_approval_status:pending?'pending':'approved',p_expires_at:body.expiresAt||null})
+    return Response.json({id:data?.id,prefix:key.prefix,secret:key.token,approvalStatus:pending?'pending':'approved'},{status:201})
+  }catch(error){return automationAccessResponse(error)}
+}
