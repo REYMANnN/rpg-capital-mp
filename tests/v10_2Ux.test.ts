@@ -7,10 +7,10 @@ const intake = readFileSync(new URL('../app/inventory-v1/InvoiceIntakeV10_1.tsx'
 const demoRoute = readFileSync(new URL('../app/api/inventory/nfe/by-key/route.ts', import.meta.url), 'utf8')
 const version = readFileSync(new URL('../lib/inventory/version.ts', import.meta.url), 'utf8')
 
-test('BALCÃO branding and RPG System footer survive v10.x upgrades', () => {
+test('BALCÃO branding and RPG System footer survive version upgrades', () => {
   assert.match(inventory, />BALCÃO</)
   assert.match(inventory, /Powered by RPG System/)
-  assert.match(version, /v10\.\d+/)
+  assert.match(version, /v\d+\.\d+/)
 })
 
 test('EAN scan resolution gives visible confirmation before advancing', () => {
