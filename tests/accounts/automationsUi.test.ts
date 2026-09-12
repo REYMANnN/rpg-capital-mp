@@ -21,6 +21,14 @@ test('team and management UI expose TI and Automacoes', () => {
   assert.match(automations, /Integração avançada/)
 })
 
+test('operational app exposes Automacoes as a first-class main tab', () => {
+  const inventory = source('app/inventory-v1/InventoryV1.tsx')
+  assert.match(inventory, /'automations'/)
+  assert.match(inventory, />Automações<\/button>/)
+  assert.match(inventory, /<AutomationsHub storeId=\{storeId\}/)
+  assert.match(inventory, /setStoreId/)
+})
+
 test('front version is bumped for automations release', () => {
   assert.match(source('lib/inventory/version.ts'), /v11\.0/)
 })
