@@ -25,7 +25,6 @@ function installDemoSandbox() {
   const originalGetItem = storagePrototype.getItem
   const originalSetItem = storagePrototype.setItem
   const originalRemoveItem = storagePrototype.removeItem
-  const originalClear = storagePrototype.clear
   const originalFetch = window.fetch.bind(window)
 
   const readDemo = () => {
@@ -63,14 +62,6 @@ function installDemoSandbox() {
       return originalRemoveItem.call(window.sessionStorage, DEMO_STORAGE_KEY)
     }
     return originalRemoveItem.call(this, key)
-  }
-
-  storagePrototype.clear = function () {
-    if (this === window.localStorage) {
-      originalRemoveItem.call(window.sessionStorage, DEMO_STORAGE_KEY)
-      return
-    }
-    return originalClear.call(this)
   }
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -121,7 +112,6 @@ function installDemoSandbox() {
     storagePrototype.getItem = originalGetItem
     storagePrototype.setItem = originalSetItem
     storagePrototype.removeItem = originalRemoveItem
-    storagePrototype.clear = originalClear
     window.fetch = originalFetch
   }
 }
@@ -141,8 +131,13 @@ export default function DemoBalcao() {
     setNavTarget(nav)
 
     const buttons = Array.from(nav?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
-    const settingsButton = buttons.find((button) => (button.textContent || '').toLocaleLowerCase('pt-BR').includes('ajustes'))
+    const label = (button: HTMLButtonElement) => (button.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR')
+    const settingsButton = buttons.find((button) => label(button).includes('ajustes'))
     if (settingsButton) settingsButton.style.display = 'none'
+
+    const requestedTab = new URLSearchParams(window.location.search).get('tab')
+    const requestedLabel = requestedTab === 'intake' ? 'entrada' : requestedTab === 'checkout' ? 'caixa' : requestedTab === 'finance' ? 'financeiro' : requestedTab === 'stock' ? 'estoque' : ''
+    if (requestedLabel) buttons.find((button) => label(button).includes(requestedLabel))?.click()
 
     return () => {
       if (restore.current) restore.current()
