@@ -21,12 +21,18 @@ test('team and management UI expose TI and Automacoes', () => {
   assert.match(automations, /Integração avançada/)
 })
 
-test('operational app exposes Automacoes as a first-class main tab', () => {
-  const inventory = source('app/inventory-v1/InventoryV1.tsx')
-  assert.match(inventory, /'automations'/)
-  assert.match(inventory, />Automações<\/button>/)
-  assert.match(inventory, /<AutomationsHub storeId=\{storeId\}/)
-  assert.match(inventory, /setStoreId/)
+test('operational app exposes Automacoes as a first-class main navigation button', () => {
+  const roleGate = source('components/accounts/InventoryRoleGate.tsx')
+  assert.match(roleGate, /navTarget/)
+  assert.match(roleGate, /window\.location\.assign\('\/automations'\)/)
+  assert.match(roleGate, /<Bot[^>]*\/>Automações<\/button>/)
+})
+
+test('automations page can resolve the current store without a Vercel service-role secret in unenforced mode', () => {
+  const page = source('app/automations/page.tsx')
+  assert.match(page, /BALCAO_ACCOUNTS_ENFORCED/)
+  assert.match(page, /createInventoryCloudClient/)
+  assert.match(page, /balcao_automation_store_context/)
 })
 
 test('front version is bumped for automations release', () => {
