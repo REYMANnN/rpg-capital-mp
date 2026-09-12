@@ -49,7 +49,8 @@ test('exports stay inside BALCAO and never navigate browser directly to API JSON
   assert.doesNotMatch(exportsPanel, /<a[^>]+href=\{`\/api\/balcao\/automations\/exports/)
   assert.match(exportsPanel, /response\.blob\(\)/)
   assert.match(exportsPanel, /URL\.createObjectURL/)
-  assert.match(exportsPanel, /Tentar novamente|tentar novamente/)
+  assert.match(exportsPanel, /AutomationError/)
+  assert.match(exportsPanel, /onRetry=/)
 })
 
 test('automation UX has shared human-readable failures with diagnostic codes', () => {
