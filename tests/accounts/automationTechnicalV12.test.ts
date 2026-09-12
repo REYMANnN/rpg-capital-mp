@@ -25,8 +25,8 @@ test('automation technical UI routes use capability RPCs instead of Vercel servi
   }
 })
 
-test('v12 migration exposes capability-scoped technical RPCs',()=>{
-  const migration=source('supabase/migrations/20260912_balcao_automation_center_v12.sql')
+test('v12 migrations expose capability-scoped technical RPCs',()=>{
+  const migration=source('supabase/migrations/20260912_balcao_automation_technical_v12.sql')
   for(const fn of [
     'balcao_automation_api_keys_state','balcao_automation_api_key_create','balcao_automation_api_key_action',
     'balcao_automation_integrations_state','balcao_automation_integration_create',
