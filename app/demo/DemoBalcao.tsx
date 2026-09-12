@@ -98,11 +98,16 @@ function installDemoSandbox() {
       return jsonResponse({ ...createDemoPixCharge(amountCents), demo: true })
     }
 
+    if (url.origin === window.location.origin && url.pathname.startsWith('/api/balcao/finance/connections')) {
+      if (method === 'GET') return jsonResponse({ ok: true, configured: false, canManage: false, connections: [], demo: true })
+      return jsonResponse({ ok: false, demo: true, error: 'Conexões bancárias reais ficam desativadas na conta de teste.' }, 409)
+    }
+
     if (
       url.origin === window.location.origin &&
-      (url.pathname.startsWith('/api/balcao/finance/connections') || url.pathname.startsWith('/api/balcao/open-finance'))
+      (url.pathname.startsWith('/api/balcao/finance/malvo') || url.pathname.startsWith('/api/balcao/open-finance'))
     ) {
-      return jsonResponse({ ok: false, demo: true, error: 'Conexões bancárias reais ficam desativadas na conta de teste.' }, 409)
+      return jsonResponse({ ok: false, demo: true, error: 'Open Finance real fica desativado na conta de teste.' }, 409)
     }
 
     return originalFetch(input, init)
@@ -130,16 +135,28 @@ export default function DemoBalcao() {
     setHeaderTarget(header)
     setNavTarget(nav)
 
-    const buttons = Array.from(nav?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
     const label = (button: HTMLButtonElement) => (button.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR')
-    const settingsButton = buttons.find((button) => label(button).includes('ajustes'))
-    if (settingsButton) settingsButton.style.display = 'none'
+    const hideRestrictedControls = () => {
+      const buttons = Array.from(root.current?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
+      for (const button of buttons) {
+        const text = label(button)
+        if (text.includes('ajustes') || text === 'conexões' || text.includes('conectar conta bancária') || text.includes('adicionar conta')) {
+          button.style.display = 'none'
+        }
+      }
+    }
 
+    hideRestrictedControls()
+    const observer = new MutationObserver(hideRestrictedControls)
+    if (root.current) observer.observe(root.current, { childList: true, subtree: true })
+
+    const navButtons = Array.from(nav?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
     const requestedTab = new URLSearchParams(window.location.search).get('tab')
     const requestedLabel = requestedTab === 'intake' ? 'entrada' : requestedTab === 'checkout' ? 'caixa' : requestedTab === 'finance' ? 'financeiro' : requestedTab === 'stock' ? 'estoque' : ''
-    if (requestedLabel) buttons.find((button) => label(button).includes(requestedLabel))?.click()
+    if (requestedLabel) navButtons.find((button) => label(button).includes(requestedLabel))?.click()
 
     return () => {
+      observer.disconnect()
       if (restore.current) restore.current()
       restore.current = null
     }
