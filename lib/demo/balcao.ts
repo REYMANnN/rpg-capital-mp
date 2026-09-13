@@ -108,16 +108,19 @@ export function createDemoStoreData(): DemoStoreData {
   const products = PRODUCT_SEED.map((product, index) => ({ ...product, id: `demo-product-${String(index + 1).padStart(2, '0')}` }))
   const sales = Array.from({ length: 36 }, (_, index) => saleFor(index, products))
   const soldByProduct = new Map<string, number>()
+  const purchaseByProduct = new Map<string, number>()
+  const purchaseProducts = products.slice(0, 8)
 
   for (const sale of sales) {
     for (const item of sale.items) soldByProduct.set(item.productId, (soldByProduct.get(item.productId) ?? 0) + item.quantityMilli)
   }
+  purchaseProducts.forEach((product, index) => purchaseByProduct.set(product.id, (8 + index) * 1000))
 
   const movements: DemoMovement[] = products.map((product, index) => ({
     id: `demo-initial-${index + 1}`,
     productId: product.id,
     type: 'initial',
-    quantityMilli: product.stockMilli + (soldByProduct.get(product.id) ?? 0),
+    quantityMilli: product.stockMilli + (soldByProduct.get(product.id) ?? 0) - (purchaseByProduct.get(product.id) ?? 0),
     createdAt: isoDaysAgo(55, 8, index),
     note: 'Estoque inicial da conta de demonstração',
   }))
@@ -133,12 +136,11 @@ export function createDemoStoreData(): DemoStoreData {
     }))
   }
 
-  const purchaseProducts = products.slice(0, 8)
   purchaseProducts.forEach((product, index) => movements.push({
     id: `demo-purchase-${index + 1}`,
     productId: product.id,
     type: 'purchase',
-    quantityMilli: (8 + index) * 1000,
+    quantityMilli: purchaseByProduct.get(product.id) ?? 0,
     createdAt: isoDaysAgo(12 + index, 10, 20),
     note: `NF-e DEMO-${1200 + index} · Distribuidora Modelo`,
     supplierName: 'Distribuidora Modelo Ltda.',
