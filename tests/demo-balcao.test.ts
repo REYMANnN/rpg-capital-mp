@@ -35,6 +35,17 @@ test('all demo sales and movements reference products that exist', () => {
   }
 })
 
+test('demo movement history reconciles exactly to current product stock', () => {
+  const store = createDemoStoreData()
+
+  for (const product of store.products) {
+    const reconstructedStock = store.movements
+      .filter((movement) => movement.productId === product.id)
+      .reduce((sum, movement) => sum + movement.quantityMilli, 0)
+    assert.equal(reconstructedStock, product.stockMilli, product.name)
+  }
+})
+
 test('demo finance dashboard is populated from mock banking and inventory data', () => {
   const store = createDemoStoreData()
   const dashboard = createDemoFinanceDashboard(30, store)
