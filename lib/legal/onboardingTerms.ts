@@ -82,7 +82,7 @@ export const onboardingTerms: OnboardingTerm[] = [
       {
         title: '4. Cancelamento e custos adicionais',
         paragraphs: [
-          'Você pode cancelar quando quiser; o acesso segue até o fim do período pago.',
+          'Você pode cancelar quando quiser em Configurações > Conta. O cancelamento interrompe cobranças futuras e encerra o acesso do negócio ao BALCÃO. Valores já pagos não são estornados automaticamente; quando houver direito legal a reembolso, ele será tratado conforme a legislação aplicável.',
           'Se algum recurso tiver custo extra ou houver alteração relevante de preço, a RPG informará antes da contratação ou da entrada em vigor da nova condição.',
         ],
       },
