@@ -1,83 +1,77 @@
 import type { Metadata } from 'next'
 import LegalFooter from '@/components/LegalFooter'
+import { onboardingTerms, type OnboardingTerm } from '@/lib/legal/onboardingTerms'
 
 export const metadata: Metadata = {
-  title: 'Termos de Uso — RPG Capital',
-  description: 'Regras de uso do RPG Balcão e do atendimento pelo WhatsApp.',
+  title: 'Termos e Condições — RPG Capital',
+  description: 'Termos de Uso, Termos Comerciais, Dados e Privacidade (LGPD) e Termos de IA do RPG Balcão.',
+}
+
+function TermContent({ term }: { term: OnboardingTerm }) {
+  return (
+    <div className="mt-6 space-y-7">
+      {term.sections.map((section) => (
+        <section key={section.title}>
+          <h3 className="text-lg font-bold text-slate-950">{section.title}</h3>
+          {section.paragraphs.map((paragraph) => <p key={paragraph} className="mt-2 text-base leading-7 text-slate-700">{paragraph}</p>)}
+          {section.bullets ? <ul className="mt-3 list-disc space-y-2 pl-6 text-base leading-7 text-slate-700">{section.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul> : null}
+        </section>
+      ))}
+    </div>
+  )
 }
 
 export default function Termos() {
+  const useTerms = onboardingTerms.find((term) => term.id === 'use')!
+  const commercialTerms = onboardingTerms.find((term) => term.id === 'commercial')!
+  const dataTerms = onboardingTerms.find((term) => term.id === 'data')!
+  const aiTerms = onboardingTerms.find((term) => term.id === 'ai')!
+
   return (
     <>
-      <main className="mx-auto w-full max-w-[760px] px-4 py-12 leading-7 text-slate-900">
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Termos de Uso</h1>
-        <p className="mt-3 text-sm text-slate-500"><em>Última atualização: 16 de setembro de 2026</em></p>
-
-        <h2 className="mt-10 text-xl font-bold">1. Quem oferece o serviço</h2>
-        <p className="mt-3">
-          O RPG Balcão é oferecido pela RPG Capital, marca de <strong>57.114.756 RENAN PANGONI GUADALUPE</strong>,
-          CNPJ 57.114.756/0001-89. Ao criar uma conta ou usar nosso número de WhatsApp, você concorda com estes termos
-          e com a <a className="text-blue-700 underline" href="/privacidade">Política de Privacidade</a>.
+      <main className="mx-auto w-full max-w-[860px] px-4 py-12 text-slate-900 sm:px-6">
+        <p className="text-sm font-bold tracking-[0.16em] text-blue-700">RPG CAPITAL · BALCÃO</p>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Termos e Condições</h1>
+        <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
+          Esta página reúne os documentos aplicáveis ao uso do RPG Balcão. A RPG Capital é uma marca de <strong>57.114.756 RENAN PANGONI GUADALUPE</strong>, CNPJ <strong>57.114.756/0001-89</strong>.
         </p>
+        <p className="mt-2 text-sm text-slate-500"><em>Última atualização: 16 de setembro de 2026</em></p>
 
-        <h2 className="mt-10 text-xl font-bold">2. O que é o serviço</h2>
-        <p className="mt-3">
-          Software de gestão para comércio: cadastro de produtos, estoque, caixa, registro de vendas e compras,
-          relatórios e atendimento automatizado pelo WhatsApp. <strong>A RPG não guarda, recebe nem movimenta o
-          dinheiro das suas vendas.</strong> Pagamentos por Pix vão direto para a sua chave; pagamentos com cartão
-          são feitos na sua própria maquininha.
-        </p>
+        <nav aria-label="Índice dos termos" className="mt-8 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+          <a className="rounded-xl bg-white px-4 py-3 font-semibold text-blue-700 hover:bg-blue-50" href="#uso">1. Termos de Uso</a>
+          <a className="rounded-xl bg-white px-4 py-3 font-semibold text-blue-700 hover:bg-blue-50" href="#comerciais">2. Termos Comerciais</a>
+          <a className="rounded-xl bg-white px-4 py-3 font-semibold text-blue-700 hover:bg-blue-50" href="#dados">3. Dados e Privacidade (LGPD)</a>
+          <a className="rounded-xl bg-white px-4 py-3 font-semibold text-blue-700 hover:bg-blue-50" href="#ia">4. Termos de IA</a>
+        </nav>
 
-        <h2 className="mt-10 text-xl font-bold">3. Conta e acesso</h2>
-        <ul className="mt-3 list-disc space-y-2 pl-6">
-          <li>Você é responsável pelas informações cadastradas e por quem usa sua conta, seus PINs e seu número de WhatsApp.</li>
-          <li>O número de WhatsApp vinculado à loja funciona como forma de acesso. Avise-nos imediatamente se perder o aparelho.</li>
-        </ul>
+        <section id="uso" className="scroll-mt-6 border-b border-slate-200 py-12">
+          <h2 className="text-2xl font-bold tracking-tight">{useTerms.title}</h2>
+          <p className="mt-2 text-slate-600">{useTerms.shortDescription}</p>
+          <TermContent term={useTerms} />
+        </section>
 
-        <h2 className="mt-10 text-xl font-bold">4. Assinatura</h2>
-        <ul className="mt-3 list-disc space-y-2 pl-6">
-          <li>Plano mensal de R$ 5,99, cobrado de forma recorrente pelo nosso parceiro de pagamentos.</li>
-          <li>Você pode cancelar quando quiser; o acesso segue até o fim do período pago.</li>
-          <li>Se algum recurso tiver custo extra, avisaremos antes de você contratar.</li>
-        </ul>
+        <section id="comerciais" className="scroll-mt-6 border-b border-slate-200 py-12">
+          <h2 className="text-2xl font-bold tracking-tight">{commercialTerms.title}</h2>
+          <p className="mt-2 text-slate-600">{commercialTerms.shortDescription}</p>
+          <TermContent term={commercialTerms} />
+        </section>
 
-        <h2 className="mt-10 text-xl font-bold">5. Inteligência artificial</h2>
-        <p className="mt-3">
-          O assistente interpreta textos, áudios e fotos para sugerir registros. Ele pode errar. Por isso, alterações
-          de estoque, preço e lançamentos são apresentadas para <strong>sua confirmação</strong> antes de gravar.
-          Você é responsável por conferir o que confirma.
-        </p>
+        <section id="dados" className="scroll-mt-6 border-b border-slate-200 py-12">
+          <h2 className="text-2xl font-bold tracking-tight">{dataTerms.title}</h2>
+          <p className="mt-2 text-slate-600">{dataTerms.shortDescription}</p>
+          <TermContent term={dataTerms} />
+          <a className="mt-6 inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-4 py-2 font-semibold text-blue-700 hover:bg-blue-50" href="/privacidade">Abrir Política de Privacidade completa</a>
+        </section>
 
-        <h2 className="mt-10 text-xl font-bold">6. Uso permitido</h2>
-        <ul className="mt-3 list-disc space-y-2 pl-6">
-          <li>Não use o serviço para atividades ilegais, fraude, envio de spam ou cobrança de dívidas pelo WhatsApp.</li>
-          <li>Não tente acessar dados de outras lojas, burlar limites ou prejudicar a plataforma.</li>
-          <li>O uso do WhatsApp também segue as políticas do WhatsApp Business.</li>
-        </ul>
+        <section id="ia" className="scroll-mt-6 py-12">
+          <h2 className="text-2xl font-bold tracking-tight">{aiTerms.title}</h2>
+          <p className="mt-2 text-slate-600">{aiTerms.shortDescription}</p>
+          <TermContent term={aiTerms} />
+        </section>
 
-        <h2 className="mt-10 text-xl font-bold">7. Seus dados</h2>
-        <p className="mt-3">
-          Os dados da sua loja são seus. Você pode exportá-los ou pedir a exclusão conforme a Política de Privacidade.
-        </p>
-
-        <h2 className="mt-10 text-xl font-bold">8. Disponibilidade e responsabilidade</h2>
-        <p className="mt-3">
-          Trabalhamos para manter o serviço disponível, mas podem ocorrer interrupções, inclusive de serviços de
-          terceiros (WhatsApp, bancos, internet). Os relatórios são ferramentas de apoio e não substituem contador
-          ou orientação profissional. Nossa responsabilidade se limita, no máximo, ao valor pago nos últimos 12 meses,
-          exceto quando a lei proibir essa limitação.
-        </p>
-
-        <h2 className="mt-10 text-xl font-bold">9. Suspensão</h2>
-        <p className="mt-3">Podemos suspender contas que violem estes termos ou coloquem em risco a plataforma ou outros usuários.</p>
-
-        <h2 className="mt-10 text-xl font-bold">10. Alterações e foro</h2>
-        <p className="mt-3">
-          Podemos atualizar estes termos com aviso prévio. Fica eleito o foro da comarca de São José dos Campos/SP,
-          ressalvado o foro do consumidor quando aplicável.
-        </p>
-
-        <p className="mt-10">Dúvidas: <a className="text-blue-700 underline" href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a></p>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-700">
+          Dúvidas sobre estes termos: <a className="font-semibold text-blue-700 underline underline-offset-4" href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a>.
+        </div>
       </main>
       <LegalFooter />
     </>
