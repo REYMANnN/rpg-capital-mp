@@ -17,9 +17,31 @@ export default function ManageShell({ userName, businesses }: { userName: string
   const business = useMemo(() => businesses.find((item) => item.id === businessId) ?? businesses[0], [businessId, businesses])
   const [storeId, setStoreId] = useState(business.stores[0]?.id ?? '')
   const [section, setSection] = useState<Section>('Início')
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelError, setCancelError] = useState('')
   const store = business.stores.find((item) => item.id === storeId) ?? business.stores[0]
   const operationHref = store ? `/api/balcao/stores/open?storeId=${encodeURIComponent(store.id)}` : '/inventory-v1'
-  function changeBusiness(id: string) { setBusinessId(id); const next = businesses.find((item) => item.id === id); setStoreId(next?.stores[0]?.id ?? '') }
+  function changeBusiness(id: string) { setBusinessId(id); const next = businesses.find((item) => item.id === id); setStoreId(next?.stores[0]?.id ?? ''); setCancelOpen(false); setCancelError('') }
+
+  async function cancelAccount() {
+    if (cancelBusy) return
+    setCancelBusy(true)
+    setCancelError('')
+    try {
+      const response = await fetch('/api/balcao/account/cancel', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ businessId: business.id, confirmation: 'CANCELAR' }),
+      })
+      const payload = await response.json().catch(() => ({})) as { error?: string }
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível cancelar sua conta.')
+      window.location.assign('/')
+    } catch (caught) {
+      setCancelError(caught instanceof Error ? caught.message : 'Não foi possível cancelar sua conta.')
+      setCancelBusy(false)
+    }
+  }
 
   return <main className="min-h-screen bg-slate-50 text-slate-950">
     <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-bold tracking-[0.16em] text-blue-700">BALCÃO</p><p className="mt-1 text-sm text-slate-600">Olá, {userName.split(' ')[0]}</p></div><div className="flex flex-wrap gap-2">{businesses.length > 1 ? <select aria-label="Negócio" value={business.id} onChange={(e) => changeBusiness(e.target.value)} className="min-h-11 rounded-lg border bg-white px-3">{businesses.map((item) => <option value={item.id} key={item.id}>{item.displayName}</option>)}</select> : null}{business.stores.length > 1 ? <select aria-label="Loja" value={store?.id ?? ''} onChange={(e) => setStoreId(e.target.value)} className="min-h-11 rounded-lg border bg-white px-3">{business.stores.map((item) => <option value={item.id} key={item.id}>{item.displayName}</option>)}</select> : null}</div></div></header>
@@ -30,8 +52,10 @@ export default function ManageShell({ userName, businesses }: { userName: string
       {section === 'Análises' ? <><h1 className="text-2xl font-bold">Análises</h1><p className="mt-2 text-slate-600">Indicadores financeiros e operacionais ficam disponíveis conforme a loja registra dados.</p></> : null}
       {section === 'Automações' ? <>{store ? <AutomationsHub storeId={store.id} managementAccess /> : <p>Nenhuma loja selecionada.</p>}</> : null}
       {section === 'Equipe' ? <><h1 className="text-2xl font-bold">Equipe</h1><p className="mt-2 text-slate-600">Crie perfis de Caixa, Estoque, Financeiro, TI, Gerente ou personalize os módulos.</p>{store ? <div className="mt-6"><TeamManager storeId={store.id}/></div> : null}</> : null}
-      {section === 'Configurações' ? <><h1 className="text-2xl font-bold">Configurações</h1><p className="mt-2 text-slate-600">Contas bancárias, lojas e dispositivos ficam sob controle da gestão.</p><div className="mt-6 grid gap-6">{store ? <section><div className="mb-4"><h2 className="text-lg font-bold">Contas bancárias</h2><p className="mt-1 text-sm text-slate-500">Conecte ou desconecte contas pelo Open Finance. O acesso é somente leitura.</p></div><BankConnections storeId={store.id} returnTo="finance"/></section> : null}<StoreManager businessId={business.id} stores={business.stores}/>{store ? <section className="rounded-xl border p-4"><h2 className="font-bold">Dispositivos</h2><div className="mt-4"><DeviceManager storeId={store.id}/></div></section> : null}</div></> : null}
+      {section === 'Configurações' ? <><h1 className="text-2xl font-bold">Configurações</h1><p className="mt-2 text-slate-600">Contas bancárias, lojas, dispositivos e sua conta ficam sob controle da gestão.</p><div className="mt-6 grid gap-6">{store ? <section><div className="mb-4"><h2 className="text-lg font-bold">Contas bancárias</h2><p className="mt-1 text-sm text-slate-500">Conecte ou desconecte contas pelo Open Finance. O acesso é somente leitura.</p></div><BankConnections storeId={store.id} returnTo="finance"/></section> : null}<StoreManager businessId={business.id} stores={business.stores}/>{store ? <section className="rounded-xl border p-4"><h2 className="font-bold">Dispositivos</h2><div className="mt-4"><DeviceManager storeId={store.id}/></div></section> : null}<section className="rounded-xl border border-slate-200 p-4"><h2 className="font-bold">Conta</h2><p className="mt-1 text-sm leading-6 text-slate-500">Consulte os documentos legais ou encerre sua conta quando quiser.</p><div className="mt-4 flex flex-wrap gap-3"><Link href="/termos" target="_blank" className="min-h-11 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-blue-700">Termos e Condições</Link><Link href="/privacidade" target="_blank" className="min-h-11 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-blue-700">Política de Privacidade</Link></div>{business.role === 'owner' ? <div className="mt-6 border-t border-rose-100 pt-5"><h3 className="font-bold text-rose-800">Cancelar minha conta</h3><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">O cancelamento interrompe cobranças futuras e encerra o acesso deste negócio ao BALCÃO. O histórico necessário para obrigações legais pode ser preservado pelo prazo aplicável.</p><button type="button" onClick={() => { setCancelError(''); setCancelOpen(true) }} className="mt-4 min-h-11 rounded-lg border border-rose-300 bg-white px-4 py-2.5 text-sm font-bold text-rose-700 hover:bg-rose-50">Cancelar minha conta</button></div> : null}</section></div></> : null}
     </section></div>
     <nav aria-label="Navegação principal" className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white px-2 py-2 sm:static sm:mx-auto sm:max-w-7xl sm:border-0 sm:bg-transparent sm:px-6"><div className="grid grid-cols-7 gap-1">{sections.map((item) => <button key={item} onClick={() => setSection(item)} aria-current={section === item ? 'page' : undefined} className={`min-h-12 rounded-lg px-1 text-[10px] font-semibold sm:text-sm ${section === item ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-slate-100'}`}>{item}</button>)}</div></nav>
+
+    {cancelOpen ? <div role="dialog" aria-modal="true" aria-labelledby="cancel-account-title" className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 p-0 sm:items-center sm:p-6" onMouseDown={(event) => { if (event.currentTarget === event.target && !cancelBusy) setCancelOpen(false) }}><div className="w-full max-w-lg rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-6"><h2 id="cancel-account-title" className="text-xl font-bold text-slate-950">Cancelar minha conta?</h2><p className="mt-3 text-sm leading-6 text-slate-600">Esta ação encerra o acesso de <strong>{business.displayName}</strong> e cancela as cobranças futuras. Ela não apaga automaticamente registros que precisem ser mantidos por obrigação legal.</p><p className="mt-3 text-sm font-semibold text-slate-800">Quer mesmo continuar?</p>{cancelError ? <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{cancelError}</p> : null}<div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" disabled={cancelBusy} onClick={() => setCancelOpen(false)} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2.5 font-semibold text-slate-800 disabled:opacity-50">Não, manter minha conta</button><button type="button" disabled={cancelBusy} onClick={cancelAccount} className="min-h-11 rounded-lg bg-rose-700 px-4 py-2.5 font-bold text-white disabled:opacity-50">{cancelBusy ? 'Cancelando…' : 'Confirmar cancelamento'}</button></div></div></div> : null}
   </main>
 }
