@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { CreditCard, FileText, ShieldCheck, Sparkles, X } from 'lucide-react'
 import {
   digits,
   formatCardNumber,
@@ -12,6 +13,14 @@ import {
   validateAndNormalizeBillingInput,
   type BillingFieldErrors,
 } from '@/lib/billing/cardValidation'
+import { onboardingTerms, type OnboardingTermId } from '@/lib/legal/onboardingTerms'
+
+const termIcons = {
+  use: FileText,
+  commercial: CreditCard,
+  data: ShieldCheck,
+  ai: Sparkles,
+} as const
 
 export default function OnboardingBillingStep({
   storeId,
@@ -26,9 +35,18 @@ export default function OnboardingBillingStep({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<BillingFieldErrors>({})
-  const [accepted, setAccepted] = useState(false)
+  const [activeTermId, setActiveTermId] = useState<OnboardingTermId | null>(null)
+  const [acceptedTerms, setAcceptedTerms] = useState<Record<OnboardingTermId, boolean>>({
+    use: false,
+    commercial: false,
+    data: false,
+    ai: false,
+  })
   const [card, setCard] = useState({ holderName: userName, number: '', expiryMonth: '', expiryYear: '', ccv: '' })
   const [holder, setHolder] = useState({ name: userName, email: userEmail, cpfCnpj: '', postalCode: '', addressNumber: '', addressComplement: '', mobilePhone: '' })
+
+  const allLegalAccepted = onboardingTerms.every((term) => acceptedTerms[term.id])
+  const activeTerm = activeTermId ? onboardingTerms.find((term) => term.id === activeTermId) ?? null : null
 
   function clearFieldError(field: keyof BillingFieldErrors) {
     setFieldErrors((current) => {
@@ -40,11 +58,16 @@ export default function OnboardingBillingStep({
     setError('')
   }
 
+  function toggleTerm(id: OnboardingTermId, checked: boolean) {
+    setAcceptedTerms((current) => ({ ...current, [id]: checked }))
+    if (checked) setError('')
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (busy) return
-    if (!accepted) {
-      setError('Confirme a autorização da cobrança recorrente para continuar.')
+    if (!allLegalAccepted) {
+      setError('Leia e aceite os quatro termos para continuar com o pagamento.')
       return
     }
 
@@ -64,7 +87,7 @@ export default function OnboardingBillingStep({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           storeId,
-          acceptedRecurringBilling: true,
+          acceptedRecurringBilling: acceptedTerms.commercial,
           creditCard: validation.creditCard,
           creditCardHolderInfo: validation.creditCardHolderInfo,
         }),
@@ -107,7 +130,40 @@ export default function OnboardingBillingStep({
         Se você entrar depois do dia 1, não cobramos agora. No próximo dia 1 serão R$ 11,98 — mês de entrada + mês atual. Depois, R$ 5,99 todo dia 1.
       </div>
 
-      <div className="mt-7 grid gap-5 sm:grid-cols-2">
+      <section className="mt-7" aria-labelledby="legal-title">
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-blue-700">Antes de pagar</p>
+          <h2 id="legal-title" className="mt-1 text-xl font-bold text-slate-950">Leia e aceite os quatro termos</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Abra cada documento para conferir as condições. Os quatro aceites são obrigatórios para continuar.</p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {onboardingTerms.map((term) => {
+            const Icon = termIcons[term.id]
+            return <article key={term.id} className={`rounded-2xl border p-4 transition ${acceptedTerms[term.id] ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-slate-50'}`}>
+              <div className="flex items-start gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-blue-700 shadow-sm"><Icon className="h-5 w-5" aria-hidden="true" /></span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-slate-950">{term.title}</h3>
+                  <p className="mt-1 text-sm leading-5 text-slate-600">{term.shortDescription}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setActiveTermId(term.id)} className="mt-4 min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">Ler termo</button>
+              <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl bg-white p-3 text-sm font-medium leading-5 text-slate-800">
+                <input type="checkbox" checked={acceptedTerms[term.id]} onChange={(event) => toggleTerm(term.id, event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-blue-700" />
+                <span>Li e aceito {term.title}.</span>
+              </label>
+            </article>
+          })}
+        </div>
+      </section>
+
+      <div className="mt-8 border-t border-slate-200 pt-7">
+        <h2 className="text-lg font-bold text-slate-950">Dados do cartão</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-600">Preencha os dados usados para a assinatura mensal.</p>
+      </div>
+
+      <div className="mt-5 grid gap-5 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className={labelClass} htmlFor="card-number">Número do cartão</label>
           <input id="card-number" required inputMode="numeric" autoComplete="cc-number" className={fieldClass('cardNumber')} value={card.number} aria-invalid={Boolean(fieldErrors.cardNumber)} onChange={(e) => { clearFieldError('cardNumber'); setCard((current) => ({ ...current, number: formatCardNumber(e.target.value) })) }} placeholder="0000 0000 0000 0000" maxLength={23} />
@@ -173,20 +229,41 @@ export default function OnboardingBillingStep({
         </div>
       </div>
 
-      <label className="mt-7 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 text-slate-700">
-        <input type="checkbox" checked={accepted} onChange={(e) => { setAccepted(e.target.checked); if (e.target.checked) setError('') }} className="mt-1 h-4 w-4" />
-        <span>Ao continuar, você autoriza a cobrança recorrente do BALCÃO de R$ 5,99 todo dia 1, conforme as condições apresentadas acima.</span>
-      </label>
-
-      <p className="mt-4 text-xs leading-5 text-slate-500">Os dados completos do cartão são enviados diretamente ao Asaas pelo servidor do BALCÃO e não são armazenados no nosso banco de dados.</p>
+      <p className="mt-7 text-xs leading-5 text-slate-500">Os dados completos do cartão são enviados diretamente ao Asaas pelo servidor do BALCÃO e não são armazenados no nosso banco de dados.</p>
       {error ? <div role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">
         <p>{error}</p>
         {Object.keys(fieldErrors).length ? <ul className="mt-2 list-disc space-y-1 pl-5 font-medium">{Object.entries(fieldErrors).map(([field, message]) => <li key={field}>{message}</li>)}</ul> : null}
       </div> : null}
 
       <div className="mt-7 flex justify-end">
-        <button type="submit" disabled={busy || !accepted} className="min-h-12 rounded-xl bg-blue-700 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Configurando…' : 'Continuar para conectar o banco'}</button>
+        <button type="submit" disabled={busy || !allLegalAccepted} className="min-h-12 rounded-xl bg-blue-700 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Configurando…' : allLegalAccepted ? 'Continuar para conectar o banco' : 'Aceite os quatro termos para continuar'}</button>
       </div>
     </form>
+
+    {activeTerm ? <div className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="legal-dialog-title" onMouseDown={(event) => { if (event.currentTarget === event.target) setActiveTermId(null) }}>
+      <div className="max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">Documento legal</p>
+            <h2 id="legal-dialog-title" className="mt-1 text-xl font-bold text-slate-950">{activeTerm.title}</h2>
+          </div>
+          <button type="button" onClick={() => setActiveTermId(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Fechar termo"><X className="h-5 w-5" aria-hidden="true" /></button>
+        </header>
+        <div className="max-h-[calc(88vh-150px)] overflow-y-auto px-5 py-5 sm:px-6">
+          {activeTerm.sections.map((section) => <section key={section.title} className="mb-7 last:mb-0">
+            <h3 className="text-base font-bold text-slate-950">{section.title}</h3>
+            {section.paragraphs.map((paragraph) => <p key={paragraph} className="mt-2 text-sm leading-6 text-slate-700">{paragraph}</p>)}
+            {section.bullets ? <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-700">{section.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul> : null}
+          </section>)}
+          {activeTerm.publicHref ? <a href={activeTerm.publicHref} target="_blank" rel="noreferrer" className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">Abrir versão pública completa</a> : null}
+        </div>
+        <footer className="border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-6">
+          <label className="flex cursor-pointer items-start gap-3 text-sm font-semibold leading-5 text-slate-800">
+            <input type="checkbox" checked={acceptedTerms[activeTerm.id]} onChange={(event) => toggleTerm(activeTerm.id, event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-blue-700" />
+            <span>Li e aceito {activeTerm.title}.</span>
+          </label>
+        </footer>
+      </div>
+    </div> : null}
   </div>
 }
