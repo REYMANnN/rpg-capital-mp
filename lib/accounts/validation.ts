@@ -170,6 +170,7 @@ const onboardingSchema = z.object({
   city: z.string().trim().min(2, 'Informe a cidade.'),
   state: z.string().trim().toUpperCase().length(2, 'Informe a UF com 2 letras.'),
   phone: z.string().transform(normalizeDigits).refine((value) => value.length >= 10 && value.length <= 11, 'Informe um telefone válido.'),
+  whatsappConsent: z.boolean().optional().default(false),
   taxId: z.string().trim().refine((value) => isValidCpf(value) || isValidCnpj(value), 'Informe um CPF ou CNPJ válido.'),
   pixType: z.enum(PIX_KEY_TYPES).optional().default(''),
   pixKey: z.string().trim().optional().default(''),
