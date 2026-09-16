@@ -308,9 +308,12 @@ export default function Home() {
           <div><a className={styles.brand} href="#topo"><span className={styles.brandMark}>RPG</span><span className={styles.brandCopy}><strong>RPG para Balcões</strong><small>por RPG Capital</small></span></a><p>Gestão simples para quem tem uma loja para tocar.</p></div>
           <div><strong>Produto</strong><a href="#produto">Funcionalidades</a><a href="#preco">Preço</a><a href="#como-funciona">Como funciona</a></div>
           <div><strong>Acesso</strong><a href={demoHref}>Conta de teste</a><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a></div>
-          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a></div>
+          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="/privacidade">Política de Privacidade</a><a href="/termos">Termos de Uso</a></div>
         </div>
-        <div className={styles.container + ' ' + styles.footerBottom}><span>© 2026 RPG Capital.</span><span>Feito para o varejo brasileiro.</span></div>
+        <div className={styles.container + ' ' + styles.footerBottom}>
+          <span>RPG Capital é uma marca de 57.114.756 RENAN PANGONI GUADALUPE · CNPJ 57.114.756/0001-89</span>
+          <span>© 2026 RPG Capital.</span>
+        </div>
       </footer>
     </div>
   )
