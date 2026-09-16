@@ -130,3 +130,15 @@ export async function ensureAsaasCreditCardSubscription(input: AsaasSubscription
   const existing = await findAsaasSubscriptionByExternalReference(input.externalReference)
   return existing ?? createAsaasCreditCardSubscription(input)
 }
+
+export async function cancelAsaasSubscription(subscriptionId: string) {
+  try {
+    return await asaasRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+      method: 'DELETE',
+    })
+  } catch (caught) {
+    const error = caught as Error & { status?: number }
+    if (error.status === 404) return { deleted: true, alreadyMissing: true }
+    throw caught
+  }
+}

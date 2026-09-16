@@ -67,6 +67,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [serverError, setServerError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [whatsappConsent, setWhatsappConsent] = useState(false)
   const [cepState, setCepState] = useState<CepState>({ status: 'idle', message: '' })
   const addressNumberRef = useRef<HTMLInputElement>(null)
   const lastCepRef = useRef('')
@@ -221,7 +222,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
       const response = await fetch('/api/balcao/onboarding', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, whatsappConsent }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) {
@@ -361,6 +362,11 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               {!invalid('taxId') ? <p id="taxId-help" className={helpClass}>O BALCÃO identifica CPF ou CNPJ pelo tamanho.</p> : null}
             </div>
           </div>
+
+          <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-slate-700">
+            <input type="checkbox" checked={whatsappConsent} onChange={(event) => setWhatsappConsent(event.target.checked)} className="mt-1 h-5 w-5 shrink-0 accent-blue-700" />
+            <span><strong className="text-slate-900">Aceito receber mensagens da RPG Capital pelo WhatsApp</strong> no número informado, incluindo mensagens relacionadas à minha conta, operação da loja, alertas e atendimento. Posso cancelar esse consentimento a qualquer momento. <span className="text-slate-500">(opcional)</span></span>
+          </label>
 
           <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">

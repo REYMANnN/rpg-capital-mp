@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import LegalFooter from '@/components/LegalFooter'
 import DemoBalcao from './DemoBalcao'
 
 export const metadata: Metadata = {
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 }
 
 export default function DemoPage() {
-  return <DemoBalcao />
+  return <><DemoBalcao /><LegalFooter /></>
 }
