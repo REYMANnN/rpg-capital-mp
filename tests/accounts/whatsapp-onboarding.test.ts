@@ -48,16 +48,18 @@ test('ignores webhook changes without supported inbound messages', () => {
   assert.deepEqual(parseWhatsAppWebhook({ object: 'whatsapp_business_account', entry: [{ changes: [{ value: { statuses: [{ id: 'wamid.status' }] } }] }] }), [])
 })
 
-test('migration stores consent, conversation state and secure link codes with RLS', () => {
+test('migration stores consent, conversation state, identity and secure link codes with RLS', () => {
   const sql = readFileSync('supabase/migrations/20260916_balcao_whatsapp_dual_onboarding.sql', 'utf8')
   assert.match(sql, /create table if not exists public\.balcao_whatsapp_consents/i)
   assert.match(sql, /event_type text not null.*granted.*revoked/is)
   assert.match(sql, /create table if not exists public\.balcao_whatsapp_sessions/i)
+  assert.match(sql, /create table if not exists public\.balcao_whatsapp_identities/i)
   assert.match(sql, /create table if not exists public\.balcao_whatsapp_link_codes/i)
   assert.match(sql, /code_hash text not null/i)
   assert.match(sql, /enable row level security/gi)
   assert.match(sql, /revoke all on public\.balcao_whatsapp_consents from public, anon, authenticated/i)
   assert.match(sql, /balcao_record_whatsapp_consent/i)
+  assert.match(sql, /balcao_confirm_whatsapp_link/i)
 })
 
 test('site onboarding exposes optional WhatsApp consent and persists it with site source', () => {
@@ -72,4 +74,31 @@ test('site onboarding exposes optional WhatsApp consent and persists it with sit
   assert.match(route, /balcao_record_whatsapp_consent/)
   assert.match(route, /p_source:\s*'onboarding_site'/)
   assert.match(route, /WHATSAPP_CONSENT_VERSION/)
+})
+
+test('Meta webhook verifies subscription and signature before processing messages', () => {
+  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  assert.match(route, /WHATSAPP_VERIFY_TOKEN/)
+  assert.match(route, /hub\.challenge/)
+  assert.match(route, /x-hub-signature-256/i)
+  assert.match(route, /WHATSAPP_APP_SECRET/)
+  assert.match(route, /timingSafeEqual/)
+  assert.match(route, /balcao-whatsapp-webhook/)
+  assert.match(route, /WHATSAPP_PHONE_NUMBER_ID/)
+  assert.match(route, /WHATSAPP_ACCESS_TOKEN/)
+})
+
+test('existing-account WhatsApp linking requires an authenticated BALCAO confirmation', () => {
+  const page = readFileSync('app/vincular-whatsapp/page.tsx', 'utf8')
+  const confirmRoute = readFileSync('app/api/balcao/whatsapp/link/confirm/route.ts', 'utf8')
+  const edge = readFileSync('supabase/functions/balcao-whatsapp-webhook/index.ts', 'utf8')
+
+  assert.match(page, /Vincular WhatsApp/i)
+  assert.match(page, /6 dígitos/i)
+  assert.match(confirmRoute, /auth\.getUser\(\)/)
+  assert.match(confirmRoute, /balcao_confirm_whatsapp_link/)
+  assert.match(confirmRoute, /createHash\('sha256'\)/)
+  assert.match(edge, /balcao_existing_account/)
+  assert.match(edge, /codeHash/)
+  assert.match(edge, /PARAR/)
 })
