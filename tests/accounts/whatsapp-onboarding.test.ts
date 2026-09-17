@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import {
   WHATSAPP_BUTTONS,
   isStopCommand,
@@ -45,4 +46,16 @@ test('parses text and interactive button replies from Meta webhook payloads', ()
 
 test('ignores webhook changes without supported inbound messages', () => {
   assert.deepEqual(parseWhatsAppWebhook({ object: 'whatsapp_business_account', entry: [{ changes: [{ value: { statuses: [{ id: 'wamid.status' }] } }] }] }), [])
+})
+
+test('migration stores consent, conversation state and secure link codes with RLS', () => {
+  const sql = readFileSync('supabase/migrations/20260916_balcao_whatsapp_dual_onboarding.sql', 'utf8')
+  assert.match(sql, /create table if not exists public\.balcao_whatsapp_consents/i)
+  assert.match(sql, /event_type text not null.*granted.*revoked/is)
+  assert.match(sql, /create table if not exists public\.balcao_whatsapp_sessions/i)
+  assert.match(sql, /create table if not exists public\.balcao_whatsapp_link_codes/i)
+  assert.match(sql, /code_hash text not null/i)
+  assert.match(sql, /enable row level security/gi)
+  assert.match(sql, /revoke all on public\.balcao_whatsapp_consents from public, anon, authenticated/i)
+  assert.match(sql, /balcao_record_whatsapp_consent/i)
 })
