@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { readFileSync } from 'node:fs'
+
+test('webhook route enforces Meta verification and signed POSTs', () => {
+  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  assert.match(route, /export const runtime = ['"]nodejs['"]/)
+  assert.match(route, /export const dynamic = ['"]force-dynamic['"]/)
+  assert.match(route, /hub\.mode/)
+  assert.match(route, /hub\.verify_token/)
+  assert.match(route, /WHATSAPP_VERIFY_TOKEN/)
+  assert.match(route, /req\.text\(\)/)
+  assert.match(route, /x-hub-signature-256/i)
+  assert.match(route, /createHmac\(['"]sha256['"]/)
+  assert.match(route, /WHATSAPP_APP_SECRET/)
+  assert.match(route, /timingSafeEqual/)
+  assert.match(route, /status:\s*401/)
+})
+
+test('webhook persists inbound messages, statuses and contact state', () => {
+  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  assert.match(route, /whatsapp_inbound_messages/)
+  assert.match(route, /onConflict:\s*['"]wamid['"]/)
+  assert.match(route, /ignoreDuplicates:\s*true/)
+  assert.match(route, /whatsapp_message_status/)
+  assert.match(route, /whatsapp_contacts/)
+  assert.match(route, /PARAR/i)
+  assert.match(route, /VOLTAR/i)
+  assert.match(route, /Pronto, você não vai mais receber mensagens da RPG Capital\. Para voltar, mande VOLTAR\./)
+  assert.match(route, /Recebido ✅ Em breve o Balcão RPG vai funcionar por aqui\./)
+  assert.match(route, /markAsRead/)
+})
+
+test('WhatsApp client uses Graph API v23.0 and blocks opted-out recipients', () => {
+  const client = readFileSync('lib/whatsapp.ts', 'utf8')
+  assert.match(client, /graph\.facebook\.com\/v23\.0/)
+  assert.match(client, /WHATSAPP_PHONE_NUMBER_ID/)
+  assert.match(client, /WHATSAPP_TOKEN/)
+  assert.match(client, /Authorization/)
+  assert.match(client, /Bearer/)
+  assert.match(client, /export async function sendText/)
+  assert.match(client, /export async function markAsRead/)
+  assert.match(client, /opted_out/)
+})
+
+test('migration creates private WhatsApp tables with RLS and indexes', () => {
+  const sql = readFileSync('supabase/migrations/20260917_whatsapp_cloud_api.sql', 'utf8')
+  assert.match(sql, /create table if not exists public\.whatsapp_contacts/i)
+  assert.match(sql, /wa_id text primary key/i)
+  assert.match(sql, /opted_in boolean not null default false/i)
+  assert.match(sql, /opted_out boolean not null default false/i)
+  assert.match(sql, /create table if not exists public\.whatsapp_inbound_messages/i)
+  assert.match(sql, /wamid text unique not null/i)
+  assert.match(sql, /create table if not exists public\.whatsapp_message_status/i)
+  assert.match(sql, /alter table public\.whatsapp_contacts enable row level security/i)
+  assert.match(sql, /alter table public\.whatsapp_inbound_messages enable row level security/i)
+  assert.match(sql, /alter table public\.whatsapp_message_status enable row level security/i)
+  assert.match(sql, /revoke all on table public\.whatsapp_contacts from anon, authenticated/i)
+  assert.match(sql, /revoke all on table public\.whatsapp_inbound_messages from anon, authenticated/i)
+  assert.match(sql, /revoke all on table public\.whatsapp_message_status from anon, authenticated/i)
+  assert.match(sql, /create index if not exists whatsapp_inbound_messages_from_phone_idx/i)
+  assert.match(sql, /create index if not exists whatsapp_message_status_wamid_idx/i)
+})
