@@ -59,3 +59,17 @@ test('migration stores consent, conversation state and secure link codes with RL
   assert.match(sql, /revoke all on public\.balcao_whatsapp_consents from public, anon, authenticated/i)
   assert.match(sql, /balcao_record_whatsapp_consent/i)
 })
+
+test('site onboarding exposes optional WhatsApp consent and persists it with site source', () => {
+  const wizard = readFileSync('components/accounts/OnboardingWizard.tsx', 'utf8')
+  const validation = readFileSync('lib/accounts/validation.ts', 'utf8')
+  const route = readFileSync('app/api/balcao/onboarding/route.ts', 'utf8')
+
+  assert.match(wizard, /whatsappConsent/)
+  assert.match(wizard, /Aceito receber mensagens da RPG Capital pelo WhatsApp/)
+  assert.match(wizard, /\{ \.\.\.form, whatsappConsent \}/)
+  assert.match(validation, /whatsappConsent:\s*z\.boolean\(\)\.optional\(\)\.default\(false\)/)
+  assert.match(route, /balcao_record_whatsapp_consent/)
+  assert.match(route, /p_source:\s*'onboarding_site'/)
+  assert.match(route, /WHATSAPP_CONSENT_VERSION/)
+})
