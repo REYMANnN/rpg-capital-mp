@@ -32,7 +32,7 @@ export default function Termos() {
       <p className="text-sm font-bold tracking-[0.16em] text-blue-700">RPG CAPITAL · BALCÃO</p>
       <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Termos e Condições</h1>
       <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
-        Esta página reúne os documentos aplicáveis ao uso do RPG Balcão. A RPG Capital é uma marca de <strong>57.114.756 RENAN PANGONI GUADALUPE</strong>, CNPJ <strong>57.114.756/0001-89</strong>. Contato oficial: <strong>+55 11 93620-6235</strong>.
+        Esta página reúne os documentos aplicáveis ao uso do RPG Balcão. A RPG Capital é uma marca de <strong>57.114.756 RENAN PANGONI GUADALUPE</strong>, CNPJ <strong>57.114.756/0001-89</strong>.
       </p>
       <p className="mt-2 text-sm text-slate-500"><em>Última atualização: 16 de setembro de 2026</em></p>
 
@@ -69,7 +69,7 @@ export default function Termos() {
       </section>
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-700">
-        Dúvidas sobre estes termos: <a className="font-semibold text-blue-700 underline underline-offset-4" href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a> · <a className="font-semibold text-blue-700 underline underline-offset-4" href="tel:+5511936206235">+55 11 93620-6235</a>.
+        Dúvidas sobre estes termos: <a className="font-semibold text-blue-700 underline underline-offset-4" href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a>.
       </div>
     </main>
   )
