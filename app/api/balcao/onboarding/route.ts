@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { normalizeDigits, normalizePixKey, validateOnboarding } from '@/lib/accounts/validation'
+import { WHATSAPP_CONSENT_TEXT, WHATSAPP_CONSENT_VERSION } from '@/lib/legal/whatsappConsent'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 
 const LEGACY_INSTALLATION_COOKIE = 'inventory_installation_id'
@@ -79,6 +80,22 @@ export async function POST(request: Request) {
   if (!result?.business_id || !result.store_id || !result.installation_id) {
     console.error('BALCAO onboarding RPC returned incomplete result')
     return NextResponse.json({ error: 'Não conseguimos concluir seu cadastro agora. Seus dados foram mantidos; tente novamente.' }, { status: 500 })
+  }
+
+  if (data.whatsappConsent) {
+    const { error: consentError } = await supabase.rpc('balcao_record_whatsapp_consent', {
+      p_business_id: result.business_id,
+      p_phone_e164: `+55${data.phone}`,
+      p_policy_version: WHATSAPP_CONSENT_VERSION,
+      p_consent_text: WHATSAPP_CONSENT_TEXT,
+      p_source: 'onboarding_site',
+    })
+    if (consentError) {
+      console.error('BALCAO WhatsApp consent audit failed', { code: consentError.code })
+      return NextResponse.json({
+        error: 'A loja foi criada, mas não conseguimos registrar sua preferência de WhatsApp. Tente novamente.',
+      }, { status: 500 })
+    }
   }
 
   if (!wasAlreadyCompleted) {
