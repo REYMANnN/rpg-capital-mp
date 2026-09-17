@@ -52,6 +52,12 @@ export const onboardingTerms: OnboardingTerm[] = [
           'Podemos atualizar estes termos com aviso prévio. Fica eleito o foro da comarca de São José dos Campos/SP, ressalvado o foro do consumidor quando aplicável.',
         ],
       },
+      {
+        title: '5. WhatsApp e alertas',
+        paragraphs: [
+          'Só enviamos mensagens para quem se cadastrou e autorizou contato. Você pode parar de receber alertas a qualquer momento respondendo PARAR ou pelo menu. Sempre é possível falar com uma pessoa da nossa equipe.',
+        ],
+      },
     ],
   },
   {
