@@ -33,7 +33,8 @@ test('webhook persists inbound messages, statuses and contact state', () => {
 
 test('WhatsApp client uses Graph API v23.0 and blocks opted-out recipients', () => {
   const client = readFileSync('lib/whatsapp.ts', 'utf8')
-  assert.match(client, /graph\.facebook\.com\/v23\.0/)
+  assert.match(client, /GRAPH_API_VERSION = ['"]v23\.0['"]/)
+  assert.match(client, /graph\.facebook\.com\/\$\{GRAPH_API_VERSION\}/)
   assert.match(client, /WHATSAPP_PHONE_NUMBER_ID/)
   assert.match(client, /WHATSAPP_TOKEN/)
   assert.match(client, /Authorization/)
@@ -55,9 +56,9 @@ test('migration creates private WhatsApp tables with RLS and indexes', () => {
   assert.match(sql, /alter table public\.whatsapp_contacts enable row level security/i)
   assert.match(sql, /alter table public\.whatsapp_inbound_messages enable row level security/i)
   assert.match(sql, /alter table public\.whatsapp_message_status enable row level security/i)
-  assert.match(sql, /revoke all on table public\.whatsapp_contacts from anon, authenticated/i)
-  assert.match(sql, /revoke all on table public\.whatsapp_inbound_messages from anon, authenticated/i)
-  assert.match(sql, /revoke all on table public\.whatsapp_message_status from anon, authenticated/i)
+  assert.match(sql, /revoke all on table public\.whatsapp_contacts from public, anon, authenticated/i)
+  assert.match(sql, /revoke all on table public\.whatsapp_inbound_messages from public, anon, authenticated/i)
+  assert.match(sql, /revoke all on table public\.whatsapp_message_status from public, anon, authenticated/i)
   assert.match(sql, /create index if not exists whatsapp_inbound_messages_from_phone_idx/i)
   assert.match(sql, /create index if not exists whatsapp_message_status_wamid_idx/i)
 })
