@@ -55,17 +55,48 @@ create table if not exists public.balcao_whatsapp_sessions (
 alter table public.balcao_whatsapp_sessions enable row level security;
 revoke all on public.balcao_whatsapp_sessions from public, anon, authenticated;
 
+create table if not exists public.balcao_whatsapp_identities (
+  phone text primary key,
+  business_id uuid not null references public.balcao_businesses(id) on delete cascade,
+  store_id uuid references public.inventory_v1_stores(id) on delete set null,
+  verified_by_user_id uuid references auth.users(id) on delete set null,
+  source text not null,
+  verified_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists balcao_whatsapp_identities_business_idx
+  on public.balcao_whatsapp_identities(business_id, updated_at desc);
+
+alter table public.balcao_whatsapp_identities enable row level security;
+revoke all on public.balcao_whatsapp_identities from public, anon, authenticated;
+grant select on public.balcao_whatsapp_identities to authenticated;
+
+drop policy if exists balcao_whatsapp_identities_member_read on public.balcao_whatsapp_identities;
+create policy balcao_whatsapp_identities_member_read
+  on public.balcao_whatsapp_identities for select to authenticated
+  using (
+    exists (
+      select 1 from public.balcao_business_members m
+      where m.business_id = balcao_whatsapp_identities.business_id
+        and m.user_id = (select auth.uid())
+        and m.active
+    )
+  );
+
 create table if not exists public.balcao_whatsapp_link_codes (
   id uuid primary key default gen_random_uuid(),
   phone text not null,
   business_id uuid references public.balcao_businesses(id) on delete cascade,
-  requested_by_user_id uuid references auth.users(id) on delete cascade,
+  requested_by_user_id uuid references auth.users(id) on delete set null,
   code_hash text not null,
   expires_at timestamptz not null,
   consumed_at timestamptz,
   created_at timestamptz not null default now()
 );
 
+create unique index if not exists balcao_whatsapp_link_codes_hash_unique
+  on public.balcao_whatsapp_link_codes(code_hash);
 create index if not exists balcao_whatsapp_link_codes_business_idx
   on public.balcao_whatsapp_link_codes(business_id, created_at desc);
 create index if not exists balcao_whatsapp_link_codes_phone_idx
@@ -79,7 +110,8 @@ drop policy if exists balcao_whatsapp_link_codes_owner_read on public.balcao_wha
 create policy balcao_whatsapp_link_codes_owner_read
   on public.balcao_whatsapp_link_codes for select to authenticated
   using (
-    exists (
+    business_id is not null
+    and exists (
       select 1 from public.balcao_business_members m
       where m.business_id = balcao_whatsapp_link_codes.business_id
         and m.user_id = (select auth.uid())
@@ -103,6 +135,7 @@ as $$
 declare
   v_user_id uuid := auth.uid();
   v_id uuid;
+  v_phone text := regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g');
 begin
   if v_user_id is null then
     raise exception 'BALCAO_NOT_AUTHENTICATED';
@@ -117,7 +150,7 @@ begin
     raise exception 'BALCAO_WHATSAPP_CONSENT_FORBIDDEN';
   end if;
 
-  if nullif(trim(p_phone), '') is null
+  if length(v_phone) < 12 or length(v_phone) > 13
      or nullif(trim(p_policy_version), '') is null
      or nullif(trim(p_consent_text), '') is null
      or nullif(trim(p_source), '') is null then
@@ -127,7 +160,7 @@ begin
   insert into public.balcao_whatsapp_consents (
     business_id, user_id, phone, event_type, consent_text, policy_version, source, occurred_at
   ) values (
-    p_business_id, v_user_id, regexp_replace(p_phone, '[^0-9]', '', 'g'), 'granted',
+    p_business_id, v_user_id, v_phone, 'granted',
     trim(p_consent_text), trim(p_policy_version), trim(p_source), now()
   ) returning id into v_id;
 
@@ -187,6 +220,18 @@ begin
     v_installation_id, v_name, 'inventory', v_business_id, 'outro', true, now(), now()
   ) returning id into v_store_id;
 
+  insert into public.balcao_whatsapp_identities (
+    phone, business_id, store_id, source, verified_at, updated_at
+  ) values (
+    v_phone, v_business_id, v_store_id, 'whatsapp_onboarding', now(), now()
+  ) on conflict (phone) do update
+  set business_id = excluded.business_id,
+      store_id = excluded.store_id,
+      source = excluded.source,
+      verified_by_user_id = null,
+      verified_at = now(),
+      updated_at = now();
+
   insert into public.balcao_whatsapp_sessions (
     phone, state, business_id, store_id, pending_store_name, last_message_id, created_at, updated_at
   ) values (
@@ -222,23 +267,29 @@ set search_path = ''
 as $$
 declare
   v_phone text := regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g');
-  v_session public.balcao_whatsapp_sessions%rowtype;
+  v_business_id uuid;
   v_id uuid;
 begin
   if p_event_type not in ('granted', 'revoked') then
     raise exception 'BALCAO_WHATSAPP_EVENT_INVALID';
   end if;
 
-  select * into v_session
-  from public.balcao_whatsapp_sessions
-  where phone = v_phone
+  select s.business_id into v_business_id
+  from public.balcao_whatsapp_sessions s
+  where s.phone = v_phone
   for update;
+
+  if v_business_id is null then
+    select i.business_id into v_business_id
+    from public.balcao_whatsapp_identities i
+    where i.phone = v_phone;
+  end if;
 
   insert into public.balcao_whatsapp_consents (
     business_id, phone, event_type, consent_text, policy_version, source,
     meta_message_id, meta_action_id, occurred_at
   ) values (
-    v_session.business_id, v_phone, p_event_type, p_consent_text, p_policy_version, p_source,
+    v_business_id, v_phone, p_event_type, p_consent_text, p_policy_version, p_source,
     nullif(p_message_id, ''), nullif(p_action_id, ''), now()
   ) on conflict (meta_message_id) where meta_message_id is not null do nothing
   returning id into v_id;
@@ -249,9 +300,97 @@ begin
       updated_at = now()
   where phone = v_phone;
 
-  return jsonb_build_object('ok', true, 'id', v_id, 'businessId', v_session.business_id);
+  return jsonb_build_object('ok', true, 'id', v_id, 'businessId', v_business_id);
 end;
 $$;
 
 revoke all on function public.balcao_whatsapp_record_event(text, text, text, text, text, text, text) from public, anon, authenticated;
 grant execute on function public.balcao_whatsapp_record_event(text, text, text, text, text, text, text) to service_role;
+
+create or replace function public.balcao_confirm_whatsapp_link(
+  p_business_id uuid,
+  p_code_hash text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_link public.balcao_whatsapp_link_codes%rowtype;
+  v_store_id uuid;
+begin
+  if v_user_id is null then
+    raise exception 'BALCAO_NOT_AUTHENTICATED';
+  end if;
+
+  if not exists (
+    select 1 from public.balcao_business_members m
+    where m.business_id = p_business_id
+      and m.user_id = v_user_id
+      and m.active
+      and m.role in ('owner', 'admin')
+  ) then
+    raise exception 'BALCAO_WHATSAPP_LINK_FORBIDDEN';
+  end if;
+
+  select * into v_link
+  from public.balcao_whatsapp_link_codes c
+  where c.code_hash = p_code_hash
+    and c.consumed_at is null
+    and c.expires_at > now()
+  order by c.created_at desc
+  limit 1
+  for update;
+
+  if v_link.id is null then
+    raise exception 'BALCAO_WHATSAPP_LINK_INVALID_OR_EXPIRED';
+  end if;
+
+  select s.id into v_store_id
+  from public.inventory_v1_stores s
+  where s.business_id = p_business_id
+    and s.active
+  order by s.created_at asc
+  limit 1;
+
+  insert into public.balcao_whatsapp_identities (
+    phone, business_id, store_id, verified_by_user_id, source, verified_at, updated_at
+  ) values (
+    v_link.phone, p_business_id, v_store_id, v_user_id, 'existing_account_link', now(), now()
+  ) on conflict (phone) do update
+  set business_id = excluded.business_id,
+      store_id = excluded.store_id,
+      verified_by_user_id = excluded.verified_by_user_id,
+      source = excluded.source,
+      verified_at = now(),
+      updated_at = now();
+
+  update public.balcao_whatsapp_link_codes
+  set business_id = p_business_id,
+      requested_by_user_id = v_user_id,
+      consumed_at = now()
+  where id = v_link.id;
+
+  insert into public.balcao_whatsapp_sessions (
+    phone, state, business_id, store_id, created_at, updated_at
+  ) values (
+    v_link.phone, 'active', p_business_id, v_store_id, now(), now()
+  ) on conflict (phone) do update
+  set state = 'active',
+      business_id = excluded.business_id,
+      store_id = excluded.store_id,
+      updated_at = now();
+
+  return jsonb_build_object(
+    'ok', true,
+    'phone', v_link.phone,
+    'businessId', p_business_id,
+    'storeId', v_store_id
+  );
+end;
+$$;
+
+revoke all on function public.balcao_confirm_whatsapp_link(uuid, text) from public, anon;
+grant execute on function public.balcao_confirm_whatsapp_link(uuid, text) to authenticated;
