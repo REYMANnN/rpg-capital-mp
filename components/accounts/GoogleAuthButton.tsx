@@ -37,9 +37,11 @@ async function sha256(value: string) {
 export default function GoogleAuthButton({
   label = 'Continuar com Google',
   intent,
+  next,
 }: {
   label?: string
   intent: 'login' | 'signup'
+  next?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const nonceRef = useRef<string>('')
@@ -85,7 +87,8 @@ export default function GoogleAuthButton({
             return
           }
 
-          window.location.assign(`/auth/google/complete?intent=${intent}`)
+          const nextParam = next ? `&next=${encodeURIComponent(next)}` : ''
+          window.location.assign(`/auth/google/complete?intent=${intent}${nextParam}`)
         },
       })
 
@@ -121,7 +124,7 @@ export default function GoogleAuthButton({
     return () => {
       cancelled = true
     }
-  }, [intent])
+  }, [intent, next])
 
   return (
     <div className="w-full">
