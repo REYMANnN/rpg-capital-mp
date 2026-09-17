@@ -30,6 +30,7 @@ async function graphPost(payload: Record<string, unknown>): Promise<WhatsAppResu
       },
       body: JSON.stringify(payload),
       cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
     })
 
     const data = await response.json().catch(() => null)
@@ -46,25 +47,30 @@ async function graphPost(payload: Record<string, unknown>): Promise<WhatsAppResu
   }
 }
 
-export async function sendText(to: string, body: string): Promise<WhatsAppResult> {
+export async function sendText(to: string, body: string, options?: { inReplyTo: string }): Promise<WhatsAppResult> {
   const recipient = normalizeRecipient(to)
   if (!recipient) return { ok: false, error: 'Invalid WhatsApp recipient' }
 
-  try {
-    const supabase = createAdminClient()
-    const { data, error } = await supabase
-      .from('whatsapp_contacts')
-      .select('opted_out')
-      .eq('wa_id', recipient)
-      .maybeSingle()
+  // Immediate replies are allowed only from the signature-validated webhook.
+  // All proactive sends retain the existing fail-closed opt-out check.
+  if (!options?.inReplyTo) {
+    try {
+      const supabase = createAdminClient()
+      const { data, error } = await supabase
+        .from('whatsapp_contacts')
+        .select('opted_out')
+        .eq('wa_id', recipient)
+        .maybeSingle()
 
-    if (error) return { ok: false, error: 'Unable to validate WhatsApp contact state' }
-    if (data?.opted_out === true) return { ok: false, error: 'WhatsApp contact opted out' }
-  } catch {
-    return { ok: false, error: 'Unable to validate WhatsApp contact state' }
+      if (error) return { ok: false, error: 'Unable to validate WhatsApp contact state' }
+      if (data?.opted_out === true) return { ok: false, error: 'WhatsApp contact opted out' }
+    } catch {
+      return { ok: false, error: 'Unable to validate WhatsApp contact state' }
+    }
   }
 
   return graphPost({
+    ...(options?.inReplyTo ? { context: { message_id: options.inReplyTo } } : {}),
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to: recipient,
@@ -82,3 +88,4 @@ export async function markAsRead(wamid: string): Promise<WhatsAppResult> {
     message_id: wamid,
   })
 }
+

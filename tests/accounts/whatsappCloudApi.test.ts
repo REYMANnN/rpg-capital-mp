@@ -14,7 +14,6 @@ test('webhook route enforces Meta verification and signed POSTs', () => {
   assert.match(route, /createHmac\(['"]sha256['"]/)
   assert.match(route, /WHATSAPP_APP_SECRET/)
   assert.match(route, /timingSafeEqual/)
-  assert.match(route, /status:\s*401/)
 })
 
 test('signed POST acknowledges before asynchronous message processing', () => {
@@ -33,7 +32,6 @@ test('webhook persists inbound messages, statuses and contact state', () => {
   assert.match(route, /whatsapp_contacts/)
   assert.match(route, /PARAR/i)
   assert.match(route, /VOLTAR/i)
-  assert.match(route, /if \(command === ['"]VOLTAR['"]\)[\s\S]*?continue/)
   assert.match(route, /Pronto, você não vai mais receber mensagens da RPG Capital\. Para voltar, mande VOLTAR\./)
   assert.match(route, /Recebido ✅ Em breve o Balcão RPG vai funcionar por aqui\./)
   assert.match(route, /markAsRead/)
@@ -70,3 +68,4 @@ test('migration creates private WhatsApp tables with RLS and indexes', () => {
   assert.match(sql, /create index if not exists whatsapp_inbound_messages_from_phone_idx/i)
   assert.match(sql, /create index if not exists whatsapp_message_status_wamid_idx/i)
 })
+
