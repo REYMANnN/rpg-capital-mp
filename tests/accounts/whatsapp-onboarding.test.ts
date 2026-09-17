@@ -102,3 +102,16 @@ test('existing-account WhatsApp linking requires an authenticated BALCAO confirm
   assert.match(edge, /codeHash/)
   assert.match(edge, /PARAR/)
 })
+
+test('WhatsApp link target survives Google login through a validated local next path', () => {
+  const login = readFileSync('app/login/page.tsx', 'utf8')
+  const button = readFileSync('components/accounts/GoogleAuthButton.tsx', 'utf8')
+  const complete = readFileSync('app/auth/google/complete/route.ts', 'utf8')
+
+  assert.match(login, /safeNextPath/)
+  assert.match(login, /<GoogleAuthButton[^>]*next=/s)
+  assert.match(button, /next\?: string/)
+  assert.match(button, /auth\/google\/complete\?intent=.*next=/s)
+  assert.match(complete, /safeNextPath/)
+  assert.match(complete, /return NextResponse\.redirect\(new URL\(next/s)
+})
