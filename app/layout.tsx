@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { INVENTORY_APP_VERSION } from "@/lib/inventory/version";
+import LegalFooter from "@/components/LegalFooter";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,6 +31,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
+        <LegalFooter />
         <div
           data-build-version
           aria-label={`Versão do BALCÃO ${softwareVersion}, build ${deploymentCommit}`}
