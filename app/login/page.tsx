@@ -2,11 +2,12 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import GoogleAuthButton from '@/components/accounts/GoogleAuthButton'
 import { getAccountState, getCurrentUser } from '@/lib/accounts/currentUser'
-import { destinationAfterLogin } from '@/lib/accounts/routing'
+import { destinationAfterLogin, safeNextPath } from '@/lib/accounts/routing'
 
 type LoginSearchParams = {
   intent?: string
   erro?: string
+  next?: string
 }
 
 function errorMessage(error?: string) {
@@ -20,7 +21,8 @@ function errorMessage(error?: string) {
 }
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<LoginSearchParams> }) {
-  const { intent, erro } = await searchParams
+  const { intent, erro, next } = await searchParams
+  const safeNext = safeNextPath(next)
   const choosing = intent !== 'login' && intent !== 'signup'
   const resolvedIntent = intent === 'signup' ? 'signup' : 'login'
   const user = await getCurrentUser()
@@ -29,10 +31,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
   if (user) {
     const state = await getAccountState(user.id)
-    if (state.onboarded && state.hasBusiness) redirect(destinationAfterLogin(state))
+    if (state.onboarded && state.hasBusiness) redirect(safeNext ?? destinationAfterLogin(state))
   }
 
   const message = errorMessage(erro)
+  const nextParam = safeNext ? `&next=${encodeURIComponent(safeNext)}` : ''
 
   return (
     <main className="min-h-screen bg-slate-50 px-5 py-10 text-slate-950">
@@ -49,12 +52,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           {message ? <p role="alert" className="mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium leading-6 text-amber-950">{message}</p> : null}
           {choosing ? (
             <div className="grid gap-3">
-              <Link className="flex min-h-12 items-center justify-center rounded-xl bg-blue-700 px-5 py-3 text-base font-semibold text-white hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700" href="/login?intent=login">Entrar</Link>
+              <Link className="flex min-h-12 items-center justify-center rounded-xl bg-blue-700 px-5 py-3 text-base font-semibold text-white hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700" href={`/login?intent=login${nextParam}`}>Entrar</Link>
               <Link className="flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-base font-semibold text-slate-900 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700" href="/auth/signup/reset">Criar conta</Link>
             </div>
           ) : (
             <>
-              <GoogleAuthButton intent={resolvedIntent} label={intent === 'signup' ? 'Criar com Google' : 'Continuar com Google'} />
+              <GoogleAuthButton intent={resolvedIntent} next={safeNext ?? undefined} label={intent === 'signup' ? 'Criar com Google' : 'Continuar com Google'} />
               {erro === 'conta-nao-encontrada' ? (
                 <Link href="/auth/signup/reset" className="mt-4 flex min-h-11 items-center justify-center rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50">Criar conta</Link>
               ) : null}
