@@ -46,7 +46,7 @@ function harness({ missingDatabase = false, databaseError = null, graphError = f
   }
   const common = {
     process: { env: runtimeEnv },
-    console: { error: (...args) => logs.push(args) },
+    console: { error: (...args) => logs.push(args), info: (...args) => logs.push(args) },
     createAdminClient,
     createClient: (url, key, options) => { clients.push({ url, key, options }); return database },
     fetch: async (_url, options) => {

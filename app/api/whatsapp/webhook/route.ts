@@ -188,6 +188,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  console.info('WhatsApp webhook runtime configuration', {
+    SUPABASE_URL: Boolean(process.env.SUPABASE_URL?.trim()),
+    SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()),
+  })
   const rawBody = await req.text()
   const appSecret = process.env.WHATSAPP_APP_SECRET?.trim()
   const signature = req.headers.get('x-hub-signature-256')
