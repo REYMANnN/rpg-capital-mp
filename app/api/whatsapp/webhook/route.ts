@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { after } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { markAsRead, sendText } from '@/lib/whatsapp'
@@ -40,7 +41,6 @@ function mediaId(message: JsonRecord) {
 function safeLogError(error: unknown) {
   console.error('WhatsApp webhook processing failed', {
     name: error instanceof Error ? error.name : 'UnknownError',
-    message: error instanceof Error ? error.message : 'Unknown processing error',
   })
 }
 
@@ -98,6 +98,7 @@ async function processValue(value: JsonRecord) {
         .update({ opted_out: false, opted_out_at: null, opted_in: true, opted_in_at: now, updated_at: now })
         .eq('wa_id', fromPhone)
       if (optInError) throw optInError
+      continue
     }
 
     await sendText(fromPhone, TEST_REPLY)
@@ -119,6 +120,14 @@ async function processValue(value: JsonRecord) {
   if (statusRows.length) {
     const { error: statusError } = await supabase.from('whatsapp_message_status').insert(statusRows)
     if (statusError) throw statusError
+  }
+}
+
+async function processPayload(payload: JsonRecord) {
+  for (const entry of asArray(payload.entry)) {
+    for (const change of asArray(entry.changes)) {
+      if (change.value && typeof change.value === 'object') await processValue(change.value)
+    }
   }
 }
 
@@ -145,16 +154,21 @@ export async function POST(req: Request) {
     return new Response('Unauthorized', { status: 401 })
   }
 
+  let payload: JsonRecord
   try {
-    const payload = JSON.parse(rawBody) as JsonRecord
-    for (const entry of asArray(payload.entry)) {
-      for (const change of asArray(entry.changes)) {
-        if (change.value && typeof change.value === 'object') await processValue(change.value)
-      }
-    }
+    payload = JSON.parse(rawBody) as JsonRecord
   } catch (error) {
     safeLogError(error)
+    return new Response('OK', { status: 200 })
   }
+
+  after(async () => {
+    try {
+      await processPayload(payload)
+    } catch (error) {
+      safeLogError(error)
+    }
+  })
 
   return new Response('OK', { status: 200 })
 }
