@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run test:whatsapp && next build",
     "start": "next start",
     "lint": "eslint",
-    "test:scanner": "node --experimental-strip-types --test tests/scanner-policy.test.ts"
+    "test:scanner": "node --experimental-strip-types --test tests/scanner-policy.test.ts",
+    "test:whatsapp": "node --experimental-strip-types --test tests/accounts/whatsapp-onboarding.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
