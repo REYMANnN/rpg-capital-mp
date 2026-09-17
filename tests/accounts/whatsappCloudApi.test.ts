@@ -17,6 +17,13 @@ test('webhook route enforces Meta verification and signed POSTs', () => {
   assert.match(route, /status:\s*401/)
 })
 
+test('signed POST acknowledges before asynchronous message processing', () => {
+  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  assert.match(route, /import \{ after \} from ['"]next\/server['"]/)
+  assert.match(route, /after\(async \(\) =>/)
+  assert.match(route, /return new Response\(['"]OK['"], \{ status: 200 \}\)/)
+})
+
 test('webhook persists inbound messages, statuses and contact state', () => {
   const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
   assert.match(route, /whatsapp_inbound_messages/)
@@ -26,6 +33,7 @@ test('webhook persists inbound messages, statuses and contact state', () => {
   assert.match(route, /whatsapp_contacts/)
   assert.match(route, /PARAR/i)
   assert.match(route, /VOLTAR/i)
+  assert.match(route, /if \(command === ['"]VOLTAR['"]\)[\s\S]*?continue/)
   assert.match(route, /Pronto, você não vai mais receber mensagens da RPG Capital\. Para voltar, mande VOLTAR\./)
   assert.match(route, /Recebido ✅ Em breve o Balcão RPG vai funcionar por aqui\./)
   assert.match(route, /markAsRead/)
