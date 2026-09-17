@@ -3,12 +3,11 @@ import { after } from 'next/server'
 
 import { createClient } from '@supabase/supabase-js'
 import { markAsRead, sendText } from '@/lib/whatsapp'
+import { classifyWhatsAppText, replyForIntent } from '@/lib/whatsapp-router'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const STOP_REPLY = 'Pronto, você não vai mais receber mensagens da RPG Capital. Para voltar, mande VOLTAR.'
-const TEST_REPLY = 'Recebido ✅ Em breve o Balcão RPG vai funcionar por aqui.'
 
 type JsonRecord = Record<string, any>
 
@@ -103,16 +102,16 @@ async function processValue(value: JsonRecord) {
     const contact = contacts.find((item) => item.wa_id === fromPhone)
     const profileName = typeof contact?.profile?.name === 'string' ? contact.profile.name : null
     const textBody = message.type === 'text' && typeof message.text?.body === 'string' ? message.text.body : null
-    const command = textBody?.trim().toUpperCase()
+    const routing = textBody !== null
+      ? classifyWhatsAppText(textBody)
+      : { intent: 'desconhecida' as const, normalizedText: null }
     const now = new Date().toISOString()
 
     if (textBody !== null) {
       await attempt('reply', async () => {
         // Only an immediate reply to this signed inbound message bypasses the
         // proactive-send opt-out lookup. This does not grant marketing consent.
-        const reply = command === 'PARAR' ? STOP_REPLY
-          : command === 'VOLTAR' ? 'Pronto, você voltou a receber mensagens da RPG Capital.'
-          : TEST_REPLY
+        const reply = replyForIntent(routing.intent)
         const result = await sendText(fromPhone, reply, { inReplyTo: wamid })
         if (!result.ok) throw new Error(result.error)
       })
@@ -124,9 +123,9 @@ async function processValue(value: JsonRecord) {
 
     // Each database failure is isolated from replies and from other records.
     await attempt('persist_contact', async () => {
-      const consent = command === 'PARAR'
+      const consent = routing.intent === 'opt_out'
         ? { opted_out: true, opted_out_at: now }
-        : command === 'VOLTAR'
+        : routing.intent === 'opt_in'
           ? { opted_out: false, opted_out_at: null, opted_in: true, opted_in_at: now }
           : {}
       const { error } = await createDatabase().from('whatsapp_contacts').upsert({
@@ -141,6 +140,8 @@ async function processValue(value: JsonRecord) {
         profile_name: profileName,
         type: typeof message.type === 'string' ? message.type : 'unknown',
         text_body: textBody,
+        text_normalized: routing.normalizedText,
+        intent: routing.intent,
         media_id: mediaId(message),
         raw: message,
         received_at: metaTimestamp(message.timestamp),
