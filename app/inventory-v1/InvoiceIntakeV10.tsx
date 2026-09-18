@@ -20,6 +20,8 @@ type Props = {
   onCommit: (invoice: ParsedNfe, lines: InvoiceReviewLineV10[]) => void
   fail: (message: string) => void
   flash: (message: string) => void
+  initialNfeKey?: string
+  onCancel?: () => void
 }
 
 const STORAGE_KEY = 'rpg-inventory-v1-2026'

@@ -13,6 +13,11 @@ type ProductSummary = {
   stock: string
 }
 
+type NoticeSummary = {
+  kind: 'notice'
+  code: 'product_not_found'
+}
+
 type StockSummary = {
   kind: 'stock'
   mode: 'nfe' | 'ean'
@@ -23,7 +28,7 @@ type StockSummary = {
   quantity?: string
 }
 
-export type WhatsAppFlowSummary = SaleSummary | ProductSummary | StockSummary
+export type WhatsAppFlowSummary = SaleSummary | ProductSummary | StockSummary | NoticeSummary
 
 const money = (cents: number) => (Number(cents || 0) / 100).toLocaleString('pt-BR', {
   style: 'currency',
@@ -41,6 +46,10 @@ export function formatWhatsAppFlowSummary(summary: WhatsAppFlowSummary) {
   if (summary.kind === 'sale') {
     const items = summary.items.slice(0, 20).map((item) => `• ${item.quantity} × ${item.name}`).join('\n')
     return `Venda concluída.\n${items}\nTotal: ${money(summary.totalCents)}\nPagamento: ${paymentLabel(summary.paymentMethod)}\n— Rafa`
+  }
+
+  if (summary.kind === 'notice') {
+    return 'Não encontrei esse produto no estoque.\n— Rafa'
   }
 
   if (summary.kind === 'product') {
