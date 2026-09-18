@@ -5,11 +5,15 @@ export type WhatsAppIntent =
   | 'consulta'
   | 'registrar_venda'
   | 'entrada_estoque'
+  | 'alterar_preco'
+  | 'ajustar_estoque'
   | 'desconhecida'
 
 const CONSULTA_PREFIXES = ['saldo', 'caixa', 'quanto vendi', 'quanto entrou', 'vendas de', 'fechamento']
 const VENDA_PREFIXES = ['vendi', 'venda', 'vendeu']
 const ENTRADA_PREFIXES = ['entrou', 'comprei', 'chegou', 'entrada']
+const PRECO_PREFIXES = ['muda o preco', 'mudar o preco', 'altera o preco', 'alterar o preco', 'preco novo', 'novo preco']
+const ESTOQUE_PREFIXES = ['ajusta o estoque', 'ajustar o estoque', 'corrige o estoque', 'corrigir o estoque', 'estoque agora']
 
 export function normalizeWhatsAppText(text: string) {
   return text
@@ -54,6 +58,8 @@ export function classifyWhatsAppText(text: string): { intent: WhatsAppIntent; no
   if (hasPrefix(normalizedText, CONSULTA_PREFIXES)) return { intent: 'consulta', normalizedText }
   if (hasPrefix(normalizedText, VENDA_PREFIXES)) return { intent: 'registrar_venda', normalizedText }
   if (hasPrefix(normalizedText, ENTRADA_PREFIXES)) return { intent: 'entrada_estoque', normalizedText }
+  if (hasPrefix(normalizedText, PRECO_PREFIXES)) return { intent: 'alterar_preco', normalizedText }
+  if (hasPrefix(normalizedText, ESTOQUE_PREFIXES)) return { intent: 'ajustar_estoque', normalizedText }
 
   return { intent: 'desconhecida', normalizedText }
 }
@@ -71,7 +77,11 @@ export function replyForIntent(intent: WhatsAppIntent) {
     case 'registrar_venda':
       return 'Entendi: você quer registrar uma venda. O registro no estoque chega no próximo passo.'
     case 'entrada_estoque':
-      return 'Entendi: você quer registrar uma entrada de estoque. A atualização do estoque chega no próximo passo.'
+      return 'Entendi: você quer registrar uma entrada de estoque.'
+    case 'alterar_preco':
+      return 'Entendi: você quer alterar um preço.'
+    case 'ajustar_estoque':
+      return 'Entendi: você quer ajustar um estoque.'
     default:
       return 'Ainda não consegui identificar esse pedido. Em breve vou entender mais comandos por aqui.'
   }
