@@ -25,15 +25,19 @@ test('signed POST acknowledges before asynchronous message processing', () => {
 
 test('webhook persists inbound messages, statuses and contact state', () => {
   const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  const router = readFileSync('lib/whatsapp-router.ts', 'utf8')
+  const menu = readFileSync('lib/whatsapp-menu.ts', 'utf8')
   assert.match(route, /whatsapp_inbound_messages/)
   assert.match(route, /onConflict:\s*['"]wamid['"]/)
   assert.match(route, /ignoreDuplicates:\s*true/)
   assert.match(route, /whatsapp_message_status/)
   assert.match(route, /whatsapp_contacts/)
-  assert.match(route, /PARAR/i)
-  assert.match(route, /VOLTAR/i)
-  assert.match(route, /Pronto, você não vai mais receber mensagens da RPG Capital\. Para voltar, mande VOLTAR\./)
-  assert.match(route, /Recebido ✅ Em breve o Balcão RPG vai funcionar por aqui\./)
+  assert.match(route, /sendMenu/)
+  assert.match(route, /interactiveFlow/)
+  assert.match(router, /PARAR/i)
+  assert.match(router, /VOLTAR/i)
+  assert.match(router, /Pronto, você não vai mais receber mensagens da RPG Capital\. Para voltar, mande VOLTAR\./)
+  assert.match(menu, /Digite PARAR para não receber mais mensagens\./)
   assert.match(route, /markAsRead/)
 })
 

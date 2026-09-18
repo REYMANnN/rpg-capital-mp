@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Barcode, Camera, Check, FileUp, Pencil, Search, X } from 'lucide-react'
 import { parseNfeXml, type ParsedNfe } from '@/lib/inventory/nfe'
 import { DEMO_NFE_ACCESS_KEY, isValidNfeAccessKey, normalizeNfeAccessKey } from '@/lib/inventory/nfeKey'
@@ -33,6 +33,8 @@ type Props = {
   isDuplicateInvoice: (invoice: ParsedNfe) => boolean
   fail: (message: string) => void
   flash: (message: string) => void
+  initialNfeKey?: string
+  onCancel?: () => void
 }
 
 type Phase = 'idle' | 'resolving' | 'questions' | 'review'
@@ -103,7 +105,7 @@ async function supplierAlias(document: string, code: string): Promise<SupplierAl
   }
 }
 
-export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvoice, fail, flash }: Props) {
+export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvoice, fail, flash, initialNfeKey, onCancel }: Props) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [invoice, setInvoice] = useState<ParsedNfe | null>(null)
   const [lines, setLines] = useState<InvoiceReviewLineV10[]>([])
@@ -117,6 +119,7 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
   const [questionTotal, setQuestionTotal] = useState(0)
   const [learningWarning, setLearningWarning] = useState(false)
   const [scanConfirmation, setScanConfirmation] = useState('')
+  const initialKeyHandled = useRef('')
 
   const pending = useMemo(() => pendingInvoiceLines(lines), [lines])
   const currentQuestion = pending[0] || null
@@ -139,6 +142,17 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
     setLearningWarning(false)
     setScanConfirmation('')
   }
+
+  function cancel() {
+    reset()
+    onCancel?.()
+  }
+
+  useEffect(() => {
+    if (!initialNfeKey || initialKeyHandled.current === initialNfeKey) return
+    initialKeyHandled.current = initialNfeKey
+    void scanInvoiceKey(initialNfeKey)
+  }, [initialNfeKey])
 
   function setResolvedLines(next: InvoiceReviewLineV10[]) {
     setLines(next)
@@ -514,7 +528,7 @@ export default function InvoiceIntakeV10_1({ products, onCommit, isDuplicateInvo
 
           <div className={styles.actions}>
             <button className={styles.primary} disabled={!selectedCount} onClick={() => { onCommit(invoice, importableInvoiceLines(lines)); reset() }}>CONFIRMAR ENTRADA — {selectedCount} ITENS</button>
-            <button className={styles.secondary} onClick={reset}>Cancelar</button>
+            <button className={styles.secondary} onClick={cancel}>Cancelar</button>
           </div>
         </section>
       )}

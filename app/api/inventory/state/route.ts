@@ -9,6 +9,8 @@ import { writeAuditEvent } from '@/lib/accounts/audit'
 import { INVENTORY_INSTALLATION_COOKIE, STAFF_SESSION_COOKIE, TERMINAL_COOKIE } from '@/lib/accounts/terminal'
 import { deriveInventoryStateEvents } from '@/lib/platform/events/inventoryStateEvents'
 import { emitPlatformEvent } from '@/lib/platform/events/outbox'
+import { BALCAO_SESSION_COOKIE, verifyBalcaoSessionToken } from '@/lib/deeplink'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 const COOKIE_NAME = INVENTORY_INSTALLATION_COOKIE
 
@@ -59,6 +61,25 @@ function isState(value: unknown): value is StoreData {
   return Array.isArray(state.products) && Array.isArray(state.sales) && Array.isArray(state.movements)
 }
 
+async function authorizedWhatsappInstallation(request: NextRequest) {
+  const token = request.cookies.get(BALCAO_SESSION_COOKIE)?.value
+  if (!token) return null
+  try {
+    const claims = await verifyBalcaoSessionToken(token)
+    if (!claims.store_id) return null
+    const admin = createAdminClient()
+    const [{ data: session }, { data: store }] = await Promise.all([
+      admin.from('whatsapp_sessions').select('wa_id, store_id, fluxo_atual, expires_at').eq('wa_id', claims.wa_id).eq('store_id', claims.store_id).maybeSingle(),
+      admin.from('inventory_v1_stores').select('id, business_id, installation_id, display_name, active').eq('id', claims.store_id).eq('active', true).maybeSingle(),
+    ])
+    if (!session?.fluxo_atual || new Date(session.expires_at).getTime() <= Date.now()) return null
+    if (!store?.installation_id || !store?.business_id) return null
+    return { claims, store }
+  } catch {
+    return null
+  }
+}
+
 async function authorizedInstallation(request: NextRequest) {
   const previous = existingInstallationId(request)
   const context = await authorizeInventoryContext({
@@ -76,10 +97,15 @@ async function authorizedInstallation(request: NextRequest) {
 export async function GET(request: NextRequest) {
   let installation = getInstallationId(request)
   if (accountsEnforced()) {
-    const authorized = await authorizedInstallation(request)
-    if (!authorized.installation || !authorized.context.authorized) return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
-    if (authorized.context.mode === 'staff' && !authorized.context.staff?.permissions.has('inventory.view')) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
-    installation = authorized.installation
+    const whatsapp = await authorizedWhatsappInstallation(request)
+    if (whatsapp) {
+      installation = { id: String(whatsapp.store.installation_id), fresh: existingInstallationId(request) !== whatsapp.store.installation_id }
+    } else {
+      const authorized = await authorizedInstallation(request)
+      if (!authorized.installation || !authorized.context.authorized) return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
+      if (authorized.context.mode === 'staff' && !authorized.context.staff?.permissions.has('inventory.view')) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+      installation = authorized.installation
+    }
   }
 
   const supabase = createInventoryCloudClient()
@@ -110,22 +136,34 @@ export async function PUT(request: NextRequest) {
 
   let installation = getInstallationId(request)
   let access: Awaited<ReturnType<typeof authorizeInventoryContext>> | null = null
+  let whatsappStore: { id: string; business_id: string; installation_id: string; display_name: string } | null = null
   let required: Permission[] = []
   let before: StoreData = { products: [], sales: [], movements: [], scaleRule: undefined }
   const supabase = createInventoryCloudClient()
 
   if (accountsEnforced()) {
-    const authorized = await authorizedInstallation(request)
-    if (!authorized.installation || !authorized.context.authorized) return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
-    installation = authorized.installation
-    access = authorized.context
+    const whatsapp = await authorizedWhatsappInstallation(request)
+    if (whatsapp) {
+      installation = { id: String(whatsapp.store.installation_id), fresh: existingInstallationId(request) !== whatsapp.store.installation_id }
+      whatsappStore = {
+        id: String(whatsapp.store.id),
+        business_id: String(whatsapp.store.business_id),
+        installation_id: String(whatsapp.store.installation_id),
+        display_name: String(whatsapp.store.display_name || ''),
+      }
+    } else {
+      const authorized = await authorizedInstallation(request)
+      if (!authorized.installation || !authorized.context.authorized) return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
+      installation = authorized.installation
+      access = authorized.context
+    }
 
     const { data: currentData } = await supabase.rpc('inventory_v1_get_state', { p_installation_id: installation.id })
     const current = (currentData ?? {}) as CloudStateResponse
     before = current.found && isState(current.state) ? current.state : before
     required = requiredPermissionsForStateChange(before, state)
 
-    if (access.mode === 'staff') {
+    if (access?.mode === 'staff') {
       const permissions = access.staff?.permissions
       if (!permissions || required.some((permission) => !permissions.has(permission))) {
         return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
@@ -144,9 +182,10 @@ export async function PUT(request: NextRequest) {
     return withInstallationCookie(NextResponse.json({ ok: false, error: 'sync_failed' }, { status: 500 }), installation.id, installation.fresh)
   }
 
-  if (access?.store) {
-    const businessId = access.store.business_id ? String(access.store.business_id) : null
-    const storeId = String(access.store.id)
+  const eventStore = access?.store || whatsappStore
+  if (eventStore) {
+    const businessId = eventStore.business_id ? String(eventStore.business_id) : null
+    const storeId = String(eventStore.id)
     if (businessId) {
       const events = deriveInventoryStateEvents(before as any, state as any)
       const results = await Promise.allSettled(events.map((event) => emitPlatformEvent({
@@ -165,13 +204,13 @@ export async function PUT(request: NextRequest) {
     await writeAuditEvent({
       businessId,
       storeId,
-      actorUserId: access.mode === 'google' ? access.user?.id ?? null : null,
-      actorStaffId: access.mode === 'staff' ? access.staff?.staffId ?? null : null,
-      terminalId: access.terminal?.terminalId ?? null,
+      actorUserId: access?.mode === 'google' ? access.user?.id ?? null : null,
+      actorStaffId: access?.mode === 'staff' ? access.staff?.staffId ?? null : null,
+      terminalId: access?.terminal?.terminalId ?? null,
       action: 'inventory.state_changed',
       entityType: 'store',
       entityId: storeId,
-      metadata: { requiredPermissions: required },
+      metadata: { requiredPermissions: required, origem: whatsappStore ? 'whatsapp' : 'scanner' },
     }).catch(() => {})
   }
 

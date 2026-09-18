@@ -11,7 +11,7 @@ type Props = {
   close: () => void
 }
 
-const RETAIL_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] as const
+const RETAIL_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'qr_code'] as const
 
 function cameraError(error: unknown) {
   if (error instanceof DOMException) {

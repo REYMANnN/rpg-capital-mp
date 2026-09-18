@@ -4,6 +4,10 @@ import { after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { markAsRead, sendText } from '@/lib/whatsapp'
 import { classifyWhatsAppText, replyForIntent } from '@/lib/whatsapp-router'
+import { sendMenu } from '@/lib/whatsapp-menu'
+import { createBalcaoDeepLink } from '@/lib/deeplink'
+import { flowIntent, interactiveFlow } from '@/lib/whatsapp-interactive'
+import { FLOW_LABEL } from '@/lib/whatsapp-flows'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -102,19 +106,57 @@ async function processValue(value: JsonRecord) {
     const contact = contacts.find((item) => item.wa_id === fromPhone)
     const profileName = typeof contact?.profile?.name === 'string' ? contact.profile.name : null
     const textBody = message.type === 'text' && typeof message.text?.body === 'string' ? message.text.body : null
+    const flow = interactiveFlow(message)
     const routing = textBody !== null
       ? classifyWhatsAppText(textBody)
       : { intent: 'desconhecida' as const, normalizedText: null }
+    const intentValue = flow ? flowIntent(flow) : routing.intent
     const now = new Date().toISOString()
 
-    if (textBody !== null) {
+    if (flow) {
+      await attempt('button_reply', async () => {
+        let storeId: string | undefined
+        try {
+          const { data } = await createDatabase().from('whatsapp_sessions').select('store_id').eq('wa_id', fromPhone).maybeSingle()
+          if (typeof data?.store_id === 'string') storeId = data.store_id
+        } catch {}
+
+        const link = await createBalcaoDeepLink({ waId: fromPhone, storeId, fluxo: flow })
+        const result = await sendText(
+          fromPhone,
+          `${FLOW_LABEL[flow]}: abra o Balcão por este link (válido por 10 minutos):\n${link.url}\n— Rafa`,
+          { inReplyTo: wamid },
+        )
+        if (!result.ok) throw new Error(result.error)
+
+        const row: Record<string, unknown> = {
+          wa_id: fromPhone,
+          fluxo_atual: flow,
+          etapa: 'link_enviado',
+          payload: { button_id: intentValue, jti: link.jti },
+          updated_at: now,
+          expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        }
+        if (storeId) row.store_id = storeId
+        const { error } = await createDatabase().from('whatsapp_sessions').upsert(row, { onConflict: 'wa_id' })
+        if (error) throw error
+      })
+    } else if (textBody !== null) {
       await attempt('reply', async () => {
-        // Only an immediate reply to this signed inbound message bypasses the
-        // proactive-send opt-out lookup. This does not grant marketing consent.
-        const reply = replyForIntent(routing.intent)
-        const result = await sendText(fromPhone, reply, { inReplyTo: wamid })
+        if (routing.intent === 'opt_out' || routing.intent === 'opt_in') {
+          // Only an immediate reply to this signed inbound message bypasses the
+          // proactive-send opt-out lookup. This does not grant marketing consent.
+          const result = await sendText(fromPhone, replyForIntent(routing.intent), { inReplyTo: wamid })
+          if (!result.ok) throw new Error(result.error)
+          return
+        }
+
+        const result = await sendMenu(fromPhone, undefined, { inReplyTo: wamid })
         if (!result.ok) throw new Error(result.error)
       })
+    }
+
+    if (textBody !== null || flow) {
       await attempt('mark_read', async () => {
         const result = await markAsRead(wamid)
         if (!result.ok) throw new Error(result.error)
@@ -141,7 +183,7 @@ async function processValue(value: JsonRecord) {
         type: typeof message.type === 'string' ? message.type : 'unknown',
         text_body: textBody,
         text_normalized: routing.normalizedText,
-        intent: routing.intent,
+        intent: intentValue,
         media_id: mediaId(message),
         raw: message,
         received_at: metaTimestamp(message.timestamp),
