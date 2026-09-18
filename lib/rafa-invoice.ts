@@ -76,8 +76,10 @@ export async function processApprovedInvoiceMedia(input: {
   if (error) throw error
   if (!invoice) throw new Error('invoice_import_not_found')
 
-  const paths = Array.isArray(invoice.media_paths) ? invoice.media_paths.filter((value: unknown): value is string => typeof value === 'string') : []
-  const imagePaths = paths.filter((path) => /\.(?:jpe?g|png|webp)$/i.test(path))
+  const paths: string[] = Array.isArray(invoice.media_paths)
+    ? (invoice.media_paths as unknown[]).filter((value): value is string => typeof value === 'string')
+    : []
+  const imagePaths = paths.filter((path: string) => /\.(?:jpe?g|png|webp)$/i.test(path))
   if (!imagePaths.length) {
     await admin.from('rafa_invoice_imports').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', invoice.id)
     await sendText(input.waId, 'Reconheci o arquivo, mas nesta fase a extração da nota funciona por foto. Me mande uma foto legível da nota.\n— Rafa')
