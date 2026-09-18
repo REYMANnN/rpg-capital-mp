@@ -39,7 +39,7 @@ export async function appendInvoiceMedia(input: {
     .maybeSingle()
 
   if (recent?.id) {
-    const paths = Array.isArray(recent.media_paths) ? recent.media_paths.filter((value): value is string => typeof value === 'string') : []
+    const paths = Array.isArray(recent.media_paths) ? recent.media_paths.filter((value: unknown): value is string => typeof value === 'string') : []
     const nextPaths = [...new Set([...paths, input.mediaPath])]
     const { error } = await admin.from('rafa_invoice_imports').update({
       media_paths: nextPaths,
@@ -76,7 +76,7 @@ export async function processApprovedInvoiceMedia(input: {
   if (error) throw error
   if (!invoice) throw new Error('invoice_import_not_found')
 
-  const paths = Array.isArray(invoice.media_paths) ? invoice.media_paths.filter((value): value is string => typeof value === 'string') : []
+  const paths = Array.isArray(invoice.media_paths) ? invoice.media_paths.filter((value: unknown): value is string => typeof value === 'string') : []
   const imagePaths = paths.filter((path) => /\.(?:jpe?g|png|webp)$/i.test(path))
   if (!imagePaths.length) {
     await admin.from('rafa_invoice_imports').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', invoice.id)
