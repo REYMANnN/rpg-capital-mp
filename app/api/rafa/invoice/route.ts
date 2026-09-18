@@ -97,6 +97,7 @@ export async function POST(request: NextRequest) {
   const supplierCnpj = String(invoice.supplier_cnpj || extracted?.supplier_cnpj || '').replace(/\D/g, '')
   let unitCount = 0
   let totalCostCents = 0
+  const movementIds: string[] = []
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]
@@ -141,8 +142,10 @@ export async function POST(request: NextRequest) {
           catalogSource: 'rafa_invoice_photo',
         }
         after.products.push(product)
+        const movementId = randomUUID()
+        movementIds.push(movementId)
         after.movements.push({
-          id: randomUUID(),
+          id: movementId,
           productId: product.id,
           type: 'purchase',
           quantityMilli,
@@ -162,8 +165,10 @@ export async function POST(request: NextRequest) {
       const update = calculatePurchaseUpdate(product.stockMilli, Math.max(0, Math.round(product.averageCostCents || 0)), quantityMilli, unitCostCents)
       product.stockMilli = update.stockMilli
       product.averageCostCents = update.averageCostCents
+      const movementId = randomUUID()
+      movementIds.push(movementId)
       after.movements.push({
-        id: randomUUID(),
+        id: movementId,
         productId: product.id,
         type: 'purchase',
         quantityMilli,
@@ -203,6 +208,7 @@ export async function POST(request: NextRequest) {
     item_count: lines.length,
     unit_count: unitCount,
     total_cost_cents: totalCostCents,
+    movement_ids: movementIds,
     applied_at: now,
     updated_at: now,
   }).eq('id', invoice.id)
