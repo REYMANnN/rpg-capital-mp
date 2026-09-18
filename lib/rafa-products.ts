@@ -168,11 +168,15 @@ export async function rememberSupplierProduct(input: {
     .eq('fornecedor_cnpj', fornecedor_cnpj)
     .eq('codigo_fornecedor', codigo_fornecedor)
     .maybeSingle()
+  const { data: catalogProduct } = await admin.from('inventory_v1_product_catalog_cache')
+    .select('barcode')
+    .eq('barcode', ean)
+    .maybeSingle()
   const row = {
     fornecedor_cnpj,
     codigo_fornecedor,
     descricao_original: input.description.slice(0, 500),
-    produto_id: ean,
+    produto_id: catalogProduct?.barcode ? ean : null,
     ean,
     confirmacoes: Math.max(1, Number(existing?.confirmacoes || 0) + 1),
     atualizado_em: new Date().toISOString(),
