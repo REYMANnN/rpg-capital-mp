@@ -89,7 +89,7 @@ export default function RafaShelfReviewPage() {
   function patch(index: number, value: Partial<Decision>) {
     setDecisions((current) => ({
       ...current,
-      [index]: { index, ...(current[index] || {}), ...value },
+      [index]: { ...(current[index] || { index }), ...value, index },
     }))
   }
 
