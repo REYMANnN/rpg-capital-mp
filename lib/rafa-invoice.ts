@@ -39,8 +39,10 @@ export async function appendInvoiceMedia(input: {
     .maybeSingle()
 
   if (recent?.id) {
-    const paths = Array.isArray(recent.media_paths) ? recent.media_paths.filter((value: unknown): value is string => typeof value === 'string') : []
-    const nextPaths = [...new Set([...paths, input.mediaPath])]
+    const paths: string[] = Array.isArray(recent.media_paths)
+      ? (recent.media_paths as unknown[]).filter((value): value is string => typeof value === 'string')
+      : []
+    const nextPaths: string[] = [...new Set([...paths, input.mediaPath])]
     const { error } = await admin.from('rafa_invoice_imports').update({
       media_paths: nextPaths,
       classification: input.classification,
