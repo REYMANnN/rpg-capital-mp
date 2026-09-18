@@ -180,14 +180,31 @@ async function processValue(value: JsonRecord) {
       }
 
       const { state } = await loadRafaStore(storeId)
-      const extracted = await extractRafaActions({
-        storeId,
-        waId: fromPhone,
-        text,
-        intent: routing.intent,
-        products: state.products,
-        history: [],
-      })
+      let extracted: Awaited<ReturnType<typeof extractRafaActions>>
+      try {
+        extracted = await extractRafaActions({
+          storeId,
+          waId: fromPhone,
+          text,
+          intent: routing.intent,
+          products: state.products,
+          history: [],
+        })
+      } catch (error) {
+        const budgetHit = error instanceof Error && error.message === 'rafa_ai_budget_exceeded'
+        const missingKey = error instanceof Error && error.message.includes('GROQ_API_KEY')
+        const response = budgetHit
+          ? await sendMenu(fromPhone, 'O limite de respostas livres de hoje foi atingido. Os botões continuam funcionando normalmente; respostas livres voltam amanhã.', { inReplyTo: wamid })
+          : await sendText(
+              fromPhone,
+              missingKey
+                ? 'As respostas livres ainda não estão disponíveis agora. Use os botões do menu por enquanto.\n— Rafa'
+                : 'Não consegui interpretar essa alteração agora. Tente de novo ou use os botões do menu.\n— Rafa',
+              { inReplyTo: wamid },
+            )
+        if (!response.ok) throw new Error(response.error)
+        return
+      }
 
       if (!Array.isArray(extracted.actions) || !extracted.actions.length) {
         const result = await sendText(fromPhone, 'Não consegui identificar todos os dados dessa alteração. Me explica de novo com produto e valor ou quantidade.\n— Rafa', { inReplyTo: wamid })
@@ -267,7 +284,19 @@ async function processValue(value: JsonRecord) {
       await attempt('confirm_yes', async () => {
         const result = await confirmRafaPending(fromPhone)
         if (result.kind === 'media') {
-          await processApprovedInvoiceMedia({ waId: fromPhone, storeId: result.storeId, importId: result.importId })
+          try {
+            await processApprovedInvoiceMedia({ waId: fromPhone, storeId: result.storeId, importId: result.importId })
+          } catch (error) {
+            const budgetHit = error instanceof Error && error.message === 'rafa_ai_budget_exceeded'
+            const missingKey = error instanceof Error && error.message.includes('GROQ_API_KEY')
+            const message = budgetHit
+              ? 'O limite de respostas livres de hoje foi atingido. A leitura da nota volta amanhã; os botões continuam funcionando normalmente.\n— Rafa'
+              : missingKey
+                ? 'A leitura automática da nota ainda não está disponível agora. Você pode usar Prateleira manualmente.\n— Rafa'
+                : 'Não consegui processar essa nota agora. Tente enviar a foto novamente ou use Prateleira manualmente.\n— Rafa'
+            const sent = await sendText(fromPhone, message, { inReplyTo: wamid })
+            if (!sent.ok) throw new Error(sent.error)
+          }
           return
         }
         if (result.kind === 'applied') {
@@ -394,6 +423,11 @@ async function processValue(value: JsonRecord) {
           if (error instanceof Error && error.message === 'rafa_ai_budget_exceeded') {
             const menu = await sendMenu(fromPhone, 'O limite de respostas livres de hoje foi atingido. Os botões continuam funcionando normalmente; respostas livres voltam amanhã.', { inReplyTo: wamid })
             if (!menu.ok) throw new Error(menu.error)
+            return
+          }
+          if (error instanceof Error && error.message.includes('GROQ_API_KEY')) {
+            const sent = await sendText(fromPhone, 'A leitura automática de imagem ainda não está disponível agora. Você pode usar Prateleira manualmente.\n— Rafa', { inReplyTo: wamid })
+            if (!sent.ok) throw new Error(sent.error)
             return
           }
           const hint = `${String(filenameHint || '')} ${String(message.document?.caption || '')}`.toLowerCase()

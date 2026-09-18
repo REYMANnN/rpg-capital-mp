@@ -97,3 +97,13 @@ test('Rafa phase 2 operational copy excludes restricted topics', () => {
   const copy = files.map((file) => readFileSync(file, 'utf8')).join('\n')
   assert.doesNotMatch(copy, /cr[eé]dito|empr[eé]stimo|juros|antecipa[cç][aã]o/i)
 })
+
+
+test('AI outages never leave Rafa silent on free text or invoice confirmation', () => {
+  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  assert.match(route, /GROQ_API_KEY/)
+  assert.match(route, /As respostas livres ainda não estão disponíveis agora/)
+  assert.match(route, /A leitura automática da nota ainda não está disponível agora/)
+  assert.match(route, /Não consegui processar essa nota agora/)
+  assert.match(route, /processApprovedInvoiceMedia/)
+})
