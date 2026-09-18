@@ -305,7 +305,8 @@ export async function transcribeRafaAudio(input: {
   form.append('language', 'pt')
   form.append('temperature', '0')
   form.append('response_format', 'verbose_json')
-  form.append('file', new Blob([input.bytes], { type: input.mime || 'audio/ogg' }), input.filename)
+  const audioBuffer = input.bytes.buffer.slice(input.bytes.byteOffset, input.bytes.byteOffset + input.bytes.byteLength) as ArrayBuffer
+  form.append('file', new Blob([audioBuffer], { type: input.mime || 'audio/ogg' }), input.filename)
 
   const response = await fetch(`${GROQ_BASE}/audio/transcriptions`, {
     method: 'POST',
