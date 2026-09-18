@@ -10,12 +10,13 @@ const MENU_BUTTONS = [
 
 export const RAFA_MENU_FOOTER = 'Digite PARAR para não receber mais mensagens.'
 
-export async function sendMenu(to: string, contexto?: string) {
+export async function sendMenu(to: string, contexto?: string, options?: { inReplyTo?: string }) {
   const prefix = contexto?.trim() ? `${contexto.trim().slice(0, 240)}\n\n` : ''
   return sendReplyButtons(
     to,
     `${prefix}Oi! Sou a Rafa. O que você quer fazer agora?\n— Rafa`,
     RAFA_MENU_FOOTER,
     MENU_BUTTONS.map((button) => ({ ...button })),
+    options,
   )
 }
