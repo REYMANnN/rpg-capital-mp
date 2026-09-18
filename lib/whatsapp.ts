@@ -94,7 +94,7 @@ export async function sendText(to: string, body: string, options?: SendOptions):
   })
 }
 
-export async function sendReplyButtons(
+export async function sendActionButtons(
   to: string,
   body: string,
   footer: string,
@@ -103,7 +103,7 @@ export async function sendReplyButtons(
 ): Promise<WhatsAppResult> {
   const recipient = normalizeRecipient(to)
   if (!recipient) return { ok: false, error: 'Invalid WhatsApp recipient' }
-  if (buttons.length !== 3) return { ok: false, error: 'WhatsApp menu requires exactly 3 buttons' }
+  if (buttons.length < 1 || buttons.length > 3) return { ok: false, error: 'WhatsApp supports from 1 to 3 reply buttons' }
 
   const blocked = await validateOutboundRecipient(recipient, options)
   if (blocked) return blocked
@@ -126,6 +126,17 @@ export async function sendReplyButtons(
       },
     },
   })
+}
+
+export async function sendReplyButtons(
+  to: string,
+  body: string,
+  footer: string,
+  buttons: WhatsAppReplyButton[],
+  options?: SendOptions,
+): Promise<WhatsAppResult> {
+  if (buttons.length !== 3) return { ok: false, error: 'WhatsApp menu requires exactly 3 buttons' }
+  return sendActionButtons(to, body, footer, buttons, options)
 }
 
 export async function markAsRead(wamid: string): Promise<WhatsAppResult> {

@@ -25,12 +25,23 @@ export async function GET(request: NextRequest, context: { params: Promise<{ flo
       return error.code !== '23505' ? Promise.reject(error) : false
     })
 
+    const { data: previousSession } = await admin.from('whatsapp_sessions')
+      .select('payload')
+      .eq('wa_id', claims.wa_id)
+      .maybeSingle()
+    const previousPayload = previousSession?.payload && typeof previousSession.payload === 'object'
+      ? previousSession.payload as Record<string, unknown>
+      : {}
+    const invoiceImportId = claims.fluxo === 'prateleira' && typeof previousPayload.invoice_import_id === 'string'
+      ? previousPayload.invoice_import_id
+      : null
+
     const expiresAt = new Date(Date.now() + BALCAO_SESSION_TTL_SECONDS * 1000).toISOString()
     const sessionRow: Record<string, unknown> = {
       wa_id: claims.wa_id,
       fluxo_atual: claims.fluxo,
-      etapa: 'aberto',
-      payload: { jti: claims.jti },
+      etapa: invoiceImportId ? 'conferencia_nota' : 'aberto',
+      payload: { jti: claims.jti, ...(invoiceImportId ? { invoice_import_id: invoiceImportId } : {}) },
       updated_at: new Date().toISOString(),
       expires_at: expiresAt,
     }
@@ -39,7 +50,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ flo
     if (sessionError) throw sessionError
 
     const sessionToken = await createBalcaoSessionToken(claims)
-    const response = NextResponse.redirect(new URL(`/inventory-v1?wa_flow=${claims.fluxo}`, request.url))
+    const destination = invoiceImportId
+      ? `/rafa/prateleira?rafa_invoice=${encodeURIComponent(invoiceImportId)}`
+      : `/inventory-v1?wa_flow=${claims.fluxo}`
+    const response = NextResponse.redirect(new URL(destination, request.url))
     response.cookies.set(BALCAO_SESSION_COOKIE, sessionToken, {
       httpOnly: true,
       secure: true,
