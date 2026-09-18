@@ -151,7 +151,7 @@ async function processValue(value: JsonRecord) {
           return
         }
 
-        const result = await sendMenu(fromPhone)
+        const result = await sendMenu(fromPhone, undefined, { inReplyTo: wamid })
         if (!result.ok) throw new Error(result.error)
       })
     }
