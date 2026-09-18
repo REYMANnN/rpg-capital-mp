@@ -109,8 +109,9 @@ export async function POST(request: NextRequest) {
     }
     const quantityMilli = Math.round(quantity * 1000)
     const resolution = line.resolution || {}
-    let productId = decision?.productId || (resolution.status === 'resolved' ? resolution.candidate?.id : undefined)
+    const productId = decision?.productId || (resolution.status === 'resolved' ? resolution.candidate?.id : undefined)
     let product = productId ? after.products.find((item) => item.id === productId && !item.deletedAt) : undefined
+    let createdThisLine = false
 
     if (!product) {
       const chosen = decision?.barcode
@@ -142,6 +143,7 @@ export async function POST(request: NextRequest) {
           catalogSource: 'rafa_invoice_photo',
         }
         after.products.push(product)
+        createdThisLine = true
         const movementId = randomUUID()
         movementIds.push(movementId)
         after.movements.push({
@@ -160,7 +162,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (product && !audit.some((entry) => entry.productId === product!.id && entry.tipo === 'entrada_novo_produto')) {
+    if (product && !createdThisLine) {
       const beforeStock = product.stockMilli
       const update = calculatePurchaseUpdate(product.stockMilli, Math.max(0, Math.round(product.averageCostCents || 0)), quantityMilli, unitCostCents)
       product.stockMilli = update.stockMilli
