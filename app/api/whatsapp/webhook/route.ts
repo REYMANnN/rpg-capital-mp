@@ -13,7 +13,7 @@ import { askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTe
 import { appendInvoiceMedia, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
 import { downloadWhatsAppMedia, mediaDataUri, storeInvoiceProof } from '@/lib/rafa-media'
 import { actionToChange, resolveTextProduct } from '@/lib/rafa-products'
-import { loadRafaStore } from '@/lib/inventory/rafa-store'
+import { loadRafaStore, type RafaChange } from '@/lib/inventory/rafa-store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -195,7 +195,7 @@ async function processValue(value: JsonRecord) {
         return
       }
 
-      const changes = []
+      const changes: RafaChange[] = []
       for (const action of extracted.actions) {
         const resolution = resolveTextProduct(state.products, String(action.referencia_produto || ''))
         if (resolution.status === 'ambiguous') {
