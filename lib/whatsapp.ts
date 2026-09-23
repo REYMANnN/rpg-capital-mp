@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { enqueueWhatsApp, evoMarkAsRead, isEvolutionProvider } from '@/lib/whatsapp-evolution'
 
 const GRAPH_API_VERSION = 'v23.0'
 
@@ -84,6 +85,10 @@ export async function sendText(to: string, body: string, options?: SendOptions):
   const blocked = await validateOutboundRecipient(recipient, options)
   if (blocked) return blocked
 
+  if (isEvolutionProvider()) {
+    return enqueueWhatsApp({ to: recipient, kind: 'text', payload: { body }, inReplyTo: options?.inReplyTo })
+  }
+
   return graphPost({
     ...(options?.inReplyTo ? { context: { message_id: options.inReplyTo } } : {}),
     messaging_product: 'whatsapp',
@@ -107,6 +112,15 @@ export async function sendActionButtons(
 
   const blocked = await validateOutboundRecipient(recipient, options)
   if (blocked) return blocked
+
+  if (isEvolutionProvider()) {
+    return enqueueWhatsApp({
+      to: recipient,
+      kind: 'buttons',
+      payload: { body, footer, buttons: buttons.map((button) => ({ id: button.id, title: button.title })) },
+      inReplyTo: options?.inReplyTo,
+    })
+  }
 
   return graphPost({
     ...(options?.inReplyTo ? { context: { message_id: options.inReplyTo } } : {}),
@@ -139,8 +153,12 @@ export async function sendReplyButtons(
   return sendActionButtons(to, body, footer, buttons, options)
 }
 
-export async function markAsRead(wamid: string): Promise<WhatsAppResult> {
+export async function markAsRead(wamid: string, fromPhone?: string): Promise<WhatsAppResult> {
   if (!wamid.trim()) return { ok: false, error: 'Invalid WhatsApp message id' }
+  if (isEvolutionProvider()) {
+    if (!fromPhone) return { ok: true }
+    return evoMarkAsRead(wamid, fromPhone)
+  }
 
   return graphPost({
     messaging_product: 'whatsapp',
