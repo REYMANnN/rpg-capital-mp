@@ -58,7 +58,7 @@ test('product resolution order is fixed to the five required stages', () => {
 })
 
 test('webhook transcribes audio and routes transcript through deterministic text router', () => {
-  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  const route = (readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8') + readFileSync('lib/whatsapp-inbound.ts', 'utf8'))
   assert.match(route, /transcribeRafaAudio/)
   assert.match(route, /classifyWhatsAppText\(transcript\)/)
   assert.match(route, /media_duration_s/)
@@ -67,7 +67,7 @@ test('webhook transcribes audio and routes transcript through deterministic text
 })
 
 test('image path classifies before extracting and only invoices continue', () => {
-  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  const route = (readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8') + readFileSync('lib/whatsapp-inbound.ts', 'utf8'))
   const invoice = readFileSync('lib/rafa-invoice.ts', 'utf8')
   assert.match(route, /classifyRafaImage/)
   assert.match(route, /classification\.classe !== 'nota_fiscal'/)
@@ -100,7 +100,7 @@ test('Rafa phase 2 operational copy excludes restricted topics', () => {
 
 
 test('AI outages never leave Rafa silent on free text or invoice confirmation', () => {
-  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  const route = (readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8') + readFileSync('lib/whatsapp-inbound.ts', 'utf8'))
   assert.match(route, /GROQ_API_KEY/)
   assert.match(route, /As respostas livres ainda não estão disponíveis agora/)
   assert.match(route, /A leitura automática da nota ainda não está disponível agora/)
