@@ -185,6 +185,11 @@ export async function enqueueWhatsApp(input: {
 }): Promise<EvoResult> {
   const to = normalizePhone(input.to)
   if (!to) return { ok: false, error: 'Invalid WhatsApp recipient' }
+  // Botões via Baileys recebem DELIVERY_ACK mas não aparecem em vários clientes
+  // (testado: iPhone). Por padrão o menu vai em texto numerado; EVOLUTION_BUTTONS=on reativa.
+  if (input.kind === 'buttons' && process.env.EVOLUTION_BUTTONS !== 'on') {
+    input = { ...input, kind: 'menu_fallback' }
+  }
 
   const admin = createAdminClient()
   const idempotency_key = idempotencyKeyFor({ to, kind: input.kind, payload: input.payload, inReplyTo: input.inReplyTo, key: input.idempotencyKey })
