@@ -369,11 +369,11 @@ export async function lastOutboundWasTextMenu(phone: string): Promise<EvoButton[
   const { data } = await admin.from('wa_outbox')
     .select('kind,payload,created_at')
     .eq('to_phone', normalizePhone(phone))
-    .eq('kind', 'menu_fallback')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  // Sem prazo: vale o último menu enviado, mesmo dias depois.
-  if (!data) return null
+  // Sem prazo: vale o menu se ele foi a última mensagem da Rafa, mesmo dias depois.
+  // Se a última mensagem foi uma pergunta aberta (sem menu), o número vai como texto para a Rafa.
+  if (!data || data.kind !== 'menu_fallback') return null
   return Array.isArray(data.payload?.buttons) ? data.payload.buttons as EvoButton[] : null
 }

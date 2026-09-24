@@ -3,13 +3,14 @@ import 'server-only'
 import { createClient } from '@supabase/supabase-js'
 import { markAsRead, sendText } from '@/lib/whatsapp'
 import { isEvolutionProvider } from '@/lib/whatsapp-evolution'
+import { askStorePick, bindRafaStore, phoneStores, resolveRafaStore, runRafaAgent, STORE_PICK_PREFIX } from '@/lib/rafa-agent'
 import { classifyWhatsAppText, replyForIntent, type WhatsAppIntent } from '@/lib/whatsapp-router'
 import { sendMenu } from '@/lib/whatsapp-menu'
 import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { flowIntent, interactiveButtonId, interactiveFlow } from '@/lib/whatsapp-interactive'
 import { FLOW_LABEL } from '@/lib/whatsapp-flows'
 import { classifyRafaImage, extractRafaActions, rafaAiBudgetAvailable, transcribeRafaAudio, type RafaMediaClass } from '@/lib/rafa-ai'
-import { askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
+import { appliedMessage, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
 import { appendInvoiceMedia, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
 import { downloadWhatsAppMedia, mediaDataUri, storeInvoiceProof } from '@/lib/rafa-media'
 import { actionToChange, resolveTextProduct } from '@/lib/rafa-products'
@@ -85,6 +86,20 @@ function candidateLines(candidates: Array<{ name: string; brand?: string; priceC
   }).join('\n')
 }
 
+function isTextRefusal(text: string) {
+  const normalized = text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.!]+$/, '')
+  return ['nao', 'n', 'cancela', 'cancelar', 'negativo', 'nao quero'].includes(normalized)
+}
+
+// Rafa conversacional (agente com ferramentas). Liga por padrão no Evolution; RAFA_AGENT=off desliga.
+function rafaAgentEnabled() {
+  const flag = process.env.RAFA_AGENT?.trim().toLowerCase()
+  if (flag === 'off') return false
+  return flag === 'on' || isEvolutionProvider()
+}
+
+const BUDGET_MESSAGE = 'O limite de respostas livres de hoje foi atingido. Os botões continuam funcionando normalmente; respostas livres voltam amanhã.'
+
 export async function processValue(value: JsonRecord) {
   const contacts = asArray(value.contacts)
   const privateValues: string[] = []
@@ -109,8 +124,46 @@ export async function processValue(value: JsonRecord) {
       .select('store_id,payload,expires_at')
       .eq('wa_id', waId)
       .maybeSingle()
-    if (!data || !data.store_id || new Date(data.expires_at).getTime() <= Date.now()) return null
-    return data
+    if (data?.store_id && new Date(data.expires_at).getTime() > Date.now()) return data
+    if (!rafaAgentEnabled()) return null
+    const resolved = await resolveRafaStore(waId).catch(() => null)
+    return resolved?.status === 'ok' ? { store_id: resolved.storeId, payload: {}, expires_at: null } : null
+  }
+
+  const handleConfirmYes = async (fromPhone: string, wamid: string) => {
+    const result = await confirmRafaPending(fromPhone)
+    if (result.kind === 'media') {
+      try {
+        await processApprovedInvoiceMedia({ waId: fromPhone, storeId: result.storeId, importId: result.importId })
+      } catch (error) {
+        const budgetHit = error instanceof Error && error.message === 'rafa_ai_budget_exceeded'
+        const missingKey = error instanceof Error && error.message.includes('GROQ_API_KEY')
+        const message = budgetHit
+          ? 'O limite de respostas livres de hoje foi atingido. A leitura da nota volta amanhã; os botões continuam funcionando normalmente.\n— Rafa'
+          : missingKey
+            ? 'A leitura automática da nota ainda não está disponível agora. Você pode usar Prateleira manualmente.\n— Rafa'
+            : 'Não consegui processar essa nota agora. Tente enviar a foto novamente ou use Prateleira manualmente.\n— Rafa'
+        const sent = await sendText(fromPhone, message, { inReplyTo: wamid })
+        if (!sent.ok) throw new Error(sent.error)
+      }
+      return
+    }
+    if (result.kind === 'applied') {
+      if (isEvolutionProvider()) {
+        const sent = await sendText(fromPhone, appliedMessage(result.after, result.changes), { inReplyTo: wamid })
+        if (!sent.ok) throw new Error(sent.error)
+        return
+      }
+      const sent = await sendText(fromPhone, 'Pronto. Alteração confirmada e registrada.\n— Rafa', { inReplyTo: wamid })
+      if (!sent.ok) throw new Error(sent.error)
+      const menu = await sendMenu(fromPhone)
+      if (!menu.ok) throw new Error(menu.error)
+      return
+    }
+    if (result.kind === 'none') {
+      const sent = await sendText(fromPhone, 'Não há nenhuma alteração aguardando confirmação.\n— Rafa', { inReplyTo: wamid })
+      if (!sent.ok) throw new Error(sent.error)
+    }
   }
 
   const routeOperationalText = async (
@@ -123,6 +176,24 @@ export async function processValue(value: JsonRecord) {
       const result = await sendText(fromPhone, replyForIntent(routing.intent), { inReplyTo: wamid })
       if (!result.ok) throw new Error(result.error)
       return
+    }
+
+    if (isEvolutionProvider() && (isTextConfirmationAttempt(text) || isTextRefusal(text))) {
+      const { data: pending } = await createDatabase().from('rafa_pending_actions')
+        .select('id')
+        .eq('wa_id', fromPhone)
+        .eq('status', 'pendente')
+        .limit(1)
+        .maybeSingle()
+      if (pending) {
+        if (isTextRefusal(text)) {
+          const result = await refuseRafaPending(fromPhone)
+          if (!result.ok) throw new Error(result.error)
+        } else {
+          await handleConfirmYes(fromPhone, wamid)
+        }
+        return
+      }
     }
 
     if (isTextConfirmationAttempt(text)) {
@@ -155,6 +226,39 @@ export async function processValue(value: JsonRecord) {
           )
         : await sendText(fromPhone, 'Não encontrei esse produto na sua loja.\n— Rafa', { inReplyTo: wamid })
       if (!result.ok) throw new Error(result.error)
+      return
+    }
+
+    if (rafaAgentEnabled()) {
+      const resolved = storeId ? { status: 'ok' as const, storeId } : await resolveRafaStore(fromPhone)
+      if (resolved.status === 'multiple') {
+        const result = await askStorePick(fromPhone, resolved.stores, wamid)
+        if (!result.ok) throw new Error(result.error)
+        return
+      }
+      if (resolved.status === 'none') {
+        const result = await sendText(fromPhone, 'Ainda não achei uma loja ligada a este número. Confere se o telefone cadastrado no Balcão é este mesmo, ou abra o Balcão pelo menu.\n— Rafa', { inReplyTo: wamid })
+        if (!result.ok) throw new Error(result.error)
+        return
+      }
+      let outcome: Awaited<ReturnType<typeof runRafaAgent>>
+      try {
+        outcome = await runRafaAgent({ waId: fromPhone, storeId: resolved.storeId, text, inReplyTo: wamid })
+      } catch (error) {
+        const missingKey = error instanceof Error && error.message.includes('GROQ_API_KEY')
+        const budgetHit = error instanceof Error && error.message === 'rafa_ai_budget_exceeded'
+        const result = budgetHit
+          ? await sendMenu(fromPhone, BUDGET_MESSAGE, { inReplyTo: wamid })
+          : await sendText(fromPhone, missingKey
+            ? 'As respostas livres ainda não estão disponíveis agora. Use as opções do menu por enquanto.\n— Rafa'
+            : 'Tive um problema pra responder agora. Tenta de novo em instantes.\n— Rafa', { inReplyTo: wamid })
+        if (!result.ok) throw new Error(result.error)
+        throw error
+      }
+      if (outcome === 'budget') {
+        const result = await sendMenu(fromPhone, BUDGET_MESSAGE, { inReplyTo: wamid })
+        if (!result.ok) throw new Error(result.error)
+      }
       return
     }
 
@@ -274,35 +378,20 @@ export async function processValue(value: JsonRecord) {
 
     if (buttonId === 'confirm_yes') {
       intentValue = 'confirm_yes'
-      await attempt('confirm_yes', async () => {
-        const result = await confirmRafaPending(fromPhone)
-        if (result.kind === 'media') {
-          try {
-            await processApprovedInvoiceMedia({ waId: fromPhone, storeId: result.storeId, importId: result.importId })
-          } catch (error) {
-            const budgetHit = error instanceof Error && error.message === 'rafa_ai_budget_exceeded'
-            const missingKey = error instanceof Error && error.message.includes('GROQ_API_KEY')
-            const message = budgetHit
-              ? 'O limite de respostas livres de hoje foi atingido. A leitura da nota volta amanhã; os botões continuam funcionando normalmente.\n— Rafa'
-              : missingKey
-                ? 'A leitura automática da nota ainda não está disponível agora. Você pode usar Prateleira manualmente.\n— Rafa'
-                : 'Não consegui processar essa nota agora. Tente enviar a foto novamente ou use Prateleira manualmente.\n— Rafa'
-            const sent = await sendText(fromPhone, message, { inReplyTo: wamid })
-            if (!sent.ok) throw new Error(sent.error)
-          }
+      await attempt('confirm_yes', () => handleConfirmYes(fromPhone, wamid))
+    } else if (buttonId?.startsWith(STORE_PICK_PREFIX)) {
+      intentValue = 'store_pick'
+      await attempt('store_pick', async () => {
+        const storeId = buttonId.slice(STORE_PICK_PREFIX.length)
+        const allowed = (await phoneStores(fromPhone)).find((store) => store.id === storeId)
+        if (!allowed) {
+          const sent = await sendText(fromPhone, 'Não consegui trocar para essa loja. Me manda sua pergunta de novo.\n— Rafa', { inReplyTo: wamid })
+          if (!sent.ok) throw new Error(sent.error)
           return
         }
-        if (result.kind === 'applied') {
-          const sent = await sendText(fromPhone, 'Pronto. Alteração confirmada e registrada.\n— Rafa', { inReplyTo: wamid })
-          if (!sent.ok) throw new Error(sent.error)
-          const menu = await sendMenu(fromPhone)
-          if (!menu.ok) throw new Error(menu.error)
-          return
-        }
-        if (result.kind === 'none') {
-          const sent = await sendText(fromPhone, 'Não há nenhuma alteração aguardando confirmação.\n— Rafa', { inReplyTo: wamid })
-          if (!sent.ok) throw new Error(sent.error)
-        }
+        await bindRafaStore(fromPhone, allowed.id)
+        const sent = await sendText(fromPhone, `Combinado, agora estou com a loja ${allowed.name}. Pode perguntar o que precisar: estoque, preços, vendas ou banco.\n— Rafa`, { inReplyTo: wamid })
+        if (!sent.ok) throw new Error(sent.error)
       })
     } else if (buttonId === 'confirm_no') {
       intentValue = 'confirm_no'
@@ -317,6 +406,10 @@ export async function processValue(value: JsonRecord) {
         try {
           const { data } = await createDatabase().from('whatsapp_sessions').select('store_id').eq('wa_id', fromPhone).maybeSingle()
           if (typeof data?.store_id === 'string') storeId = data.store_id
+          if (!storeId && rafaAgentEnabled()) {
+            const resolved = await resolveRafaStore(fromPhone)
+            if (resolved.status === 'ok') storeId = resolved.storeId
+          }
         } catch {}
 
         const link = await createBalcaoDeepLink({ waId: fromPhone, storeId, fluxo: flow })

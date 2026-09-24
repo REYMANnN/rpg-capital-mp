@@ -32,6 +32,13 @@ export function confirmationMessage(state: RafaStoreState, changes: RafaChange[]
     if (change.kind === 'entrada') {
       return `• ${label}: estoque hoje ${stock(change.expectedStockMilli)} → entrada de ${stock(change.quantityMilli)}, custo unitário ${money(change.unitCostCents)}`
     }
+    if (change.kind === 'cadastrar') {
+      const verb = change.reactivate ? 'reativar' : 'cadastrar'
+      return `• ${verb} ${change.name} (EAN ${change.barcode}): preço ${money(change.priceCents)}, custo ${money(change.costCents)}, estoque inicial ${stock(change.stockMilli)}`
+    }
+    if (change.kind === 'remover') {
+      return `• remover ${label} do estoque (hoje tem ${stock(change.expectedStockMilli)})`
+    }
     return `• ${label}: estoque hoje ${stock(change.expectedStockMilli)} → venda de ${stock(change.quantityMilli)}`
   })
   return `${lines.join('\n')}\n\nQuer que eu faça essas alterações?\n— Rafa`
@@ -68,7 +75,9 @@ export async function askRafaConfirmation(input: {
 }) {
   const message = confirmationMessage(input.state, input.changes)
   const kinds = [...new Set(input.changes.map((change) => change.kind))]
-  const tipo = kinds.length === 1 ? kinds[0] : 'outro'
+  const tipo = kinds.length === 1 && ['preco', 'estoque', 'venda', 'entrada'].includes(kinds[0])
+    ? kinds[0] as 'preco' | 'estoque' | 'venda' | 'entrada'
+    : 'outro'
   await createRafaPendingAction({
     waId: input.waId,
     storeId: input.storeId,
@@ -136,7 +145,7 @@ export type ConfirmRafaResult =
   | { kind: 'expired' }
   | { kind: 'media'; importId: string; storeId: string }
   | { kind: 'invalidated'; message: string }
-  | { kind: 'applied'; changes: RafaChange[] }
+  | { kind: 'applied'; changes: RafaChange[]; after: RafaStoreState }
 
 export async function confirmRafaPending(waId: string): Promise<ConfirmRafaResult> {
   const admin = createAdminClient()
@@ -189,5 +198,21 @@ export async function confirmRafaPending(waId: string): Promise<ConfirmRafaResul
     status: 'confirmada',
     confirmed_at: new Date().toISOString(),
   }).eq('id', pending.id)
-  return { kind: 'applied', changes }
+  return { kind: 'applied', changes, after }
+}
+
+// Mensagem de resultado depois do Sim: diz exatamente o que ficou valendo.
+export function appliedMessage(after: RafaStoreState, changes: RafaChange[]) {
+  const byId = new Map(after.products.map((product) => [product.id, product]))
+  const lines = changes.map((change) => {
+    const product = byId.get(change.productId)
+    const name = product ? `${product.name} (EAN ${product.barcode})` : 'produto'
+    if (change.kind === 'preco') return `• o preço de ${name} agora é ${money(change.newPriceCents)}`
+    if (change.kind === 'estoque') return `• o estoque de ${name} agora é ${stock(product?.stockMilli ?? change.newStockMilli)}`
+    if (change.kind === 'entrada') return `• entrada de ${stock(change.quantityMilli)} em ${name}; estoque agora ${stock(product?.stockMilli ?? 0)}`
+    if (change.kind === 'venda') return `• venda de ${stock(change.quantityMilli)} de ${name}; estoque agora ${stock(product?.stockMilli ?? 0)}`
+    if (change.kind === 'cadastrar') return `• ${change.name} (EAN ${change.barcode}) ${change.reactivate ? 'reativado' : 'cadastrado'}: ${money(change.priceCents)}, estoque ${stock(change.stockMilli)}`
+    return `• ${name} foi removido do estoque`
+  })
+  return `Pronto!\n${lines.join('\n')}\n— Rafa`
 }
