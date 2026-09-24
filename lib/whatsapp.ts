@@ -16,6 +16,8 @@ export type WhatsAppReplyButton = {
 
 type SendOptions = {
   inReplyTo?: string
+  // Evolution: não anexar o menu principal (mensagem aguarda resposta de outro menu).
+  noMenu?: boolean
 }
 
 function normalizeRecipient(value: string) {
@@ -86,7 +88,7 @@ export async function sendText(to: string, body: string, options?: SendOptions):
   if (blocked) return blocked
 
   if (isEvolutionProvider()) {
-    return enqueueWhatsApp({ to: recipient, kind: 'text', payload: { body }, inReplyTo: options?.inReplyTo })
+    return enqueueWhatsApp({ to: recipient, kind: 'text', payload: { body }, inReplyTo: options?.inReplyTo, noMenu: options?.noMenu })
   }
 
   return graphPost({
