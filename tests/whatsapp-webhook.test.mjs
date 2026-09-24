@@ -7,7 +7,7 @@ import vm from 'node:vm'
 // Only external boundaries are replaced: Next's scheduler, Supabase and HTTP.
 // The route and WhatsApp transport below execute their actual TypeScript code.
 const sources = globalThis.__sources ?? {
-  route: readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8'),
+  route: (readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8') + readFileSync('lib/whatsapp-inbound.ts', 'utf8')),
   client: readFileSync('lib/whatsapp.ts', 'utf8'),
 }
 function evaluate(source, names, bindings) {

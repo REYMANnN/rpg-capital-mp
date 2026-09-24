@@ -3,7 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 
 test('webhook route enforces Meta verification and signed POSTs', () => {
-  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  const route = (readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8') + readFileSync('lib/whatsapp-inbound.ts', 'utf8'))
   assert.match(route, /export const runtime = ['"]nodejs['"]/)
   assert.match(route, /export const dynamic = ['"]force-dynamic['"]/)
   assert.match(route, /hub\.mode/)
@@ -17,14 +17,14 @@ test('webhook route enforces Meta verification and signed POSTs', () => {
 })
 
 test('signed POST acknowledges before asynchronous message processing', () => {
-  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  const route = (readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8') + readFileSync('lib/whatsapp-inbound.ts', 'utf8'))
   assert.match(route, /import \{ after \} from ['"]next\/server['"]/)
   assert.match(route, /after\(async \(\) =>/)
   assert.match(route, /return new Response\(['"]OK['"], \{ status: 200 \}\)/)
 })
 
 test('webhook persists inbound messages, statuses and contact state', () => {
-  const route = readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8')
+  const route = (readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8') + readFileSync('lib/whatsapp-inbound.ts', 'utf8'))
   const router = readFileSync('lib/whatsapp-router.ts', 'utf8')
   const menu = readFileSync('lib/whatsapp-menu.ts', 'utf8')
   assert.match(route, /whatsapp_inbound_messages/)

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { evoDownloadMedia } from '@/lib/whatsapp-evolution'
 
 const GRAPH_API_VERSION = 'v23.0'
 export const RAFA_PROOF_BUCKET = 'rafa-invoice-proofs'
@@ -18,7 +19,27 @@ export type MetaMedia = {
   filename: string
 }
 
+function extensionFor(mime: string) {
+  return mime === 'image/jpeg' ? 'jpg'
+    : mime === 'image/png' ? 'png'
+      : mime === 'image/webp' ? 'webp'
+        : mime === 'application/pdf' ? 'pdf'
+          : mime.includes('ogg') ? 'ogg'
+            : mime.includes('mpeg') ? 'mp3'
+              : mime.includes('mp4') ? 'm4a'
+                : 'bin'
+}
+
+export const EVOLUTION_MEDIA_PREFIX = 'evo:'
+
 export async function downloadWhatsAppMedia(mediaId: string, filenameHint?: string | null): Promise<MetaMedia> {
+  if (mediaId.startsWith(EVOLUTION_MEDIA_PREFIX)) {
+    const media = await evoDownloadMedia(mediaId.slice(EVOLUTION_MEDIA_PREFIX.length))
+    const safeHint = String(filenameHint || media.fileName || '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80)
+    const filename = safeHint || `rafa-${randomUUID()}.${extensionFor(media.mime)}`
+    return { bytes: media.bytes, mime: media.mime, fileSize: media.bytes.byteLength, filename }
+  }
+
   const metadataResponse = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(mediaId)}`, {
     headers: { Authorization: `Bearer ${token()}` },
     cache: 'no-store',
