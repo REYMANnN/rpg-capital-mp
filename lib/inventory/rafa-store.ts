@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { writeAuditEvent } from '@/lib/accounts/audit'
 import { completeSale, type PaymentMethod, type Product, type Sale, type ScaleRule } from '@/lib/inventory/core'
 import { calculatePurchaseUpdate } from '@/lib/inventory/intake'
-import { validateSalePrice } from '@/lib/inventory/productRules'
+import { validateNewProductCommercialData, validateSalePrice } from '@/lib/inventory/productRules'
+import { softDeleteProduct } from '@/lib/inventory/productLifecycle'
 import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 import { deriveInventoryStateEvents } from '@/lib/platform/events/inventoryStateEvents'
 import { emitPlatformEvent } from '@/lib/platform/events/outbox'
@@ -72,6 +73,25 @@ export type RafaChange =
       paymentMethod?: PaymentMethod
       reason?: string
     }
+  | {
+      kind: 'cadastrar'
+      productId: string
+      barcode: string
+      name: string
+      unit: 'UN' | 'KG'
+      priceCents: number
+      costCents: number
+      stockMilli: number
+      // Produto removido antes com o mesmo EAN: reativa em vez de duplicar.
+      reactivate?: boolean
+      reason?: string
+    }
+  | {
+      kind: 'remover'
+      productId: string
+      expectedStockMilli: number
+      reason?: string
+    }
 
 type StoreContext = {
   id: string
@@ -127,8 +147,13 @@ export function revalidateRafaChanges(state: RafaStoreState, changes: RafaChange
   const mismatches: RafaRevalidationMismatch[] = []
 
   for (const change of changes) {
+    if (change.kind === 'cadastrar') {
+      const clash = state.products.find((item) => item.barcode === change.barcode && !item.deletedAt)
+      if (clash) mismatches.push({ productId: clash.id, field: 'stockMilli', expected: -1, current: clash.stockMilli })
+      continue
+    }
     const product = byId.get(change.productId)
-    if (!product) {
+    if (!product || product.deletedAt) {
       mismatches.push({ productId: change.productId, field: 'stockMilli', expected: -1, current: -2 })
       continue
     }
@@ -157,7 +182,7 @@ export function refreshRafaSnapshots(state: RafaStoreState, changes: RafaChange[
   const byId = new Map(state.products.map((product) => [product.id, product]))
   return changes.map((change) => {
     const product = byId.get(change.productId)
-    if (!product) return change
+    if (!product || change.kind === 'cadastrar') return change
     if (change.kind === 'preco') return { ...change, expectedPriceCents: product.priceCents }
     return { ...change, expectedStockMilli: product.stockMilli }
   })
@@ -176,6 +201,50 @@ export function applyRafaChanges(
   }
   const now = new Date().toISOString()
   const audit: Array<Record<string, unknown>> = []
+
+  for (const change of changes) {
+    if (change.kind !== 'cadastrar') continue
+    const commercialError = validateNewProductCommercialData(change.priceCents, change.costCents)
+    if (commercialError) throw new Error(commercialError)
+    if (next.products.some((item) => item.barcode === change.barcode && !item.deletedAt)) {
+      throw new Error('Esse código de barras já está cadastrado.')
+    }
+    const fields = {
+      barcode: change.barcode,
+      name: change.name,
+      unit: change.unit,
+      priceCents: change.priceCents,
+      averageCostCents: change.costCents,
+      stockMilli: change.stockMilli,
+    }
+    const existing = change.reactivate ? next.products.find((item) => item.id === change.productId) : undefined
+    if (existing) {
+      Object.assign(existing, fields, { deletedAt: undefined })
+    } else {
+      next.products.push({ id: change.productId, minStockMilli: 0, ...fields })
+    }
+    if (change.stockMilli) {
+      next.movements.push({
+        id: randomUUID(),
+        productId: change.productId,
+        type: 'initial',
+        quantityMilli: change.stockMilli,
+        createdAt: now,
+        note: 'Cadastro pela Rafa',
+        origem: 'whatsapp',
+      })
+    }
+    audit.push({
+      tipo: 'cadastrar',
+      productId: change.productId,
+      produto: change.name,
+      ean: change.barcode,
+      preco: change.priceCents,
+      custo: change.costCents,
+      estoque: change.stockMilli,
+      reativado: Boolean(existing),
+    })
+  }
 
   for (const change of changes.filter((item) => item.kind === 'preco')) {
     const product = next.products.find((item) => item.id === change.productId)
@@ -288,6 +357,34 @@ export function applyRafaChanges(
         quantidade: item.quantityMilli,
       })
     }
+  }
+
+  for (const change of changes) {
+    if (change.kind !== 'remover') continue
+    const index = next.products.findIndex((item) => item.id === change.productId)
+    if (index < 0 || next.products[index].deletedAt) throw new Error('Produto não encontrado.')
+    const existing = next.products[index]
+    const deletion = softDeleteProduct(existing, now)
+    next.products[index] = deletion.product
+    if (deletion.stockAdjustmentMilli) {
+      next.movements.push({
+        id: randomUUID(),
+        productId: existing.id,
+        type: 'adjustment',
+        quantityMilli: deletion.stockAdjustmentMilli,
+        createdAt: now,
+        note: 'Produto removido do estoque pela Rafa',
+        origem: 'whatsapp',
+      })
+    }
+    audit.push({
+      tipo: 'remover',
+      productId: existing.id,
+      produto: existing.name,
+      de: existing.stockMilli,
+      para: 0,
+      motivo: change.reason || null,
+    })
   }
 
   return { state: next, audit }
