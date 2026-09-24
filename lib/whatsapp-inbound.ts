@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createClient } from '@supabase/supabase-js'
 import { markAsRead, sendText } from '@/lib/whatsapp'
+import { isEvolutionProvider } from '@/lib/whatsapp-evolution'
 import { classifyWhatsAppText, replyForIntent, type WhatsAppIntent } from '@/lib/whatsapp-router'
 import { sendMenu } from '@/lib/whatsapp-menu'
 import { createBalcaoDeepLink } from '@/lib/deeplink'
@@ -132,7 +133,9 @@ export async function processValue(value: JsonRecord) {
         .limit(1)
         .maybeSingle()
       if (pending) {
-        const result = await sendText(fromPhone, 'preciso que você aperte o botão Sim pra eu confirmar.\n— Rafa', { inReplyTo: wamid })
+        const result = isEvolutionProvider()
+          ? await sendText(fromPhone, 'pra eu confirmar, responda 1 (Sim) ou 2 (Não).\n— Rafa', { inReplyTo: wamid, noMenu: true })
+          : await sendText(fromPhone, 'preciso que você aperte o botão Sim pra eu confirmar.\n— Rafa', { inReplyTo: wamid })
         if (!result.ok) throw new Error(result.error)
         return
       }

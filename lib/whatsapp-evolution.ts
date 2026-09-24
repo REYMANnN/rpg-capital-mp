@@ -31,6 +31,13 @@ type OutboxRow = {
   created_at: string
 }
 
+// Menu principal da Rafa. Mantido aqui (e não importado de whatsapp-menu) para evitar import circular.
+export const RAFA_MAIN_MENU: EvoButton[] = [
+  { id: 'vender', title: 'Vender' },
+  { id: 'ler_codigo', title: 'Ler código' },
+  { id: 'prateleira', title: 'Prateleira' },
+]
+
 const ACK_TIMEOUT_MS = 60_000
 const BUTTON_ATTEMPTS_BEFORE_FALLBACK = 2
 
@@ -182,6 +189,7 @@ export async function enqueueWhatsApp(input: {
   payload: Record<string, unknown>
   inReplyTo?: string | null
   idempotencyKey?: string
+  noMenu?: boolean
 }): Promise<EvoResult> {
   const to = normalizePhone(input.to)
   if (!to) return { ok: false, error: 'Invalid WhatsApp recipient' }
@@ -189,6 +197,17 @@ export async function enqueueWhatsApp(input: {
   // (testado: iPhone). Por padrão o menu vai em texto numerado; EVOLUTION_BUTTONS=on reativa.
   if (input.kind === 'buttons' && process.env.EVOLUTION_BUTTONS !== 'on') {
     input = { ...input, kind: 'menu_fallback' }
+  }
+  // Toda resposta em texto termina com o menu principal: o lojista nunca fica sem próximo passo
+  // e responder 1/2/3 funciona a qualquer momento, sem prazo. noMenu=true para mensagens que
+  // aguardam resposta de um menu específico (ex.: confirmação Sim/Não).
+  if (input.kind === 'text' && !input.noMenu && process.env.EVOLUTION_AUTO_MENU !== 'off') {
+    const body = String(input.payload.body ?? '').trim()
+    input = {
+      ...input,
+      kind: 'menu_fallback',
+      payload: { body: `${body}\n\nO que você quer fazer agora?`, buttons: RAFA_MAIN_MENU },
+    }
   }
 
   const admin = createAdminClient()
@@ -350,10 +369,11 @@ export async function lastOutboundWasTextMenu(phone: string): Promise<EvoButton[
   const { data } = await admin.from('wa_outbox')
     .select('kind,payload,created_at')
     .eq('to_phone', normalizePhone(phone))
+    .eq('kind', 'menu_fallback')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  if (!data || data.kind !== 'menu_fallback') return null
-  if (Date.now() - new Date(data.created_at).getTime() > 60 * 60_000) return null
+  // Sem prazo: vale o último menu enviado, mesmo dias depois.
+  if (!data) return null
   return Array.isArray(data.payload?.buttons) ? data.payload.buttons as EvoButton[] : null
 }
