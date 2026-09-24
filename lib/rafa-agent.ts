@@ -492,7 +492,7 @@ function systemPrompt(storeName: string) {
     'Se a busca achar mais de um produto possível para uma alteração, pergunte qual é antes de propor, listando nome e EAN.',
     'Se faltar dado (ex.: preço, custo, EAN para cadastrar), pergunte só o que falta.',
     'Se o pedido não tiver a ver com a loja, responda em uma linha e volte ao assunto da loja.',
-    'Termine a resposta com "— Rafa".',
+    'Não assine a mensagem (nada de "— Rafa" no fim).',
   ].join('\n')
 }
 
@@ -571,9 +571,9 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
     if (!calls.length) {
       const text = String(reply.content || '').trim()
       if (!text) throw new Error('rafa_agent_empty')
-      const body = /—\s*Rafa\s*$/.test(text) ? text : `${text}\n— Rafa`
-      // Pergunta aberta: sem menu no fim, para a resposta do lojista (inclusive "1", "2") voltar para a Rafa.
-      const asking = /\?\s*(—\s*Rafa)?\s*$/.test(body)
+      const body = text.replace(/\s*[—–-]\s*Rafa\s*$/u, '').trim()
+      // Pergunta aberta: sem menu depois, para a resposta do lojista (inclusive "1", "2") voltar para a Rafa.
+      const asking = /\?\s*$/.test(body)
       const sent = await sendText(input.waId, body, { inReplyTo: input.inReplyTo, noMenu: asking })
       if (!sent.ok) throw new Error(sent.error)
       return 'replied'

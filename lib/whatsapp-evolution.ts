@@ -38,6 +38,10 @@ export const RAFA_MAIN_MENU: EvoButton[] = [
   { id: 'prateleira', title: 'Prateleira' },
 ]
 
+function stripSignature(body: string) {
+  return body.replace(/\s*\n?\s*[—–-]\s*Rafa\s*$/u, '').trim()
+}
+
 const ACK_TIMEOUT_MS = 60_000
 const BUTTON_ATTEMPTS_BEFORE_FALLBACK = 2
 
@@ -198,16 +202,25 @@ export async function enqueueWhatsApp(input: {
   if (input.kind === 'buttons' && process.env.EVOLUTION_BUTTONS !== 'on') {
     input = { ...input, kind: 'menu_fallback' }
   }
-  // Toda resposta em texto termina com o menu principal: o lojista nunca fica sem próximo passo
-  // e responder 1/2/3 funciona a qualquer momento, sem prazo. noMenu=true para mensagens que
-  // aguardam resposta de um menu específico (ex.: confirmação Sim/Não).
+  // Sem assinatura "— Rafa" no fim das mensagens.
+  if (typeof input.payload.body === 'string') {
+    input = { ...input, payload: { ...input.payload, body: stripSignature(input.payload.body) } }
+  }
+
+  // Toda resposta em texto é seguida por uma mensagem separada com o menu principal: o lojista
+  // nunca fica sem próximo passo e responder 1/2/3 funciona a qualquer momento, sem prazo.
+  // noMenu=true para mensagens que aguardam resposta (pergunta aberta ou confirmação Sim/Não).
   if (input.kind === 'text' && !input.noMenu && process.env.EVOLUTION_AUTO_MENU !== 'off') {
-    const body = String(input.payload.body ?? '').trim()
-    input = {
-      ...input,
+    const sent = await enqueueWhatsApp({ ...input, noMenu: true })
+    if (!sent.ok) return sent
+    await enqueueWhatsApp({
+      to: input.to,
       kind: 'menu_fallback',
-      payload: { body: `${body}\n\nO que você quer fazer agora?`, buttons: RAFA_MAIN_MENU },
-    }
+      payload: { body: 'O que você quer fazer agora?', buttons: RAFA_MAIN_MENU },
+      inReplyTo: input.inReplyTo,
+      noMenu: true,
+    })
+    return sent
   }
 
   const admin = createAdminClient()
