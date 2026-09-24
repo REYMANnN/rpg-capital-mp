@@ -106,7 +106,7 @@ export async function askStorePick(waId: string, stores: Array<{ id: string; nam
     to: waId,
     kind: 'menu_fallback',
     payload: {
-      body: 'Esse número está ligado a mais de uma loja. Com qual delas você quer falar?',
+      body: 'Com qual loja você quer falar?',
       buttons: stores.slice(0, 9).map((store) => ({ id: `${STORE_PICK_PREFIX}${store.id}`, title: store.name })),
     },
     inReplyTo,
@@ -256,7 +256,7 @@ async function bankBalance(storeId: string) {
       conta: row.account_name,
       tipo: row.account_type,
       saldo: money(Number(row.balance_cents || 0)),
-      atualizado_em: row.last_synced_at,
+      atualizado_em: row.last_synced_at ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(new Date(row.last_synced_at)) : 'desconhecida',
     })),
   }
 }
@@ -438,6 +438,14 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'trocar_loja',
+      description: 'Mostra ao lojista a lista de lojas ligadas a este número para ele escolher com qual falar. Use quando pedirem para trocar, mudar ou conectar outra loja/mercadinho.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'gerar_link',
       description: 'Gera o link do Balcão para vender, ler código de barras ou abrir a prateleira (estoque).',
       parameters: { type: 'object', properties: { fluxo: { type: 'string', enum: ['vender', 'ler-codigo', 'prateleira'] } }, required: ['fluxo'] },
@@ -480,19 +488,29 @@ const TOOLS = [
   },
 ]
 
-function systemPrompt(storeName: string) {
+function systemPrompt(storeName: string, otherStores: number) {
   const today = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', timeStyle: 'short' }).format(new Date())
   return [
     `Você é a Rafa, assistente da loja "${storeName}" no WhatsApp, criada pela RPG Capital. Agora é ${today} (horário de Brasília).`,
-    'Fale português do Brasil, simples e direto, como uma funcionária de confiança. Respostas curtas (até 6 linhas), sem markdown, sem títulos, sem asteriscos.',
-    'Nunca invente números, produtos, preços, estoques ou saldos: use sempre as ferramentas e responda só com o que elas retornarem.',
+    otherStores > 0 ? `Este número também tem acesso a ${otherStores} outra(s) loja(s); para trocar, use a ferramenta trocar_loja.` : 'Este número só tem acesso a esta loja.',
+    '',
+    'COMO PENSAR (faça isso antes de cada resposta):',
+    '1. Descubra o que a pessoa quer de verdade. As mensagens chegam com erros de digitação e de transcrição de voz: leia pelo som e pelo contexto da conversa (ex.: "mi dar de loja" = "mudar de loja", "qnt" = "quanto").',
+    '2. Escolha a ferramenta que responde exatamente essa pergunta. Nunca responda outra coisa no lugar: se perguntaram de loja, não fale de banco; se perguntaram de estoque, não fale de vendas.',
+    '3. Se depois de pensar ainda estiver em dúvida entre dois sentidos, pergunte em uma linha qual deles, em vez de chutar.',
+    '4. Confira: a resposta usa só números que vieram das ferramentas e responde a pergunta feita? Se não, corrija antes de enviar.',
+    '',
+    'REGRAS:',
+    'Português do Brasil, simples e direto, como uma funcionária de confiança. Até 6 linhas, texto corrido ou lista curta com "•". Sem markdown, sem asteriscos, sem títulos. Não assine a mensagem.',
+    'Nunca invente números, produtos, preços, estoques ou saldos. Se a ferramenta não trouxer o dado, diga que não tem essa informação.',
     'Ao citar produto, use o nome completo e o EAN como vieram da ferramenta. Valores sempre em reais (R$).',
-    'Consultas (estoque, preço, vendas, saldo, extrato) e links: responda direto, sem pedir confirmação.',
-    'Qualquer alteração (preço, estoque, entrada, venda, cadastrar ou remover produto): primeiro busque o produto, depois chame propor_alteracoes. Nunca diga que já alterou: quem confirma é o lojista.',
-    'Se a busca achar mais de um produto possível para uma alteração, pergunte qual é antes de propor, listando nome e EAN.',
-    'Se faltar dado (ex.: preço, custo, EAN para cadastrar), pergunte só o que falta.',
-    'Se o pedido não tiver a ver com a loja, responda em uma linha e volte ao assunto da loja.',
-    'Termine a resposta com "— Rafa".',
+    'Saldo e extrato: diga de qual banco é e a data da última atualização que veio da ferramenta (os dados do banco não são em tempo real).',
+    'Consultas (estoque, preço, vendas, saldo, extrato), links e troca de loja: faça direto, sem pedir confirmação.',
+    'Alterações (preço, estoque, entrada, venda, cadastrar ou remover produto): busque o produto e chame propor_alteracoes. Nunca diga que já alterou: quem confirma é o lojista, com sim ou não.',
+    'Se a busca achar mais de um produto possível para uma alteração, pergunte qual é, listando nome e EAN.',
+    'Se faltar dado (preço, custo, EAN para cadastrar), pergunte só o que falta.',
+    'Se perguntarem quem você é ou o que faz: diga que é a Rafa, da RPG Capital, e que consulta estoque, preços, vendas e banco da loja, e muda preço, estoque e produtos com confirmação.',
+    'Se o assunto não tiver a ver com a loja, responda em uma linha e volte para a loja.',
   ].join('\n')
 }
 
@@ -528,8 +546,8 @@ async function groqChat(storeId: string, waId: string, messages: any[]) {
       tools: TOOLS,
       tool_choice: 'auto',
       temperature: 0.2,
-      reasoning_effort: 'low',
-      max_completion_tokens: 1200,
+      reasoning_effort: 'medium',
+      max_completion_tokens: 2500,
     }),
     cache: 'no-store',
     signal: AbortSignal.timeout(30_000),
@@ -549,6 +567,21 @@ async function groqChat(storeId: string, waId: string, messages: any[]) {
   return json?.choices?.[0]?.message as { content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } | undefined
 }
 
+// Limpa a saída do modelo: sem markdown, sem assinatura e sem texto repetido em dobro.
+export function cleanReply(text: string) {
+  let out = text
+    .replace(/\*\*|__|`/g, '')
+    .replace(/^#+\s*/gm, '')
+    .replace(/\s*—\s*Rafa/gu, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim()
+  const doubled = out.match(/^([\s\S]{10,}?)\s*\1$/)
+  if (doubled) out = doubled[1].trim()
+  const paragraphs = out.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean)
+  out = paragraphs.filter((paragraph, index) => paragraphs.indexOf(paragraph) === index).join('\n\n')
+  return out.replace(/\n{3,}/g, '\n\n').trim()
+}
+
 export type RafaAgentOutcome = 'replied' | 'confirmation' | 'budget' | 'error'
 
 export async function runRafaAgent(input: { waId: string; storeId: string; text: string; inReplyTo?: string }): Promise<RafaAgentOutcome> {
@@ -556,9 +589,13 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
   if (!budget.allowed) return 'budget'
 
   const { store, state } = await loadRafaStore(input.storeId)
-  const history = await recentHistory(input.waId).catch(() => [])
+  const [history, stores] = await Promise.all([
+    recentHistory(input.waId).catch(() => []),
+    phoneStores(input.waId).catch(() => []),
+  ])
+  const otherStores = stores.filter((item) => item.id !== input.storeId).length
   const messages: any[] = [
-    { role: 'system', content: systemPrompt(store.displayName || 'sua loja') },
+    { role: 'system', content: systemPrompt(store.displayName || 'sua loja', otherStores) },
     ...history,
     { role: 'user', content: input.text.slice(0, 2000) },
   ]
@@ -571,9 +608,9 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
     if (!calls.length) {
       const text = String(reply.content || '').trim()
       if (!text) throw new Error('rafa_agent_empty')
-      const body = /—\s*Rafa\s*$/.test(text) ? text : `${text}\n— Rafa`
-      // Pergunta aberta: sem menu no fim, para a resposta do lojista (inclusive "1", "2") voltar para a Rafa.
-      const asking = /\?\s*(—\s*Rafa)?\s*$/.test(body)
+      const body = cleanReply(text)
+      // Pergunta aberta: sem menu depois, para a resposta do lojista (inclusive "1", "2") voltar para a Rafa.
+      const asking = /\?\s*$/.test(body)
       const sent = await sendText(input.waId, body, { inReplyTo: input.inReplyTo, noMenu: asking })
       if (!sent.ok) throw new Error(sent.error)
       return 'replied'
@@ -595,6 +632,12 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
           case 'vendas': result = salesSummary(state, args); break
           case 'saldo_banco': result = await bankBalance(input.storeId); break
           case 'extrato': result = await bankStatement(input.storeId, args); break
+          case 'trocar_loja': {
+            if (stores.length < 2) { result = { observacao: 'Este número só tem acesso a uma loja.', loja_atual: store.displayName }; break }
+            const sent = await askStorePick(input.waId, stores, input.inReplyTo)
+            if (!sent.ok) throw new Error(sent.error)
+            return 'replied'
+          }
           case 'gerar_link': {
             const fluxo = String(args.fluxo || '')
             if (!isBalcaoFlow(fluxo)) { result = { erro: 'fluxo inválido' }; break }
