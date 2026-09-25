@@ -69,10 +69,13 @@ async function authorizedWhatsappInstallation(request: NextRequest) {
     if (!claims.store_id) return null
     const admin = createAdminClient()
     const [{ data: session }, { data: store }] = await Promise.all([
-      admin.from('whatsapp_sessions').select('wa_id, store_id, fluxo_atual, expires_at').eq('wa_id', claims.wa_id).eq('store_id', claims.store_id).maybeSingle(),
+      admin.from('whatsapp_sessions').select('wa_id, store_id, fluxo_atual, expires_at, payload').eq('wa_id', claims.wa_id).eq('store_id', claims.store_id).maybeSingle(),
       admin.from('inventory_v1_stores').select('id, business_id, installation_id, display_name, active').eq('id', claims.store_id).eq('active', true).maybeSingle(),
     ])
     if (!session?.fluxo_atual || new Date(session.expires_at).getTime() <= Date.now()) return null
+    // Só o link mais recente vale: abrir um link novo derruba a sessão do anterior.
+    const sessionJti = (session.payload as Record<string, unknown> | null)?.jti
+    if (typeof sessionJti === 'string' && sessionJti !== claims.jti) return null
     if (!store?.installation_id || !store?.business_id) return null
     return { claims, store }
   } catch {
@@ -94,18 +97,25 @@ async function authorizedInstallation(request: NextRequest) {
   }
 }
 
+// Sessão aberta por link da Rafa que não vale mais (link substituído ou fluxo encerrado):
+// avisa o app e apaga o cookie, para não gravar no lugar errado.
+function whatsappSessionEnded() {
+  const response = NextResponse.json({ ok: false, error: 'wa_session_ended' }, { status: 401 })
+  response.cookies.set(BALCAO_SESSION_COOKIE, '', { httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 0 })
+  return response
+}
+
 export async function GET(request: NextRequest) {
   let installation = getInstallationId(request)
-  if (accountsEnforced()) {
-    const whatsapp = await authorizedWhatsappInstallation(request)
-    if (whatsapp) {
-      installation = { id: String(whatsapp.store.installation_id), fresh: existingInstallationId(request) !== whatsapp.store.installation_id }
-    } else {
-      const authorized = await authorizedInstallation(request)
-      if (!authorized.installation || !authorized.context.authorized) return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
-      if (authorized.context.mode === 'staff' && !authorized.context.staff?.permissions.has('inventory.view')) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
-      installation = authorized.installation
-    }
+  const whatsapp = await authorizedWhatsappInstallation(request)
+  if (!whatsapp && request.cookies.get(BALCAO_SESSION_COOKIE)?.value) return whatsappSessionEnded()
+  if (whatsapp) {
+    installation = { id: String(whatsapp.store.installation_id), fresh: existingInstallationId(request) !== whatsapp.store.installation_id }
+  } else if (accountsEnforced()) {
+    const authorized = await authorizedInstallation(request)
+    if (!authorized.installation || !authorized.context.authorized) return NextResponse.json({ ok: false, error: 'not_authorized' }, { status: 401 })
+    if (authorized.context.mode === 'staff' && !authorized.context.staff?.permissions.has('inventory.view')) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+    installation = authorized.installation
   }
 
   const supabase = createInventoryCloudClient()
@@ -141,8 +151,9 @@ export async function PUT(request: NextRequest) {
   let before: StoreData = { products: [], sales: [], movements: [], scaleRule: undefined }
   const supabase = createInventoryCloudClient()
 
-  if (accountsEnforced()) {
-    const whatsapp = await authorizedWhatsappInstallation(request)
+  const whatsapp = await authorizedWhatsappInstallation(request)
+  if (!whatsapp && request.cookies.get(BALCAO_SESSION_COOKIE)?.value) return whatsappSessionEnded()
+  if (whatsapp || accountsEnforced()) {
     if (whatsapp) {
       installation = { id: String(whatsapp.store.installation_id), fresh: existingInstallationId(request) !== whatsapp.store.installation_id }
       whatsappStore = {
