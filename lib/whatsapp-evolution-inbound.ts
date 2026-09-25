@@ -2,7 +2,7 @@
 import 'server-only'
 
 import { EVOLUTION_MEDIA_PREFIX } from '@/lib/rafa-media'
-import { lastOutboundWasTextMenu, normalizePhone } from '@/lib/whatsapp-evolution'
+import { lastOutboundWasTextMenu, normalizePhone, RAFA_MAIN_MENU } from '@/lib/whatsapp-evolution'
 
 type JsonRecord = Record<string, any>
 
@@ -76,10 +76,11 @@ export async function evolutionToCloudValue(data: JsonRecord): Promise<{ value: 
   if (button) {
     out = { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: button } }
   } else if (text !== null) {
-    // Fallback do menu em texto: "1", "2", "3" viram clique no botão correspondente,
-    // mas só se a última mensagem enviada a esse contato foi o menu em texto.
+    // Número sozinho vira clique, sem passar pela IA:
+    // - se a última mensagem foi uma lista (menu, Sim/Não, escolha de loja), vale a opção dela;
+    // - senão, 1 a 4 são sempre o menu principal (vender, ler código, prateleira, subir estoque).
     const choice = text.trim().match(/^([1-9])\s*$/)
-    const menu = choice ? await lastOutboundWasTextMenu(phone) : null
+    const menu = choice ? (await lastOutboundWasTextMenu(phone)) || RAFA_MAIN_MENU : null
     const picked = menu?.[Number(choice?.[1]) - 1]
     out = picked
       ? { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: picked.id, title: picked.title } } }

@@ -220,9 +220,9 @@ export async function enqueueWhatsApp(input: {
 
   // Toda resposta em texto é seguida por uma mensagem separada com o menu principal: o lojista
   // nunca fica sem próximo passo e responder 1/2/3 funciona a qualquer momento, sem prazo.
-  // noMenu=true para mensagens que aguardam resposta (pergunta aberta ou confirmação Sim/Não).
-  // Desligado por padrão: o menu só aparece no cumprimento, quando pedem "menu" ou em EVOLUTION_AUTO_MENU=on.
-  if (input.kind === 'text' && !input.noMenu && process.env.EVOLUTION_AUTO_MENU === 'on') {
+  // noMenu=true só para o pedido de confirmação (1 = Sim, 2 = Não), para os números não conflitarem.
+  // Ligado por padrão; EVOLUTION_AUTO_MENU=off desliga.
+  if (input.kind === 'text' && !input.noMenu && process.env.EVOLUTION_AUTO_MENU !== 'off') {
     const sent = await enqueueWhatsApp({ ...input, noMenu: true })
     if (!sent.ok) return sent
     await enqueueWhatsApp({
