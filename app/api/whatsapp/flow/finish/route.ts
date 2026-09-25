@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       : 'Pronto. Operação concluída.\n— Rafa'
 
   if (body.keepOpen && body.status === 'success') {
-    const sent = await sendText(claims.wa_id, text, { noMenu: true })
+    const sent = await sendText(claims.wa_id, text)
     if (!sent.ok) return NextResponse.json({ ok: false, error: sent.error }, { status: 502 })
     return NextResponse.json({ ok: true, open: true })
   }
