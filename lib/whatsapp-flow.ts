@@ -49,7 +49,7 @@ export function formatWhatsAppFlowSummary(summary: WhatsAppFlowSummary) {
   }
 
   if (summary.kind === 'notice') {
-    return 'Não encontrei esse produto no estoque.\n— Rafa'
+    return 'Esse código ainda não está cadastrado. Abri o cadastro no Balcão para você completar.'
   }
 
   if (summary.kind === 'product') {

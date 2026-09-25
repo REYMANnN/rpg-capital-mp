@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto'
 
 import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { loadRafaStore, type RafaChange, type RafaInventoryProduct, type RafaStoreState } from '@/lib/inventory/rafa-store'
+import { getMalvoItem, refreshMalvoItem } from '@/lib/malvo/client'
+import { syncMalvoItem } from '@/lib/malvo/sync'
 import { rafaAiBudgetAvailable, recordAiUsage } from '@/lib/rafa-ai'
 import { askRafaConfirmation } from '@/lib/rafa-confirm'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -241,8 +243,49 @@ async function financeScope(storeId: string) {
   return { admin, businessId: store?.business_id ? String(store.business_id) : null }
 }
 
+// Busca os dados do banco na hora (Malvo): pede atualização ao banco, espera um pouco
+// e puxa contas e movimentações atualizadas antes de responder.
+async function refreshFinanceLive(storeId: string, businessId: string | null) {
+  const admin = createAdminClient()
+  let query = admin.from('balcao_finance_connections').select('provider,provider_item_id,status').eq('provider', 'malvo')
+  query = businessId ? query.or(`store_id.eq.${storeId},business_id.eq.${businessId}`) : query.eq('store_id', storeId)
+  const { data: connections } = await query
+  const items = (connections || []).filter((row) => row.status !== 'disconnected' && row.provider_item_id).map((row) => String(row.provider_item_id))
+  if (!items.length) return { conectado: false }
+
+  const startedAt = Date.now()
+  const results = await Promise.all(items.map(async (itemId) => {
+    let refreshed = false
+    try {
+      await refreshMalvoItem(itemId)
+      for (let waited = 0; waited < 10_000; waited += 2_000) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000))
+        const item = await getMalvoItem(itemId)
+        const updatedAt = item?.lastUpdatedAt ? new Date(item.lastUpdatedAt).getTime() : 0
+        if (item?.status === 'UPDATED' && updatedAt >= startedAt - 5_000) { refreshed = true; break }
+        if (['LOGIN_ERROR', 'OUTDATED', 'WAITING_USER_INPUT'].includes(String(item?.status))) break
+      }
+    } catch (error) {
+      console.error('Rafa Malvo refresh failed', itemId, error instanceof Error ? error.message : error)
+    }
+    try {
+      await syncMalvoItem({ itemId })
+    } catch (error) {
+      console.error('Rafa Malvo sync failed', itemId, error instanceof Error ? error.message : error)
+      return { itemId, refreshed, synced: false }
+    }
+    return { itemId, refreshed, synced: true }
+  }))
+  return {
+    conectado: true,
+    atualizado_agora: results.some((row) => row.refreshed),
+    sincronizado: results.some((row) => row.synced),
+  }
+}
+
 async function bankBalance(storeId: string) {
   const { admin, businessId } = await financeScope(storeId)
+  const live = await refreshFinanceLive(storeId, businessId)
   let query = admin.from('balcao_finance_accounts').select('institution_name,account_name,account_type,balance_cents,status,last_synced_at')
   query = businessId ? query.or(`store_id.eq.${storeId},business_id.eq.${businessId}`) : query.eq('store_id', storeId)
   const { data, error } = await query
@@ -250,6 +293,9 @@ async function bankBalance(storeId: string) {
   const accounts = (data || []).filter((row) => row.status !== 'disconnected')
   if (!accounts.length) return { contas: [], observacao: 'Nenhuma conta bancária conectada a esta loja.' }
   return {
+    consulta_ao_banco: live.conectado
+      ? live.atualizado_agora ? 'dados atualizados agora com o banco' : live.sincronizado ? 'banco consultado agora; o banco ainda não liberou movimentações mais novas que as abaixo' : 'não consegui falar com o banco agora; estes são os últimos dados recebidos'
+      : 'sem conexão bancária ativa',
     saldo_total: money(accounts.reduce((sum, row) => sum + Number(row.balance_cents || 0), 0)),
     contas: accounts.map((row) => ({
       banco: row.institution_name,
@@ -263,6 +309,7 @@ async function bankBalance(storeId: string) {
 
 async function bankStatement(storeId: string, args: any) {
   const { admin, businessId } = await financeScope(storeId)
+  const live = await refreshFinanceLive(storeId, businessId)
   const range = periodRange(String(args?.periodo || '30dias'), args?.de, args?.ate)
   let query = admin.from('balcao_finance_transactions')
     .select('posted_at,amount_cents,description,counterparty_name,category,is_internal_transfer')
@@ -286,9 +333,19 @@ async function bankStatement(storeId: string, args: any) {
   const outflow = rows.filter((row) => Number(row.amount_cents) < 0).reduce((sum, row) => sum + Number(row.amount_cents), 0)
   const byCategory = new Map<string, number>()
   for (const row of rows) if (Number(row.amount_cents) < 0) byCategory.set(row.category || 'sem categoria', (byCategory.get(row.category || 'sem categoria') || 0) + Number(row.amount_cents))
+  const byOrigin = new Map<string, number>()
+  for (const row of rows) {
+    if (Number(row.amount_cents) <= 0) continue
+    const origin = String(row.counterparty_name || row.description || 'não identificado').slice(0, 60)
+    byOrigin.set(origin, (byOrigin.get(origin) || 0) + Number(row.amount_cents))
+  }
   return {
+    consulta_ao_banco: live.conectado
+      ? live.atualizado_agora ? 'dados atualizados agora com o banco' : live.sincronizado ? 'banco consultado agora' : 'não consegui falar com o banco agora; últimos dados recebidos'
+      : 'sem conexão bancária ativa',
     periodo: range.label,
     lancamentos: rows.length,
+    entradas_por_origem: [...byOrigin.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([origem, cents]) => ({ origem, total: money(cents) })),
     total_entradas: money(inflow),
     total_saidas: money(Math.abs(outflow)),
     resultado: money(inflow + outflow),
@@ -447,8 +504,8 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'gerar_link',
-      description: 'Gera o link do Balcão para vender, ler código de barras ou abrir a prateleira (estoque).',
-      parameters: { type: 'object', properties: { fluxo: { type: 'string', enum: ['vender', 'ler-codigo', 'prateleira'] } }, required: ['fluxo'] },
+      description: 'Gera o link do Balcão: vender (caixa com câmera), ler-codigo (ler um produto e ver/editar o perfil), prateleira (lista de todos os produtos com busca) ou entrada (subir estoque por código do produto ou nota fiscal).',
+      parameters: { type: 'object', properties: { fluxo: { type: 'string', enum: ['vender', 'ler-codigo', 'prateleira', 'entrada'] } }, required: ['fluxo'] },
     },
   },
   {
@@ -504,13 +561,40 @@ function systemPrompt(storeName: string, otherStores: number) {
     'Português do Brasil, simples e direto, como uma funcionária de confiança. Até 6 linhas, texto corrido ou lista curta com "•". Sem markdown, sem asteriscos, sem títulos. Não assine a mensagem.',
     'Nunca invente números, produtos, preços, estoques ou saldos. Se a ferramenta não trouxer o dado, diga que não tem essa informação.',
     'Ao citar produto, use o nome completo e o EAN como vieram da ferramenta. Valores sempre em reais (R$).',
-    'Saldo e extrato: diga de qual banco é e a data da última atualização que veio da ferramenta (os dados do banco não são em tempo real).',
+    'Saldo e extrato: as ferramentas consultam o banco na hora. Responda com o valor e o banco. Só mencione data ou atraso se a ferramenta disser que não conseguiu atualizar com o banco.',
+    '"Quanto ganhei/entrou hoje": use extrato com periodo hoje e tipo entradas, e diga o total e de onde veio (entradas_por_origem).',
+    'Links: se pedirem para abrir ou ir para vendas/caixa, ler código, prateleira/estoque ou subir estoque, mande o link com gerar_link (uma linha explicando + o link).',
+    'Se pedirem para "ver o estoque" sem dizer como, pergunte em uma linha: "Te conto aqui ou te mando o link da prateleira?".',
     'Consultas (estoque, preço, vendas, saldo, extrato), links e troca de loja: faça direto, sem pedir confirmação.',
     'Alterações (preço, estoque, entrada, venda, cadastrar ou remover produto): busque o produto e chame propor_alteracoes. Nunca diga que já alterou: quem confirma é o lojista, com sim ou não.',
     'Se a busca achar mais de um produto possível para uma alteração, pergunte qual é, listando nome e EAN.',
     'Se faltar dado (preço, custo, EAN para cadastrar), pergunte só o que falta.',
     'Se perguntarem quem você é ou o que faz: diga que é a Rafa, da RPG Capital, e que consulta estoque, preços, vendas e banco da loja, e muda preço, estoque e produtos com confirmação.',
     'Se o assunto não tiver a ver com a loja, responda em uma linha e volte para a loja.',
+  ].join('\n')
+}
+
+// Catálogo compacto no prompt: a maioria das perguntas de preço/estoque é respondida
+// sem chamar ferramenta (uma ida ao modelo em vez de duas ou três).
+const CATALOG_LIMIT = 300
+
+function catalogBlock(state: RafaStoreState) {
+  const products = activeProducts(state)
+  if (!products.length) return 'CATÁLOGO DA LOJA: nenhum produto cadastrado.'
+  if (products.length > CATALOG_LIMIT) return `CATÁLOGO DA LOJA: ${products.length} produtos (grande demais para listar aqui; use buscar_produtos).`
+  const lines = products.map((product) => [
+    product.id,
+    product.name,
+    product.barcode,
+    money(product.priceCents),
+    money(Math.round(product.averageCostCents || 0)),
+    units(product.stockMilli),
+    units(product.minStockMilli || 0),
+  ].join(' | '))
+  return [
+    `CATÁLOGO DA LOJA (${products.length} produtos, dados de agora). Colunas: id | nome | EAN | preço | custo médio | estoque | estoque mínimo`,
+    ...lines,
+    'Use este catálogo para responder preço e estoque direto e para pegar o id ao propor alterações (não precisa chamar buscar_produtos).',
   ].join('\n')
 }
 
@@ -585,17 +669,17 @@ export function cleanReply(text: string) {
 export type RafaAgentOutcome = 'replied' | 'confirmation' | 'budget' | 'error'
 
 export async function runRafaAgent(input: { waId: string; storeId: string; text: string; inReplyTo?: string }): Promise<RafaAgentOutcome> {
-  const budget = await rafaAiBudgetAvailable(input.storeId)
-  if (!budget.allowed) return 'budget'
-
-  const { store, state } = await loadRafaStore(input.storeId)
-  const [history, stores] = await Promise.all([
+  const [budget, loaded, history, stores] = await Promise.all([
+    rafaAiBudgetAvailable(input.storeId),
+    loadRafaStore(input.storeId),
     recentHistory(input.waId).catch(() => []),
     phoneStores(input.waId).catch(() => []),
   ])
+  if (!budget.allowed) return 'budget'
+  const { store, state } = loaded
   const otherStores = stores.filter((item) => item.id !== input.storeId).length
   const messages: any[] = [
-    { role: 'system', content: systemPrompt(store.displayName || 'sua loja', otherStores) },
+    { role: 'system', content: `${systemPrompt(store.displayName || 'sua loja', otherStores)}\n\n${catalogBlock(state)}` },
     ...history,
     { role: 'user', content: input.text.slice(0, 2000) },
   ]

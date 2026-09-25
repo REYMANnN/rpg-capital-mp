@@ -1,5 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { SignJWT, jwtVerify } from 'jose'
+
+import { createAdminClient } from '@/lib/supabase/admin'
 
 import { isBalcaoFlow, type BalcaoFlow } from './whatsapp-flows'
 
@@ -8,7 +10,8 @@ const SESSION_AUDIENCE = 'balcao-whatsapp-session'
 const ISSUER = 'rpg-capital'
 export const BALCAO_SESSION_COOKIE = 'rpg_balcao_wa_session'
 export const BALCAO_LINK_TTL_SECONDS = 10 * 60
-export const BALCAO_SESSION_TTL_SECONDS = 30 * 60
+// A sessão aberta pelo link dura o expediente; o link em si morre quando outro mais novo é enviado.
+export const BALCAO_SESSION_TTL_SECONDS = 12 * 60 * 60
 
 type BaseClaims = {
   wa_id: string
@@ -52,7 +55,8 @@ function normalizeStoreId(value: string | null | undefined) {
   return value
 }
 
-export async function createBalcaoDeepLink(
+// Link antigo (JWT com prazo) — mantido para os links /b/<fluxo> já enviados.
+export async function createBalcaoJwtLink(
   input: { waId: string; storeId?: string | null; fluxo: BalcaoFlow },
   ttlSeconds = BALCAO_LINK_TTL_SECONDS,
 ) {
@@ -67,12 +71,66 @@ export async function createBalcaoDeepLink(
     .setIssuedAt()
     .setExpirationTime(Math.floor(Date.now() / 1000) + ttlSeconds)
     .sign(secret())
+  return { token, jti, url: `https://www.rpgcapital.com.br/b/${input.fluxo}?t=${encodeURIComponent(token)}` }
+}
 
-  return {
-    token,
-    jti,
-    url: `https://www.rpgcapital.com.br/b/${input.fluxo}?t=${encodeURIComponent(token)}`,
+const SHORT_ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function shortCode(length = 8) {
+  const bytes = randomBytes(length)
+  return [...bytes].map((byte) => SHORT_ALPHABET[byte % SHORT_ALPHABET.length]).join('')
+}
+
+// Link curto do Balcão: https://www.rpgcapital.com.br/l/<code>.
+// Sem prazo fixo. Cada link novo do mesmo número substitui (revoga) os anteriores,
+// e o link morre quando o fluxo é encerrado no Balcão.
+export async function createBalcaoDeepLink(
+  input: { waId: string; storeId?: string | null; fluxo: BalcaoFlow },
+) {
+  const wa_id = normalizeWaId(input.waId)
+  const store_id = normalizeStoreId(input.storeId) ?? null
+  const admin = createAdminClient()
+  let code = ''
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    code = shortCode()
+    const { error } = await admin.from('wa_links').insert({ code, wa_id, store_id, fluxo: input.fluxo })
+    if (!error) break
+    if (error.code !== '23505') throw error
+    code = ''
   }
+  if (!code) throw new Error('short_link_failed')
+  await admin.from('wa_links')
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: 'replaced' })
+    .eq('wa_id', wa_id)
+    .is('revoked_at', null)
+    .neq('code', code)
+  return { token: code, jti: code, url: `https://www.rpgcapital.com.br/l/${code}` }
+}
+
+export type ShortLinkRow = { code: string; wa_id: string; store_id: string | null; fluxo: BalcaoFlow; revoked_at: string | null; revoked_reason: string | null }
+
+export async function readShortLink(code: string): Promise<ShortLinkRow | null> {
+  if (!/^[A-Za-z0-9]{6,16}$/.test(code)) return null
+  const admin = createAdminClient()
+  const { data, error } = await admin.from('wa_links').select('code,wa_id,store_id,fluxo,revoked_at,revoked_reason').eq('code', code).maybeSingle()
+  if (error) throw error
+  if (!data || !isBalcaoFlow(data.fluxo)) return null
+  return data as ShortLinkRow
+}
+
+export async function revokeShortLink(code: string, reason: string) {
+  const admin = createAdminClient()
+  await admin.from('wa_links').update({ revoked_at: new Date().toISOString(), revoked_reason: reason }).eq('code', code).is('revoked_at', null)
+}
+
+export async function createBalcaoSessionFromShortLink(link: ShortLinkRow, ttlSeconds = BALCAO_SESSION_TTL_SECONDS) {
+  return new SignJWT({ wa_id: link.wa_id, ...(link.store_id ? { store_id: link.store_id } : {}), fluxo: link.fluxo, jti: link.code })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setIssuer(ISSUER)
+    .setAudience(SESSION_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(Math.floor(Date.now() / 1000) + ttlSeconds)
+    .sign(secret())
 }
 
 export async function verifyBalcaoDeepLink(token: string, expectedFlow: BalcaoFlow): Promise<BalcaoLinkClaims> {

@@ -36,6 +36,7 @@ export const RAFA_MAIN_MENU: EvoButton[] = [
   { id: 'vender', title: 'Vender' },
   { id: 'ler_codigo', title: 'Ler código' },
   { id: 'prateleira', title: 'Prateleira' },
+  { id: 'entrada', title: 'Subir estoque' },
 ]
 
 function stripSignature(body: string) {
@@ -104,7 +105,17 @@ export async function recordConnectionState(state: string, statusReason?: number
   }, { onConflict: 'instance' })
 }
 
+let connectedCache: { value: boolean; at: number } | null = null
+
 async function isConnected(): Promise<boolean> {
+  // Cache curto em memória: evita uma ida ao banco por mensagem na mesma execução.
+  if (connectedCache && Date.now() - connectedCache.at < 30_000) return connectedCache.value
+  const value = await readConnected()
+  connectedCache = { value, at: Date.now() }
+  return value
+}
+
+async function readConnected(): Promise<boolean> {
   const admin = createAdminClient()
   const { data } = await admin.from('wa_instance_state').select('state,updated_at').eq('instance', evolutionInstance()).maybeSingle()
   // Estado recente registrado via CONNECTION_UPDATE vale; senão, pergunta pra Evolution.
@@ -226,6 +237,9 @@ export async function enqueueWhatsApp(input: {
   const admin = createAdminClient()
   const idempotency_key = idempotencyKeyFor({ to, kind: input.kind, payload: input.payload, inReplyTo: input.inReplyTo, key: input.idempotencyKey })
 
+  // Sessão caída → fica na fila; o worker envia quando reconectar.
+  // Conectado → a linha já nasce em "sending" (sem passo extra de claim) e sai na hora.
+  const connected = await isConnected()
   const { data: inserted, error } = await admin.from('wa_outbox').insert({
     idempotency_key,
     instance: evolutionInstance(),
@@ -233,6 +247,7 @@ export async function enqueueWhatsApp(input: {
     kind: input.kind,
     payload: input.payload,
     in_reply_to: input.inReplyTo ?? null,
+    status: connected ? 'sending' : 'queued',
   }).select('*').maybeSingle()
 
   if (error) {
@@ -241,21 +256,37 @@ export async function enqueueWhatsApp(input: {
     return { ok: false, error: `outbox_insert_failed: ${error.message}` }
   }
   if (!inserted) return { ok: false, error: 'outbox_insert_failed' }
+  if (!connected) return { ok: true, data: { outboxId: inserted.id, queued: true } }
 
-  // Sessão caída → fica na fila; o worker envia quando reconectar.
-  if (!(await isConnected())) return { ok: true, data: { outboxId: inserted.id, queued: true } }
-
-  const { data: claimed } = await admin.from('wa_outbox')
-    .update({ status: 'sending', updated_at: new Date().toISOString() })
-    .eq('id', inserted.id)
-    .eq('status', 'queued')
-    .select('*')
-    .maybeSingle()
-  if (!claimed) return { ok: true, data: { outboxId: inserted.id, queued: true } }
-
-  const result = await dispatch(claimed as OutboxRow)
+  let result = await dispatch(inserted as OutboxRow)
+  if (!result.ok) {
+    // Uma nova tentativa rápida antes de deixar para o worker (que roda a cada minuto).
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    const { data: again } = await admin.from('wa_outbox')
+      .update({ status: 'sending', updated_at: new Date().toISOString() })
+      .eq('id', inserted.id)
+      .eq('status', 'queued')
+      .select('*')
+      .maybeSingle()
+    if (again) result = await dispatch(again as OutboxRow)
+  }
   // Falha de envio não se perde: a linha volta pra fila com backoff.
   return result.ok ? result : { ok: true, data: { outboxId: inserted.id, queued: true, lastError: result.error } }
+}
+
+// "Digitando..." no WhatsApp enquanto a Rafa prepara a resposta. Não espera a Evolution
+// (ela segura a requisição pelo tempo do delay); só dispara.
+export function evoTyping(phone: string, seconds = 20) {
+  const base = process.env.EVOLUTION_API_URL?.trim().replace(/\/+$/, '')
+  const key = process.env.EVOLUTION_API_KEY?.trim()
+  if (!base || !key) return
+  void fetch(`${base}/chat/sendPresence/${encodeURIComponent(evolutionInstance())}`, {
+    method: 'POST',
+    headers: { apikey: key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ number: normalizePhone(phone), presence: 'composing', delay: seconds * 1000 }),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(1500),
+  }).catch(() => {})
 }
 
 // ---------- Status vindo do webhook ----------
