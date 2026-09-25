@@ -28,7 +28,21 @@ type StockSummary = {
   quantity?: string
 }
 
-export type WhatsAppFlowSummary = SaleSummary | ProductSummary | StockSummary | NoticeSummary
+// Fechamento do caixa aberto pelo link (várias vendas na mesma sessão).
+type CaixaSummary = {
+  kind: 'caixa'
+  salesCount: number
+  totalCents: number
+}
+
+// Várias entradas lidas em sequência no /r/entrada.
+type EntryBatchSummary = {
+  kind: 'entrada'
+  items: Array<{ name: string; quantity: string }>
+  totalCostCents: number
+}
+
+export type WhatsAppFlowSummary = SaleSummary | ProductSummary | StockSummary | NoticeSummary | CaixaSummary | EntryBatchSummary
 
 const money = (cents: number) => (Number(cents || 0) / 100).toLocaleString('pt-BR', {
   style: 'currency',
@@ -46,6 +60,17 @@ export function formatWhatsAppFlowSummary(summary: WhatsAppFlowSummary) {
   if (summary.kind === 'sale') {
     const items = summary.items.slice(0, 20).map((item) => `• ${item.quantity} × ${item.name}`).join('\n')
     return `Venda concluída.\n${items}\nTotal: ${money(summary.totalCents)}\nPagamento: ${paymentLabel(summary.paymentMethod)}\n— Rafa`
+  }
+
+  if (summary.kind === 'caixa') {
+    if (!summary.salesCount) return 'Caixa fechado. Nenhuma venda nesse período.\n— Rafa'
+    return `Caixa fechado.\nVendas: ${summary.salesCount}\nTotal: ${money(summary.totalCents)}\n— Rafa`
+  }
+
+  if (summary.kind === 'entrada') {
+    if (!summary.items.length) return 'Entrada encerrada sem itens.\n— Rafa'
+    const items = summary.items.slice(0, 20).map((item) => `• ${item.quantity} × ${item.name}`).join('\n')
+    return `Estoque atualizado.\n${items}\nCusto total: ${money(summary.totalCostCents)}\n— Rafa`
   }
 
   if (summary.kind === 'notice') {

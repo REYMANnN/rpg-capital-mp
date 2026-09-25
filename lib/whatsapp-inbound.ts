@@ -8,7 +8,7 @@ import { classifyWhatsAppText, replyForIntent, type WhatsAppIntent } from '@/lib
 import { sendMenu } from '@/lib/whatsapp-menu'
 import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { flowIntent, interactiveButtonId, interactiveFlow } from '@/lib/whatsapp-interactive'
-import { type BalcaoFlow } from '@/lib/whatsapp-flows'
+import { directFlowRequest, FLOW_HINT, isGreeting, isMenuRequest } from '@/lib/whatsapp-flows'
 import { classifyRafaImage, extractRafaActions, rafaAiBudgetAvailable, transcribeRafaAudio, type RafaMediaClass } from '@/lib/rafa-ai'
 import { appliedMessage, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
 import { appendInvoiceMedia, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
@@ -98,12 +98,6 @@ function rafaAgentEnabled() {
   return flag === 'on' || isEvolutionProvider()
 }
 
-const FLOW_HINT: Record<BalcaoFlow, string> = {
-  vender: 'Vender: o caixa abre com a câmera pronta. Leia os produtos e finalize a venda.',
-  'ler-codigo': 'Ler código: aponte a câmera para o código de barras e veja o produto (dá para editar).',
-  prateleira: 'Prateleira: todos os seus produtos, com busca.',
-  entrada: 'Subir estoque: leia o código do produto ou a chave da nota fiscal.',
-}
 
 const BUDGET_MESSAGE = 'O limite de respostas livres de hoje foi atingido. Os botões continuam funcionando normalmente; respostas livres voltam amanhã.'
 
@@ -234,6 +228,23 @@ export async function processValue(value: JsonRecord) {
         : await sendText(fromPhone, 'Não encontrei esse produto na sua loja.\n— Rafa', { inReplyTo: wamid })
       if (!result.ok) throw new Error(result.error)
       return
+    }
+
+    // Atalhos sem IA (respondem na hora): cumprimento/menu e pedido direto de link.
+    if (rafaAgentEnabled() && (isGreeting(text) || isMenuRequest(text))) {
+      const result = await sendMenu(fromPhone, isGreeting(text) ? 'Oi! Sou a Rafa. Pode me perguntar sobre estoque, preços, vendas ou banco, ou escolher uma opção:' : undefined, { inReplyTo: wamid })
+      if (!result.ok) throw new Error(result.error)
+      return
+    }
+    const directFlow = rafaAgentEnabled() ? directFlowRequest(text) : null
+    if (directFlow) {
+      const resolved = storeId ? { status: 'ok' as const, storeId } : await resolveRafaStore(fromPhone)
+      if (resolved.status === 'ok') {
+        const link = await createBalcaoDeepLink({ waId: fromPhone, storeId: resolved.storeId, fluxo: directFlow })
+        const result = await sendText(fromPhone, `${FLOW_HINT[directFlow]}\n${link.url}`, { inReplyTo: wamid })
+        if (!result.ok) throw new Error(result.error)
+        return
+      }
     }
 
     if (rafaAgentEnabled()) {
