@@ -2,13 +2,13 @@ import 'server-only'
 
 import { createClient } from '@supabase/supabase-js'
 import { markAsRead, sendText } from '@/lib/whatsapp'
-import { isEvolutionProvider } from '@/lib/whatsapp-evolution'
+import { evoTyping, isEvolutionProvider } from '@/lib/whatsapp-evolution'
 import { askStorePick, bindRafaStore, phoneStores, resolveRafaStore, runRafaAgent, STORE_PICK_PREFIX } from '@/lib/rafa-agent'
 import { classifyWhatsAppText, replyForIntent, type WhatsAppIntent } from '@/lib/whatsapp-router'
 import { sendMenu } from '@/lib/whatsapp-menu'
 import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { flowIntent, interactiveButtonId, interactiveFlow } from '@/lib/whatsapp-interactive'
-import { FLOW_LABEL } from '@/lib/whatsapp-flows'
+import { type BalcaoFlow } from '@/lib/whatsapp-flows'
 import { classifyRafaImage, extractRafaActions, rafaAiBudgetAvailable, transcribeRafaAudio, type RafaMediaClass } from '@/lib/rafa-ai'
 import { appliedMessage, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
 import { appendInvoiceMedia, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
@@ -96,6 +96,13 @@ function rafaAgentEnabled() {
   const flag = process.env.RAFA_AGENT?.trim().toLowerCase()
   if (flag === 'off') return false
   return flag === 'on' || isEvolutionProvider()
+}
+
+const FLOW_HINT: Record<BalcaoFlow, string> = {
+  vender: 'Vender: o caixa abre com a câmera pronta. Leia os produtos e finalize a venda.',
+  'ler-codigo': 'Ler código: aponte a câmera para o código de barras e veja o produto (dá para editar).',
+  prateleira: 'Prateleira: todos os seus produtos, com busca.',
+  entrada: 'Subir estoque: leia o código do produto ou a chave da nota fiscal.',
 }
 
 const BUDGET_MESSAGE = 'O limite de respostas livres de hoje foi atingido. Os botões continuam funcionando normalmente; respostas livres voltam amanhã.'
@@ -373,6 +380,10 @@ export async function processValue(value: JsonRecord) {
     let intentValue: string | null = null
     const now = new Date().toISOString()
 
+    // Evolution: marca como lida e mostra "digitando..." na hora, antes de pensar a resposta.
+    const earlyRead = isEvolutionProvider() ? markAsRead(wamid, fromPhone) : null
+    if (isEvolutionProvider()) evoTyping(fromPhone)
+
     const buttonId = interactiveButtonId(message)
     const flow = interactiveFlow(message)
 
@@ -415,7 +426,7 @@ export async function processValue(value: JsonRecord) {
         const link = await createBalcaoDeepLink({ waId: fromPhone, storeId, fluxo: flow })
         const result = await sendText(
           fromPhone,
-          `${FLOW_LABEL[flow]}: abra o Balcão por este link (válido por 10 minutos):\n${link.url}\n— Rafa`,
+          `${FLOW_HINT[flow]}\n${link.url}`,
           { inReplyTo: wamid },
         )
         if (!result.ok) throw new Error(result.error)
@@ -556,7 +567,7 @@ export async function processValue(value: JsonRecord) {
     }
 
     await attempt('mark_read', async () => {
-      const result = await markAsRead(wamid, fromPhone)
+      const result = await (earlyRead ?? markAsRead(wamid, fromPhone))
       if (!result.ok) throw new Error(result.error)
     })
 

@@ -23,6 +23,9 @@ services:
       DATABASE_SAVE_DATA_CHATS: "true"
       DATABASE_SAVE_DATA_HISTORIC: "false"
       DATABASE_SAVE_DATA_LABELS: "false"
+      # Guarda a checagem "número tem WhatsApp" por 7 dias: tira uma ida ao WhatsApp de cada envio.
+      DATABASE_SAVE_IS_ON_WHATSAPP: "true"
+      DATABASE_SAVE_IS_ON_WHATSAPP_DAYS: "7"
       CACHE_REDIS_ENABLED: "true"
       CACHE_REDIS_URI: redis://redis:6379/6
       CACHE_REDIS_PREFIX_KEY: evolution

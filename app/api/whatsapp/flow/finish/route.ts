@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { BALCAO_SESSION_COOKIE, verifyBalcaoSessionToken } from '@/lib/deeplink'
+import { BALCAO_SESSION_COOKIE, revokeShortLink, verifyBalcaoSessionToken } from '@/lib/deeplink'
+import { isEvolutionProvider } from '@/lib/whatsapp-evolution'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatWhatsAppFlowSummary, type WhatsAppFlowSummary } from '@/lib/whatsapp-flow'
 import { sendMenu } from '@/lib/whatsapp-menu'
@@ -12,6 +13,8 @@ export const dynamic = 'force-dynamic'
 type FinishBody = {
   status: 'success' | 'cancelled'
   summary?: WhatsAppFlowSummary
+  // true: só avisa no WhatsApp (ex.: produto lido) e mantém o Balcão aberto para editar.
+  keepOpen?: boolean
 }
 
 export async function POST(request: NextRequest) {
@@ -51,11 +54,23 @@ export async function POST(request: NextRequest) {
       ? formatWhatsAppFlowSummary(body.summary)
       : 'Pronto. Operação concluída.\n— Rafa'
 
+  if (body.keepOpen && body.status === 'success') {
+    const sent = await sendText(claims.wa_id, text, { noMenu: true })
+    if (!sent.ok) return NextResponse.json({ ok: false, error: sent.error }, { status: 502 })
+    return NextResponse.json({ ok: true, open: true })
+  }
+
+  // O fluxo terminou: o link que abriu esta sessão para de funcionar.
+  await revokeShortLink(claims.jti, 'finished').catch(() => {})
+
+  // No Evolution o menu já vem automaticamente depois da mensagem.
   const sent = await sendText(claims.wa_id, text)
   if (!sent.ok) return NextResponse.json({ ok: false, error: sent.error }, { status: 502 })
 
-  const menu = await sendMenu(claims.wa_id)
-  if (!menu.ok) return NextResponse.json({ ok: false, error: menu.error }, { status: 502 })
+  if (!isEvolutionProvider()) {
+    const menu = await sendMenu(claims.wa_id)
+    if (!menu.ok) return NextResponse.json({ ok: false, error: menu.error }, { status: 502 })
+  }
 
   const now = new Date().toISOString()
   const { error: updateError } = await admin.from('whatsapp_sessions').update({

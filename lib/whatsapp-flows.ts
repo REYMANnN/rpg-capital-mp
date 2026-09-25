@@ -1,4 +1,4 @@
-export const BALCAO_FLOWS = ['vender', 'ler-codigo', 'prateleira'] as const
+export const BALCAO_FLOWS = ['vender', 'ler-codigo', 'prateleira', 'entrada'] as const
 
 export type BalcaoFlow = (typeof BALCAO_FLOWS)[number]
 
@@ -10,4 +10,5 @@ export const FLOW_LABEL: Record<BalcaoFlow, string> = {
   vender: 'Vender',
   'ler-codigo': 'Ler código',
   prateleira: 'Prateleira',
+  entrada: 'Subir estoque',
 }

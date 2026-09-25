@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { createBalcaoDeepLink, redeemBalcaoDeepLink, verifyBalcaoDeepLink } from '../../lib/deeplink.ts'
+import { createBalcaoJwtLink, redeemBalcaoDeepLink, verifyBalcaoDeepLink } from '../../lib/deeplink.ts'
 import { routeShelfScan } from '../../lib/inventory/scanRouting.ts'
 import { interactiveFlow, flowIntent } from '../../lib/whatsapp-interactive.ts'
 import { formatWhatsAppFlowSummary } from '../../lib/whatsapp-flow.ts'
@@ -17,19 +17,19 @@ test('interactive button ids map to the three Rafa flows', () => {
 })
 
 test('deep link expires after configured TTL', async () => {
-  const { token } = await createBalcaoDeepLink({ waId: '5511999999999', fluxo: 'vender' }, -1)
+  const { token } = await createBalcaoJwtLink({ waId: '5511999999999', fluxo: 'vender' }, -1)
   await assert.rejects(() => verifyBalcaoDeepLink(token, 'vender'), /expired|JWT/i)
 })
 
 test('deep link rejects tampering', async () => {
-  const { token } = await createBalcaoDeepLink({ waId: '5511999999999', fluxo: 'vender' })
+  const { token } = await createBalcaoJwtLink({ waId: '5511999999999', fluxo: 'vender' })
   const last = token.at(-1) === 'a' ? 'b' : 'a'
   const tampered = token.slice(0, -1) + last
   await assert.rejects(() => verifyBalcaoDeepLink(tampered, 'vender'))
 })
 
 test('deep link jti can only be redeemed once', async () => {
-  const { token } = await createBalcaoDeepLink({ waId: '5511999999999', fluxo: 'prateleira' })
+  const { token } = await createBalcaoJwtLink({ waId: '5511999999999', fluxo: 'prateleira' })
   const used = new Set<string>()
   const mark = async (claims: { jti: string }) => {
     if (used.has(claims.jti)) return false
