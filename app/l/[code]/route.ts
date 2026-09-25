@@ -8,6 +8,14 @@ import {
 } from '@/lib/deeplink'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+// Cada fluxo abre a ferramenta feita para o WhatsApp (app/r/*).
+const TOOL_PATH: Record<string, string> = {
+  vender: '/r/vender',
+  'ler-codigo': '/r/ler',
+  prateleira: '/r/prateleira',
+  entrada: '/r/entrada',
+}
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +59,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ cod
     const sessionToken = await createBalcaoSessionFromShortLink(link)
     const destination = invoiceImportId
       ? `/rafa/prateleira?rafa_invoice=${encodeURIComponent(invoiceImportId)}`
-      : `/inventory-v1?wa_flow=${link.fluxo}`
+      : TOOL_PATH[link.fluxo] || `/inventory-v1?wa_flow=${link.fluxo}`
     const response = NextResponse.redirect(new URL(destination, request.url))
     response.cookies.set(BALCAO_SESSION_COOKIE, sessionToken, {
       httpOnly: true,

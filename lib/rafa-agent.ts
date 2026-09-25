@@ -12,7 +12,7 @@ import { askRafaConfirmation } from '@/lib/rafa-confirm'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendText } from '@/lib/whatsapp'
 import { enqueueWhatsApp, normalizePhone } from '@/lib/whatsapp-evolution'
-import { isBalcaoFlow } from '@/lib/whatsapp-flows'
+import { FLOW_HINT, isBalcaoFlow } from '@/lib/whatsapp-flows'
 import { isValidGtin } from '@/lib/whatsapp-router'
 
 // Rafa conversacional: responde dúvidas com dados reais da loja (estoque, vendas, banco)
@@ -565,6 +565,7 @@ function systemPrompt(storeName: string, otherStores: number) {
     '"Quanto ganhei/entrou hoje": use extrato com periodo hoje e tipo entradas, e diga o total e de onde veio (entradas_por_origem).',
     'Links: se pedirem para abrir ou ir para vendas/caixa, ler código, prateleira/estoque ou subir estoque, mande o link com gerar_link (uma linha explicando + o link).',
     'Se pedirem para "ver o estoque" sem dizer como, pergunte em uma linha: "Te conto aqui ou te mando o link da prateleira?".',
+    'Se a pessoa mandar só um número de 1 a 4 sem contexto, é o menu: 1 = vender, 2 = ler código, 3 = prateleira, 4 = subir estoque. Chame gerar_link com o fluxo certo.',
     'Consultas (estoque, preço, vendas, saldo, extrato), links e troca de loja: faça direto, sem pedir confirmação.',
     'Alterações (preço, estoque, entrada, venda, cadastrar ou remover produto): busque o produto e chame propor_alteracoes. Nunca diga que já alterou: quem confirma é o lojista, com sim ou não.',
     'Se a busca achar mais de um produto possível para uma alteração, pergunte qual é, listando nome e EAN.',
@@ -725,9 +726,11 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
           case 'gerar_link': {
             const fluxo = String(args.fluxo || '')
             if (!isBalcaoFlow(fluxo)) { result = { erro: 'fluxo inválido' }; break }
+            // O link sai com texto fixo (o modelo não reescreve a URL).
             const link = await createBalcaoDeepLink({ waId: input.waId, storeId: input.storeId, fluxo })
-            result = { url: link.url, validade: '10 minutos' }
-            break
+            const sent = await sendText(input.waId, `${FLOW_HINT[fluxo]}\n${link.url}`, { inReplyTo: input.inReplyTo })
+            if (!sent.ok) throw new Error(sent.error)
+            return 'replied'
           }
           case 'propor_alteracoes': {
             const built = buildRafaChanges(state, args.alteracoes)
