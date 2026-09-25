@@ -2,15 +2,15 @@ import 'server-only'
 
 import { createClient } from '@supabase/supabase-js'
 import { markAsRead, sendText } from '@/lib/whatsapp'
-import { evoTyping, isEvolutionProvider } from '@/lib/whatsapp-evolution'
+import { enqueueWhatsApp, evoTyping, isEvolutionProvider } from '@/lib/whatsapp-evolution'
 import { askStorePick, bindRafaStore, phoneStores, resolveRafaStore, runRafaAgent, STORE_PICK_PREFIX } from '@/lib/rafa-agent'
 import { classifyWhatsAppText, replyForIntent, type WhatsAppIntent } from '@/lib/whatsapp-router'
 import { sendMenu } from '@/lib/whatsapp-menu'
 import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { flowIntent, interactiveButtonId, interactiveFlow } from '@/lib/whatsapp-interactive'
-import { directFlowRequest, FLOW_HINT, isGreeting, isMenuRequest } from '@/lib/whatsapp-flows'
+import { FLOW_HINT } from '@/lib/whatsapp-flows'
 import { classifyRafaImage, extractRafaActions, rafaAiBudgetAvailable, transcribeRafaAudio, type RafaMediaClass } from '@/lib/rafa-ai'
-import { appliedMessage, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
+import { appliedMessage, CONFIRM_NO_ID, CONFIRM_YES_ID, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
 import { appendInvoiceMedia, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
 import { downloadWhatsAppMedia, mediaDataUri, storeInvoiceProof } from '@/lib/rafa-media'
 import { actionToChange, resolveTextProduct } from '@/lib/rafa-products'
@@ -206,7 +206,12 @@ export async function processValue(value: JsonRecord) {
         .maybeSingle()
       if (pending) {
         const result = isEvolutionProvider()
-          ? await sendText(fromPhone, 'pra eu confirmar, responda 1 (Sim) ou 2 (Não).\n— Rafa', { inReplyTo: wamid, noMenu: true })
+          ? await enqueueWhatsApp({
+            to: fromPhone,
+            kind: 'menu_fallback',
+            payload: { body: 'Pra eu confirmar, responda 1 ou 2:', buttons: [{ id: CONFIRM_YES_ID, title: 'Sim' }, { id: CONFIRM_NO_ID, title: 'Não' }] },
+            inReplyTo: wamid,
+          })
           : await sendText(fromPhone, 'preciso que você aperte o botão Sim pra eu confirmar.\n— Rafa', { inReplyTo: wamid })
         if (!result.ok) throw new Error(result.error)
         return
@@ -228,23 +233,6 @@ export async function processValue(value: JsonRecord) {
         : await sendText(fromPhone, 'Não encontrei esse produto na sua loja.\n— Rafa', { inReplyTo: wamid })
       if (!result.ok) throw new Error(result.error)
       return
-    }
-
-    // Atalhos sem IA (respondem na hora): cumprimento/menu e pedido direto de link.
-    if (rafaAgentEnabled() && (isGreeting(text) || isMenuRequest(text))) {
-      const result = await sendMenu(fromPhone, isGreeting(text) ? 'Oi! Sou a Rafa. Pode me perguntar sobre estoque, preços, vendas ou banco, ou escolher uma opção:' : undefined, { inReplyTo: wamid })
-      if (!result.ok) throw new Error(result.error)
-      return
-    }
-    const directFlow = rafaAgentEnabled() ? directFlowRequest(text) : null
-    if (directFlow) {
-      const resolved = storeId ? { status: 'ok' as const, storeId } : await resolveRafaStore(fromPhone)
-      if (resolved.status === 'ok') {
-        const link = await createBalcaoDeepLink({ waId: fromPhone, storeId: resolved.storeId, fluxo: directFlow })
-        const result = await sendText(fromPhone, `${FLOW_HINT[directFlow]}\n${link.url}`, { inReplyTo: wamid })
-        if (!result.ok) throw new Error(result.error)
-        return
-      }
     }
 
     if (rafaAgentEnabled()) {

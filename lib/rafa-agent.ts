@@ -694,9 +694,8 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
       const text = String(reply.content || '').trim()
       if (!text) throw new Error('rafa_agent_empty')
       const body = cleanReply(text)
-      // Pergunta aberta: sem menu depois, para a resposta do lojista (inclusive "1", "2") voltar para a Rafa.
-      const asking = /\?\s*$/.test(body)
-      const sent = await sendText(input.waId, body, { inReplyTo: input.inReplyTo, noMenu: asking })
+      // O menu vem sempre depois da resposta (mensagem separada).
+      const sent = await sendText(input.waId, body, { inReplyTo: input.inReplyTo })
       if (!sent.ok) throw new Error(sent.error)
       return 'replied'
     }
@@ -748,7 +747,7 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
     }
   }
 
-  const sent = await sendText(input.waId, 'Não consegui fechar essa resposta agora. Me pergunta de outro jeito?\n— Rafa', { inReplyTo: input.inReplyTo, noMenu: true })
+  const sent = await sendText(input.waId, 'Não consegui fechar essa resposta agora. Me pergunta de outro jeito?\n— Rafa', { inReplyTo: input.inReplyTo })
   if (!sent.ok) throw new Error(sent.error)
   return 'error'
 }
