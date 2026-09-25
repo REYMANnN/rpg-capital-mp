@@ -190,20 +190,32 @@ export default function InventoryV1() {
     const flow = params.get('wa_flow')
     const linkError = params.get('wa_link_error')
     if (linkError) {
-      fail(linkError === 'expired' ? 'Este link expirou. Volte ao WhatsApp e abra um novo.' : linkError === 'used' ? 'Este link já foi usado. Volte ao WhatsApp e abra um novo.' : 'Este link não é válido.')
+      fail(linkError === 'replaced'
+        ? 'A Rafa já mandou um link mais novo. Use o último link da conversa no WhatsApp.'
+        : linkError === 'finished'
+          ? 'Essa operação já foi encerrada. Peça um novo link para a Rafa no WhatsApp.'
+          : linkError === 'no_store'
+            ? 'Este número ainda não está ligado a uma loja. Fale com a Rafa no WhatsApp.'
+            : 'Este link não é válido. Peça um novo para a Rafa no WhatsApp.')
       return
     }
     if (!isBalcaoFlow(flow)) return
     setWaFlow(flow)
     if (flow === 'vender') {
+      // Caixa com a câmera já aberta: lê o primeiro produto e segue lendo os próximos.
       setTab('checkout')
       setScanTarget('checkout')
       setScannerOpen(true)
     } else if (flow === 'ler-codigo') {
+      // Lê o código e abre o perfil do produto, que pode ser editado.
       setTab('stock')
       setScanTarget('lookup')
       setScannerOpen(true)
+    } else if (flow === 'prateleira') {
+      // Lista de todos os produtos com busca, sem abrir a câmera.
+      setTab('stock')
     } else {
+      // Subir estoque: câmera para ler produto (EAN) ou chave da nota (NF-e).
       setTab('intake')
       setScanTarget('shelf')
       setScannerOpen(true)
@@ -226,6 +238,20 @@ export default function InventoryV1() {
         const response = await fetch('/api/inventory/state', { cache: 'no-store' })
         const result = await response.json()
         if (cancelled) return
+        const viaWhatsApp = isBalcaoFlow(new URLSearchParams(window.location.search).get('wa_flow'))
+        if (result?.error === 'wa_session_ended') {
+          setData(local)
+          setCloud('offline')
+          setWaFlow(null)
+          setScannerOpen(false)
+          fail('Esse link da Rafa não vale mais (ela mandou um mais novo ou a operação foi encerrada). Use o último link da conversa.')
+          return
+        }
+        if (viaWhatsApp && response.ok && result?.ok && !result?.found) {
+          setData(emptyData())
+          setCloud('synced')
+          return
+        }
         if (response.ok && result?.ok && result?.found && validStoreData(result.state)) {
           const remote = { ...result.state, scaleRule: result.state.scaleRule || DEFAULT_RULE }
           setData(remote)
@@ -304,19 +330,20 @@ export default function InventoryV1() {
     setError(message)
   }
 
-  async function finishWhatsAppFlow(status: 'success' | 'cancelled', summary?: WhatsAppFlowSummary) {
+  async function finishWhatsAppFlow(status: 'success' | 'cancelled', summary?: WhatsAppFlowSummary, options?: { keepOpen?: boolean }) {
     if (!waFlow) return
     try {
       const response = await fetch('/api/whatsapp/flow/finish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, ...(summary ? { summary } : {}) }),
+        body: JSON.stringify({ status, ...(summary ? { summary } : {}), ...(options?.keepOpen ? { keepOpen: true } : {}) }),
       })
       const result = await response.json().catch(() => null)
       if (!response.ok || !result?.ok) fail('A operação terminou, mas o resumo não foi enviado no WhatsApp.')
     } catch {
       fail('A operação terminou, mas o resumo não foi enviado no WhatsApp.')
     } finally {
+      if (options?.keepOpen) return
       setWaFlow(null)
       setPendingNfeKey(null)
       setPendingShelfBarcode(null)
@@ -360,7 +387,7 @@ export default function InventoryV1() {
     setShelfProduct(null)
     setShelfQuantity('1')
     flash(`Entrada registrada: ${selected.name} · ${quantityText}.`)
-    if (waFlow === 'prateleira') void finishWhatsAppFlow('success', {
+    if (waFlow === 'entrada') void finishWhatsAppFlow('success', {
       kind: 'stock',
       mode: 'ean',
       productName: selected.name,
@@ -784,7 +811,7 @@ export default function InventoryV1() {
       return { ...current, products, movements }
     })
     flash(`${importable.length} item(ns) confirmados e adicionados ao estoque. Produtos novos ficaram com preço de venda pendente.`)
-    if (waFlow === 'prateleira') {
+    if (waFlow === 'entrada') {
       const totalCostCents = importable.reduce(
         (total, line) => total + Math.round((line.inventoryUnitCostCents * line.stockQuantityMilli) / 1000),
         0,
@@ -807,8 +834,11 @@ export default function InventoryV1() {
       setScannerOpen(false)
       const product = visibleProducts.find((candidate) => candidate.barcode === code)
       if (!product) {
-        if (waFlow === 'ler-codigo') void finishWhatsAppFlow('success', { kind: 'notice', code: 'product_not_found' })
-        return fail('Produto não encontrado no estoque.')
+        if (waFlow === 'ler-codigo') void finishWhatsAppFlow('success', { kind: 'notice', code: 'product_not_found' }, { keepOpen: true })
+        setTab('stock')
+        const result = await prepareProduct(code)
+        if (result !== 'reactivated') flash('Produto não cadastrado. Complete os dados e salve para cadastrar.')
+        return
       }
       setProfileProductId(product.id)
       if (waFlow === 'ler-codigo') void finishWhatsAppFlow('success', {
@@ -817,7 +847,7 @@ export default function InventoryV1() {
         priceCents: product.priceCents,
         costCents: product.averageCostCents,
         stock: qty(product.stockMilli, product.unit),
-      })
+      }, { keepOpen: true })
       return
     }
 
@@ -1021,8 +1051,8 @@ export default function InventoryV1() {
             onCommit={confirmInvoiceV10}
             fail={fail}
             flash={flash}
-            initialNfeKey={waFlow === 'prateleira' ? pendingNfeKey || undefined : undefined}
-            onCancel={waFlow === 'prateleira' ? cancelWhatsAppFlow : undefined}
+            initialNfeKey={waFlow === 'entrada' ? pendingNfeKey || undefined : undefined}
+            onCancel={waFlow === 'entrada' ? cancelWhatsAppFlow : undefined}
           />
         )}
 
@@ -1107,8 +1137,8 @@ export default function InventoryV1() {
       )}
 
       {scannerOpen && (scanTarget === 'shelf'
-        ? <DirectBarcodeScanner onCode={handleCode} close={waFlow ? cancelWhatsAppFlow : () => setScannerOpen(false)} />
-        : <QuaggaScanner onCode={handleCode} close={waFlow ? cancelWhatsAppFlow : () => setScannerOpen(false)} />
+        ? <DirectBarcodeScanner onCode={handleCode} close={() => setScannerOpen(false)} />
+        : <QuaggaScanner onCode={handleCode} close={() => setScannerOpen(false)} />
       )}
     </div>
   )
