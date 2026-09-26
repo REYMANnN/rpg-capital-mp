@@ -17,7 +17,7 @@ test('new onboarding requires Asaas billing before Malvo', () => {
   assert.match(page, /billingConfigured/)
   assert.match(page, /OnboardingBankStep/)
   assert.ok(page.indexOf('!billingConfigured') < page.indexOf('<OnboardingBankStep'))
-  assert.match(billing, /R\$ 5,99/)
+  assert.match(billing, /R\$ 9,99/)
   assert.match(billing, /Continuar para conectar o banco/)
 })
 

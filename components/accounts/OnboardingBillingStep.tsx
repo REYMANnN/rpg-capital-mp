@@ -101,10 +101,10 @@ export default function OnboardingBillingStep({
 
     <form onSubmit={submit} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
       <p className="text-sm font-semibold text-blue-700">Plano e cobrança</p>
-      <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Balcão — R$ 5,99/mês</h1>
+      <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Balcão — R$ 9,99/mês</h1>
       <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">Cobrança mensal todo dia 1. Não usamos proporcionalidade.</p>
       <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-        Se você entrar depois do dia 1, não cobramos agora. No próximo dia 1 serão R$ 11,98 — mês de entrada + mês atual. Depois, R$ 5,99 todo dia 1.
+        Se você entrar depois do dia 1, não cobramos agora. No próximo dia 1 serão R$ 19,98 — mês de entrada + mês atual. Depois, R$ 9,99 todo dia 1.
       </div>
 
       <div className="mt-7 grid gap-5 sm:grid-cols-2">
@@ -175,7 +175,7 @@ export default function OnboardingBillingStep({
 
       <label className="mt-7 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 text-slate-700">
         <input type="checkbox" checked={accepted} onChange={(e) => { setAccepted(e.target.checked); if (e.target.checked) setError('') }} className="mt-1 h-4 w-4" />
-        <span>Ao continuar, você autoriza a cobrança recorrente do BALCÃO de R$ 5,99 todo dia 1, conforme as condições apresentadas acima.</span>
+        <span>Ao continuar, você autoriza a cobrança recorrente do BALCÃO de R$ 9,99 todo dia 1, conforme as condições apresentadas acima.</span>
       </label>
 
       <p className="mt-4 text-xs leading-5 text-slate-500">Os dados completos do cartão são enviados diretamente ao Asaas pelo servidor do BALCÃO e não são armazenados no nosso banco de dados.</p>

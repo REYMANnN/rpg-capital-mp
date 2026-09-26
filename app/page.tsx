@@ -6,9 +6,9 @@ const loginHref = '/login?intent=login'
 const demoHref = '/demo'
 
 export const metadata: Metadata = {
-  title: 'RPG para Balcões — Gestão completa da sua loja por R$ 5,99/mês',
+  title: 'RPG para Balcões — Gestão completa da sua loja por R$ 9,99/mês',
   description:
-    'Gerencie inventário, vendas, finanças e equipe da sua loja em um só lugar. RPG para Balcões custa R$ 5,99 por mês e não cobra taxa no Pix.',
+    'Gerencie inventário, vendas, finanças e equipe da sua loja em um só lugar. RPG para Balcões custa R$ 9,99 por mês e não cobra taxa no Pix.',
   alternates: { canonical: 'https://rpgcapital.com.br/' },
   robots: {
     index: true,
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'pt_BR',
     siteName: 'RPG para Balcões',
-    title: 'RPG para Balcões — Sua loja inteira por R$ 5,99/mês',
+    title: 'RPG para Balcões — Sua loja inteira por R$ 9,99/mês',
     description:
       'Inventário, vendas, finanças, equipe e muito mais. Menos de um cafezinho por mês para gerenciar toda a sua loja.',
     url: 'https://rpgcapital.com.br/',
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'RPG para Balcões — Sua loja inteira por R$ 5,99/mês',
+    title: 'RPG para Balcões — Sua loja inteira por R$ 9,99/mês',
     description: 'Inventário, vendas, finanças, equipe e Pix sem taxa em um sistema simples para o varejo.',
     images: [
       'https://images.unsplash.com/photo-1750262701480-91fc40e726ba?auto=format&fit=crop&fm=jpg&q=85&w=1200&h=630',
@@ -79,7 +79,7 @@ const structuredData = {
       publisher: { '@id': 'https://rpgcapital.com.br/#organization' },
       offers: {
         '@type': 'Offer',
-        price: '5.99',
+        price: '9.99',
         priceCurrency: 'BRL',
         url: 'https://www.rpgcapital.com.br/auth/signup/reset',
       },
@@ -142,7 +142,7 @@ export default function Home() {
                 <a className={styles.textLink} href={loginHref}>Já tenho uma conta <span>→</span></a>
               </div>
               <ul className={styles.heroPoints} aria-label="Destaques">
-                <li>✓ R$ 5,99 por mês</li>
+                <li>✓ R$ 9,99 por mês</li>
                 <li>✓ Pix sem taxa</li>
                 <li>✓ Sem equipamento caro</li>
               </ul>
@@ -249,7 +249,7 @@ export default function Home() {
               <p className={styles.eyebrowLight}>PREÇO QUE CABE NO BALCÃO</p>
               <h2>Menos de um cafezinho por mês. <span>E você gerencia toda a sua loja.</span></h2>
               <p>Pague menos de um cafezinho por mês e gerencie <strong>TODO o seu negócio:</strong> inventário, vendas, finanças, equipe e muito mais.</p>
-              <div className={styles.price}><span>R$</span><strong>5,99</strong><small>/ mês</small></div>
+              <div className={styles.price}><span>R$</span><strong>9,99</strong><small>/ mês</small></div>
               <a className={styles.yellowButton} href={signupHref}>Criar minha conta</a>
             </div>
             <div className={styles.coffeeCard}>
@@ -257,7 +257,7 @@ export default function Home() {
               <p><strong>1 cafezinho</strong></p>
               <span>pode custar mais que um mês inteiro de gestão da sua loja.</span>
               <hr />
-              <p className={styles.coffeeResult}>RPG para Balcões<br /><strong>R$ 5,99/mês</strong></p>
+              <p className={styles.coffeeResult}>RPG para Balcões<br /><strong>R$ 9,99/mês</strong></p>
             </div>
           </div>
         </section>
@@ -288,7 +288,7 @@ export default function Home() {
           <div className={styles.container + ' ' + styles.faqGrid}>
             <div className={styles.sectionHeading}><p className={styles.eyebrow}>DÚVIDAS RÁPIDAS</p><h2>O que o comerciante quer saber.</h2></div>
             <div className={styles.faqList}>
-              <details><summary>Quanto custa a RPG para Balcões?</summary><p>O acesso custa R$ 5,99 por mês.</p></details>
+              <details><summary>Quanto custa a RPG para Balcões?</summary><p>O acesso custa R$ 9,99 por mês.</p></details>
               <details><summary>A RPG cobra taxa no Pix?</summary><p>Não. A RPG não cobra taxa sobre as vendas em Pix feitas pelo fluxo do Balcões.</p></details>
               <details><summary>O que eu consigo gerenciar?</summary><p>Inventário, vendas, finanças, equipe e outras rotinas de gestão da loja em um só sistema.</p></details>
               <details><summary>Preciso trocar minha maquininha?</summary><p>Não. A proposta é funcionar com a operação que o comerciante já tem, sem exigir uma maquininha própria da RPG.</p></details>
@@ -298,7 +298,7 @@ export default function Home() {
 
         <section className={styles.finalCta}>
           <div className={styles.container + ' ' + styles.finalInner}>
-            <div><p className={styles.eyebrowLight}>RPG PARA BALCÕES</p><h2>Sua loja inteira. Na sua mão.</h2><p>Inventário, vendas, finanças e equipe por R$ 5,99 por mês.</p></div>
+            <div><p className={styles.eyebrowLight}>RPG PARA BALCÕES</p><h2>Sua loja inteira. Na sua mão.</h2><p>Inventário, vendas, finanças e equipe por R$ 9,99 por mês.</p></div>
             <a className={styles.yellowButton} href={signupHref}>Começar agora</a>
           </div>
         </section>

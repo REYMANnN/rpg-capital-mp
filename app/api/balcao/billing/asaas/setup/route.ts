@@ -141,7 +141,7 @@ export async function POST(request: Request) {
       ok: true,
       firstAmountCents: plan.initialCharge?.amountCents ?? plan.recurring.amountCents,
       firstDueDate,
-      recurringAmountCents: 599,
+      recurringAmountCents: 999,
       recurringFirstDueDate: plan.recurring.firstDueDate,
     })
   } catch (caught) {

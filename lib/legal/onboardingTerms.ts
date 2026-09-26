@@ -68,14 +68,14 @@ export const onboardingTerms: OnboardingTerm[] = [
       {
         title: '1. Plano e preço',
         paragraphs: [
-          'O plano BALCÃO custa R$ 5,99 por mês e é cobrado de forma recorrente pelo parceiro de pagamentos da RPG.',
+          'O plano BALCÃO custa R$ 9,99 por mês e é cobrado de forma recorrente pelo parceiro de pagamentos da RPG.',
           'A cobrança recorrente ocorre todo dia 1. Não há cobrança proporcional.',
         ],
       },
       {
         title: '2. Primeira cobrança',
         paragraphs: [
-          'Se você concluir a adesão depois do dia 1, não cobramos no momento da adesão. No próximo dia 1 serão cobrados R$ 11,98, correspondentes ao mês de entrada e ao mês corrente. Depois disso, a cobrança volta a R$ 5,99 por mês, todo dia 1.',
+          'Se você concluir a adesão depois do dia 1, não cobramos no momento da adesão. No próximo dia 1 serão cobrados R$ 19,98, correspondentes ao mês de entrada e ao mês corrente. Depois disso, a cobrança volta a R$ 9,99 por mês, todo dia 1.',
         ],
       },
       {

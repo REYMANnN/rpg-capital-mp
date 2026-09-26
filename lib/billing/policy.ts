@@ -1,10 +1,10 @@
 export type BillingPlan = {
-  initialCharge: null | { amountCents: 1198; dueDate: string; maxPayments: 1 }
-  recurring: { amountCents: 599; firstDueDate: string }
+  initialCharge: null | { amountCents: 1998; dueDate: string; maxPayments: 1 }
+  recurring: { amountCents: 999; firstDueDate: string }
 }
 
-const MONTHLY_AMOUNT_CENTS = 599 as const
-const CATCH_UP_AMOUNT_CENTS = 1198 as const
+const MONTHLY_AMOUNT_CENTS = 999 as const
+const CATCH_UP_AMOUNT_CENTS = 1998 as const
 
 function parseCalendarDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
