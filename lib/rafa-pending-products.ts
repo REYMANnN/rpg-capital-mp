@@ -9,6 +9,7 @@ export async function savePendingProducts(input: {
   storeId: string
   waId: string
   invoiceImportId?: string | null
+  supplierCnpj?: string | null
   items: PendingNewProduct[]
 }) {
   if (!input.items.length) return
@@ -40,6 +41,8 @@ export async function savePendingProducts(input: {
         quantity_milli: item.quantityMilli,
         cost_cents: item.costCents,
         unit: item.unit || 'UN',
+        supplier_cnpj: input.supplierCnpj || null,
+        supplier_code: item.supplierCode || null,
       })
     }
   }

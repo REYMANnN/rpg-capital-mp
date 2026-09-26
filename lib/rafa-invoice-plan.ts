@@ -12,6 +12,9 @@ export type InvoicePlanLine = {
   quantity?: number | null
   unit_cost_cents?: number | null
   unit_package?: string | null
+  supplier_code?: string | null
+  // o que falta no nome para achar o produto (preenchido pela busca por nome)
+  missing?: string | null
   confidence?: { product?: number; quantity?: number; cost?: number } | null
   resolution?: RafaProductResolution | null
 }
@@ -23,6 +26,7 @@ export type PendingNewProduct = {
   quantityMilli: number
   costCents: number
   unit?: 'UN' | 'KG'
+  supplierCode?: string | null
 }
 
 export type InvoiceDoubt = { description: string; reason: string }
@@ -88,6 +92,7 @@ export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
           quantityMilli,
           costCents,
           unit: isKg(line.unit_package) ? 'KG' : 'UN',
+          supplierCode: line.supplier_code || null,
         })
       }
       continue
@@ -103,14 +108,16 @@ export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
         current.quantityMilli += quantityMilli
         current.costCents = Math.round(total / current.quantityMilli)
       } else {
-        novos.set(ean, { barcode: ean, name: niceName(description), brand: '', quantityMilli, costCents, unit: isKg(line.unit_package) ? 'KG' : 'UN' })
+        novos.set(ean, { barcode: ean, name: niceName(description), brand: '', quantityMilli, costCents, unit: isKg(line.unit_package) ? 'KG' : 'UN', supplierCode: line.supplier_code || null })
       }
       continue
     }
 
     plan.duvidas.push({
       description,
-      reason: resolution?.status === 'ambiguous' ? 'mais de um produto parecido' : ean ? 'código não reconhecido' : 'sem código de barras',
+      reason: line.missing && line.missing !== 'não encontrado' ? `falta ${line.missing} no nome`
+        : resolution?.status === 'ambiguous' ? 'mais de um produto parecido'
+          : ean ? 'código não reconhecido' : 'não achei o produto',
     })
   }
 
@@ -139,7 +146,7 @@ export function invoicePlanMessage(plan: InvoicePlan, supplier: string | null, r
   }
   const lines = [`Li a nota${supplier ? ` de ${supplier}` : ''}: ${total} produto(s).`]
   if (plan.entradas.length) lines.push(`• ${plan.entradas.length} já são da loja: dou entrada no estoque com o custo da nota`)
-  if (plan.novos.length) lines.push(`• ${plan.novos.length} novo(s): cadastro assim que você me passar o preço de venda`)
+  if (plan.novos.length) lines.push(`• ${plan.novos.length} novo(s): já te pergunto o preço de venda de cada um`)
   if (plan.duvidas.length) {
     const examples = plan.duvidas.slice(0, 3).map((doubt) => `${doubt.description} (${doubt.reason})`).join('; ')
     lines.push(`• ${plan.duvidas.length} com dúvida: ${examples}${plan.duvidas.length > 3 ? '…' : ''}${reviewLink ? `\n  Confere aqui: ${reviewLink}` : ''}`)

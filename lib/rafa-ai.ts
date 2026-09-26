@@ -349,6 +349,38 @@ export async function extractRafaInvoiceImages(input: {
   })
 }
 
+// Nome da nota → código de barras: a IA só ESCOLHE entre candidatos reais do catálogo (nunca inventa).
+export type NameEanChoice = { n: number; ean: string | null; nome?: string | null; falta?: string | null }
+
+export async function chooseEanByName(input: {
+  storeId: string
+  waId: string
+  items: Array<{ n: number; descricao: string; candidatos: Array<{ ean: string; nome: string; marca?: string; tamanho?: string }> }>
+}) {
+  if (!input.items.length) return [] as NameEanChoice[]
+  const result = await groqJson<{ itens?: NameEanChoice[] }>({
+    storeId: input.storeId,
+    waId: input.waId,
+    operation: 'invoice_name_ean',
+    model: RAFA_TEXT_MODEL,
+    maxTokens: 6000,
+    messages: [{
+      role: 'user',
+      content: [
+        'Você identifica produtos de mercado brasileiro a partir da descrição abreviada de uma nota fiscal.',
+        'Para cada item, escolha o código de barras (ean) SOMENTE entre os candidatos listados, e só quando a descrição deixa claro qual é: a marca bate E o tamanho/variante bate (ex.: "REFRIG COCA PET 2L" = Coca-Cola PET 2L; "COCA LT 350" = lata 350ml).',
+        'Abreviações comuns: REFRIG=refrigerante, LT=lata, PET=garrafa, CX=caixa, FD=fardo, PCT=pacote, UN=unidade, TP1=tipo 1, INTEG=integral, DESN=desnatado, ZERO/DIET, C/12=com 12.',
+        'Se a descrição não tem marca ("ARROZ TIPO 1 5KG") ou falta tamanho ("COCA COLA"), ou nenhum candidato bate, devolva ean null e diga em "falta" o que falta ("marca", "tamanho", "marca e tamanho" ou "não encontrado").',
+        'Nunca invente código. nome = nome completo do produto escolhido (marca, tipo, tamanho).',
+        'Responda só JSON: {"itens":[{"n":0,"ean":"7894900018448","nome":"Refrigerante Coca-Cola PET 2L"},{"n":1,"ean":null,"falta":"marca"}]}',
+        '',
+        JSON.stringify(input.items),
+      ].join('\n'),
+    }],
+  })
+  return Array.isArray(result?.itens) ? result.itens : []
+}
+
 // Nota em PDF (DANFE com texto) ou XML: mesma extração, lendo o texto em vez da foto.
 export async function extractRafaInvoiceText(input: {
   storeId: string
