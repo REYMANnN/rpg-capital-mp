@@ -8,6 +8,8 @@ import { processValue, safeLogError, type JsonRecord } from '@/lib/whatsapp-inbo
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+// Leitura de nota com muitos itens (IA de imagem + busca de produtos) pode passar de 1 minuto.
+export const maxDuration = 300
 
 // Webhook da Evolution API (instância "rafa").
 // Eventos: MESSAGES_UPSERT, MESSAGES_UPDATE, SEND_MESSAGE, CONNECTION_UPDATE.
