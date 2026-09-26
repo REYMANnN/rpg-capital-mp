@@ -15,6 +15,7 @@ import { extractRafaActions, rafaAiBudgetAvailable, readRafaImage, transcribeRaf
 import { appliedMessage, CONFIRM_NO_ID, CONFIRM_YES_ID, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
 import { appendInvoiceMedia, askPendingPrices, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
 import { markPendingRegistered } from '@/lib/rafa-pending-products'
+import { handlePriceAnswer } from '@/lib/rafa-price-questions'
 import { downloadWhatsAppMedia, mediaDataUri, storeInvoiceProof } from '@/lib/rafa-media'
 import { actionToChange, resolveTextProduct } from '@/lib/rafa-products'
 import { loadRafaStore, type RafaChange } from '@/lib/inventory/rafa-store'
@@ -227,6 +228,20 @@ export async function processValue(value: JsonRecord) {
         if (!result.ok) throw new Error(result.error)
         return
       }
+    }
+
+    // Pergunta de preço dos produtos novos da nota em andamento: "11,99", "pula", "para", "continuar preços".
+    if (isEvolutionProvider()) {
+      let handled = false
+      try {
+        handled = await handlePriceAnswer(fromPhone, text, wamid)
+      } catch (error) {
+        safeLogError(error, 'rafa_price_answer', privateValues)
+        const sent = await sendText(fromPhone, 'Não consegui cadastrar esse preço agora. Manda de novo em instantes?\n— Rafa', { inReplyTo: wamid, noMenu: true })
+        if (!sent.ok) throw new Error(sent.error)
+        return
+      }
+      if (handled) return
     }
 
     const session = await sessionFor(fromPhone)

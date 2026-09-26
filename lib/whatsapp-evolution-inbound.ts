@@ -3,6 +3,7 @@ import 'server-only'
 
 import { EVOLUTION_MEDIA_PREFIX } from '@/lib/rafa-media'
 import { lastOutboundWasTextMenu, normalizePhone, RAFA_MAIN_MENU } from '@/lib/whatsapp-evolution'
+import { activePriceQuestion } from '@/lib/rafa-price-questions'
 
 type JsonRecord = Record<string, any>
 
@@ -79,8 +80,10 @@ export async function evolutionToCloudValue(data: JsonRecord): Promise<{ value: 
     // Número sozinho vira clique, sem passar pela IA:
     // - se a última mensagem foi uma lista (menu, Sim/Não, escolha de loja), vale a opção dela;
     // - senão, 1 a 4 são sempre o menu principal (vender, ler código, prateleira, subir estoque).
+    // Exceção: com pergunta de preço em aberto, "5" é preço (R$ 5,00), não opção do menu.
     const choice = text.trim().match(/^([1-9])\s*$/)
-    const menu = choice ? (await lastOutboundWasTextMenu(phone)) || RAFA_MAIN_MENU : null
+    const pricing = choice ? Boolean(await activePriceQuestion(phone).catch(() => null)) : false
+    const menu = choice && !pricing ? (await lastOutboundWasTextMenu(phone)) || RAFA_MAIN_MENU : null
     const picked = menu?.[Number(choice?.[1]) - 1]
     out = picked
       ? { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: picked.id, title: picked.title } } }
