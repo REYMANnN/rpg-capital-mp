@@ -238,6 +238,57 @@ export async function classifyRafaImage(input: {
   })
 }
 
+export type RafaImageReading = {
+  classe: RafaMediaClass
+  descricao: string
+  fornecedor_nome?: string | null
+  texto?: string | null
+  itens?: Array<{
+    nome?: string | null
+    ean?: string | null
+    quantidade?: number | null
+    unidade?: string | null
+    preco_reais?: number | null
+    custo_reais?: number | null
+    observacao?: string | null
+  }> | null
+}
+
+// Lê qualquer imagem: diz o que é e tira o conteúdo útil (texto e itens), para a Rafa agir em cima.
+export async function readRafaImage(input: {
+  storeId: string
+  waId: string
+  dataUri: string
+  caption?: string | null
+}) {
+  return groqJson<RafaImageReading>({
+    storeId: input.storeId,
+    waId: input.waId,
+    operation: 'image_reading',
+    model: RAFA_VISION_MODEL,
+    maxTokens: 2500,
+    messages: [{
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: [
+            'Você lê imagens mandadas por um pequeno comerciante brasileiro no WhatsApp. Retorne somente JSON.',
+            'classe: exatamente uma de nota_fiscal, caderno_anotacao, planilha_print, print_sistema, foto_produto, foto_prateleira, outro.',
+            'descricao: uma frase curta em português dizendo o que é a imagem.',
+            'fornecedor_nome: se for nota ou pedido e o fornecedor estiver claro; senão null.',
+            'texto: transcreva o texto útil visível (listas, anotações à mão, etiquetas de preço, recibos), linha por linha, no máximo 60 linhas. null se não houver.',
+            'itens: se houver produtos, liste cada um com nome, ean (só se o código estiver legível), quantidade, unidade, preco_reais, custo_reais e observacao. Use null no que não estiver visível. Não invente.',
+            'Anotação à mão ambígua: copie como está e explique a dúvida em observacao.',
+            input.caption ? `Legenda que o lojista mandou junto: "${String(input.caption).slice(0, 300)}".` : '',
+          ].filter(Boolean).join(' '),
+        },
+        { type: 'image_url', image_url: { url: input.dataUri } },
+      ],
+    }],
+  })
+}
+
 export type RafaInvoiceExtraction = {
   supplier_name?: string | null
   supplier_cnpj?: string | null

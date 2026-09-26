@@ -571,6 +571,9 @@ function systemPrompt(storeName: string, otherStores: number) {
     'Se a busca achar mais de um produto possível para uma alteração, pergunte qual é, listando nome e EAN.',
     'Se faltar dado (preço, custo, EAN para cadastrar), pergunte só o que falta.',
     `Se a pessoa só cumprimentar (oi, olá, bom dia, eai...), responda exatamente: "Oi! Esse número está registrado na loja ${storeName}. Como posso te ajudar hoje?"`,
+    'ÁUDIO: se a mensagem começar com [ÁUDIO transcrito], comece a resposta com "Entendi: " e um resumo do pedido em uma frase (ex.: "Entendi: você quer saber quanto vendeu hoje."). Depois responda ou faça o que foi pedido. A transcrição pode ter erros; leia pelo sentido.',
+    'IMAGEM/ARQUIVO: se vier [IMAGEM: ...] ou [ARQUIVO: ...], diga em uma linha o que você leu (ex.: "Li sua lista com 8 itens."). Se o lojista pediu algo (ou a legenda indica), faça: busque cada produto com buscar_produtos e chame propor_alteracoes de uma vez com todos os itens entendidos. Se não pediu nada, resuma o conteúdo e pergunte o que ele quer fazer (ex.: "Quer que eu dê entrada desses itens no estoque?").',
+    'Item ambíguo (ex.: "papel higiênico 12 rolos" e a loja tem 3 marcas): não chute. Liste as opções com nome e EAN e pergunte qual é. Item que não existe na loja: diga que não achou e pergunte se quer cadastrar (precisa de EAN, preço e custo). Nunca invente item, quantidade ou preço que não esteja no arquivo.',
     'Se perguntarem quem você é ou o que faz: diga que é a Rafa, da RPG Capital, e que consulta estoque, preços, vendas e banco da loja, e muda preço, estoque e produtos com confirmação.',
     'Se o assunto não tiver a ver com a loja, responda em uma linha e volte para a loja.',
   ].join('\n')
@@ -620,7 +623,7 @@ async function recentHistory(waId: string) {
 
 // ---------- Loop do agente ----------
 
-async function groqChat(storeId: string, waId: string, messages: any[]) {
+async function groqChat(storeId: string, waId: string, messages: any[], maxTokens = 2500) {
   const key = process.env.GROQ_API_KEY?.trim()
   if (!key) throw new Error('GROQ_API_KEY is not configured')
   const response = await fetch(`${GROQ_BASE}/chat/completions`, {
@@ -633,7 +636,7 @@ async function groqChat(storeId: string, waId: string, messages: any[]) {
       tool_choice: 'auto',
       temperature: 0.2,
       reasoning_effort: 'medium',
-      max_completion_tokens: 2500,
+      max_completion_tokens: maxTokens,
     }),
     cache: 'no-store',
     signal: AbortSignal.timeout(30_000),
@@ -670,7 +673,21 @@ export function cleanReply(text: string) {
 
 export type RafaAgentOutcome = 'replied' | 'confirmation' | 'budget' | 'error'
 
-export async function runRafaAgent(input: { waId: string; storeId: string; text: string; inReplyTo?: string }): Promise<RafaAgentOutcome> {
+export type RafaAgentSource = 'text' | 'audio' | 'image' | 'document'
+
+// Monta a mensagem do lojista para o modelo, marcando de onde veio (áudio, imagem, arquivo).
+export function agentUserContent(input: { text: string; source?: RafaAgentSource; attachment?: { label: string; content: string } }) {
+  const text = input.text.trim()
+  if (input.source === 'audio') return `[ÁUDIO transcrito] ${text.slice(0, 2000)}`
+  if (input.attachment) {
+    const tag = input.source === 'image' ? 'IMAGEM' : 'ARQUIVO'
+    const caption = text ? `Mensagem junto: ${text.slice(0, 500)}\n\n` : 'O lojista mandou só o arquivo, sem texto.\n\n'
+    return `${caption}[${tag}: ${input.attachment.label}]\n${input.attachment.content.slice(0, 12_000)}`
+  }
+  return text.slice(0, 2000)
+}
+
+export async function runRafaAgent(input: { waId: string; storeId: string; text: string; inReplyTo?: string; source?: RafaAgentSource; attachment?: { label: string; content: string } }): Promise<RafaAgentOutcome> {
   const [budget, loaded, history, stores] = await Promise.all([
     rafaAiBudgetAvailable(input.storeId),
     loadRafaStore(input.storeId),
@@ -683,11 +700,12 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
   const messages: any[] = [
     { role: 'system', content: `${systemPrompt(store.displayName || 'sua loja', otherStores)}\n\n${catalogBlock(state)}` },
     ...history,
-    { role: 'user', content: input.text.slice(0, 2000) },
+    { role: 'user', content: agentUserContent(input) },
   ]
+  const maxTokens = input.attachment ? 5000 : 2500
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
-    const reply = await groqChat(input.storeId, input.waId, messages)
+    const reply = await groqChat(input.storeId, input.waId, messages, maxTokens)
     if (!reply) throw new Error('rafa_agent_empty')
     const calls = reply.tool_calls || []
 

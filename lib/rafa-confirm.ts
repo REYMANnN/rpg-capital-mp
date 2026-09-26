@@ -72,8 +72,10 @@ export async function askRafaConfirmation(input: {
   changes: RafaChange[]
   state: RafaStoreState
   inReplyTo?: string
+  // Resumo próprio (ex.: importação de planilha com muitos itens) no lugar da lista item a item.
+  message?: string
 }) {
-  const message = confirmationMessage(input.state, input.changes)
+  const message = input.message || confirmationMessage(input.state, input.changes)
   const kinds = [...new Set(input.changes.map((change) => change.kind))]
   const tipo = kinds.length === 1 && ['preco', 'estoque', 'venda', 'entrada'].includes(kinds[0])
     ? kinds[0] as 'preco' | 'estoque' | 'venda' | 'entrada'

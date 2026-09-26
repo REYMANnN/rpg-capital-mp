@@ -66,14 +66,15 @@ test('webhook transcribes audio and routes transcript through deterministic text
   assert.match(route, /Não consegui transcrever esse áudio/)
 })
 
-test('image path classifies before extracting and only invoices continue', () => {
+test('image path reads the image first; only invoices go to the invoice flow, the rest goes to the agent', () => {
   const route = (readFileSync('app/api/whatsapp/webhook/route.ts', 'utf8') + readFileSync('lib/whatsapp-inbound.ts', 'utf8'))
   const invoice = readFileSync('lib/rafa-invoice.ts', 'utf8')
-  assert.match(route, /classifyRafaImage/)
-  assert.match(route, /classification\.classe !== 'nota_fiscal'/)
+  assert.match(route, /readRafaImage/)
+  assert.match(route, /reading\.classe === 'nota_fiscal'/)
   assert.match(route, /askRafaMediaConfirmation/)
+  assert.match(route, /toAgent\('image'/)
   assert.match(invoice, /extractRafaInvoiceImages/)
-  assert.ok(route.indexOf('classifyRafaImage') < route.indexOf('askRafaMediaConfirmation'))
+  assert.ok(route.indexOf('readRafaImage({') < route.indexOf("toAgent('image'"))
 })
 
 test('supplier product map contains identity only and no store commercial data', () => {
