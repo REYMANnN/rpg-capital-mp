@@ -7,6 +7,7 @@ import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { loadRafaStore, type RafaChange, type RafaInventoryProduct, type RafaStoreState } from '@/lib/inventory/rafa-store'
 import { getMalvoItem, refreshMalvoItem } from '@/lib/malvo/client'
 import { syncMalvoItem } from '@/lib/malvo/sync'
+import { analyzeMoneyFlow, counterpartyFromDescription, ownerNamesFromTaxId } from '@/lib/finance/enrich'
 import { rafaAiBudgetAvailable, recordAiUsage } from '@/lib/rafa-ai'
 import { askRafaConfirmation } from '@/lib/rafa-confirm'
 import { pendingProductsBlock, type PendingProductRow } from '@/lib/rafa-invoice-plan'
@@ -356,9 +357,87 @@ async function bankStatement(storeId: string, args: any) {
     ultimos: rows.slice(0, 10).map((row) => ({
       data: String(row.posted_at).slice(0, 10),
       valor: money(Number(row.amount_cents)),
-      descricao: row.counterparty_name || row.description,
+      descricao: counterpartyFromDescription(String(row.counterparty_name || row.description || '')) || row.description,
       categoria: row.category,
     })),
+  }
+}
+
+// "De onde veio / pra onde foi": contrapartes, grupos, recorrentes e cruzamento com vendas e notas.
+async function moneyFlow(storeId: string, state: RafaStoreState, args: any) {
+  const { admin, businessId } = await financeScope(storeId)
+  const live = await refreshFinanceLive(storeId, businessId)
+  const range = periodRange(String(args?.periodo || '30dias'), args?.de, args?.ate)
+  let query = admin.from('balcao_finance_transactions')
+    .select('posted_at,amount_cents,description,counterparty_name,counterparty_tax_id,category,transaction_type,is_internal_transfer')
+    .gte('posted_at', range.start.toISOString())
+    .lt('posted_at', range.end.toISOString())
+    .order('posted_at', { ascending: false })
+    .limit(2000)
+  query = businessId ? query.or(`store_id.eq.${storeId},business_id.eq.${businessId}`) : query.eq('store_id', storeId)
+  const [{ data, error }, business, invoices] = await Promise.all([
+    query,
+    businessId ? admin.from('balcao_businesses').select('tax_id,display_name').eq('id', businessId).maybeSingle() : Promise.resolve({ data: null }),
+    admin.from('rafa_invoice_imports').select('supplier_name,total_cost_cents,status').eq('store_id', storeId)
+      .gte('created_at', range.start.toISOString()).lt('created_at', range.end.toISOString()),
+  ])
+  if (error) throw error
+  const rows = data || []
+  if (!rows.length) return { consulta_ao_banco: live.conectado ? 'banco consultado' : 'sem conexão bancária ativa', periodo: range.label, observacao: 'Nenhuma movimentação no período.' }
+
+  const ownerNames = ownerNamesFromTaxId(rows.map((row) => String(row.description || '')), (business as any)?.data?.tax_id)
+  const periodSales = state.sales.filter((sale) => {
+    const at = new Date(sale.createdAt).getTime()
+    return at >= range.start.getTime() && at < range.end.getTime()
+  })
+  const salesBy = (method: string) => periodSales.filter((sale) => sale.payment?.method === method).reduce((sum, sale) => sum + sale.totalCents, 0)
+  const suppliers = new Map<string, number>()
+  for (const invoice of (invoices as any)?.data || []) {
+    if (!invoice.supplier_name || invoice.status === 'failed') continue
+    suppliers.set(String(invoice.supplier_name), (suppliers.get(String(invoice.supplier_name)) || 0) + Number(invoice.total_cost_cents || 0))
+  }
+
+  const flow = analyzeMoneyFlow({
+    transactions: rows.map((row) => ({
+      postedAt: String(row.posted_at),
+      amountCents: Number(row.amount_cents),
+      description: row.description,
+      counterpartyName: row.counterparty_name,
+      counterpartyTaxId: row.counterparty_tax_id,
+      category: row.category,
+      transactionType: row.transaction_type,
+      isInternalTransfer: row.is_internal_transfer,
+    })),
+    ownerNames,
+    sales: periodSales.length ? { cardCents: salesBy('card'), pixCents: salesBy('pix'), cashCents: salesBy('cash') } : undefined,
+    invoiceSuppliers: [...suppliers.entries()].map(([name, totalCents]) => ({ name, totalCents })),
+  })
+  const bucket = (item: { name: string; totalCents: number; count: number }) => ({ quem: item.name, total: money(Math.abs(item.totalCents)), vezes: item.count })
+  const group = (item: { label: string; totalCents: number; share: number }) => ({ grupo: item.label, total: money(Math.abs(item.totalCents)), percentual: `${item.share}%` })
+  return {
+    consulta_ao_banco: live.conectado ? (live.atualizado_agora ? 'dados atualizados agora com o banco' : 'banco consultado agora') : 'sem conexão bancária ativa',
+    periodo: range.label,
+    lancamentos: rows.length,
+    total_entrou: money(flow.inflowCents),
+    total_saiu: money(Math.abs(flow.outflowCents)),
+    resultado: money(flow.resultCents),
+    de_onde_veio: flow.topSources.map(bucket),
+    pra_onde_foi: flow.topDestinations.map(bucket),
+    entradas_por_grupo: flow.inflowByGroup.map(group),
+    saidas_por_grupo: flow.outflowByGroup.map(group),
+    gastos_que_se_repetem_todo_mes: flow.recurring.map((item) => ({ quem: item.name, media_por_mes: money(Math.abs(item.averageCents)), meses: item.months })),
+    maiores_entradas: flow.biggestIn.map((item) => ({ data: item.date, quem: item.name, valor: money(item.amountCents) })),
+    maiores_saidas: flow.biggestOut.map((item) => ({ data: item.date, quem: item.name, valor: money(Math.abs(item.amountCents)) })),
+    saidas_com_destino_identificado: `${flow.identifiedOutShare}%`,
+    vendas_do_caixa_x_banco: flow.reconciliation ? {
+      vendido_no_cartao: money(flow.reconciliation.cardSoldCents),
+      recebido_das_maquininhas: money(flow.reconciliation.cardReceivedCents),
+      vendido_no_pix: money(flow.reconciliation.pixSoldCents),
+      pix_recebidos_no_banco: money(flow.reconciliation.pixReceivedCents),
+      vendido_em_dinheiro: money(flow.reconciliation.cashSoldCents),
+      observacao: 'Cartão cai com atraso (D+1 a D+30) e com desconto da taxa; compare por semanas.',
+    } : 'sem vendas registradas no caixa nesse período',
+    fornecedores_das_notas: flow.supplierPayments.map((item) => ({ fornecedor: item.name, notas: money(item.invoicesCents), pago_no_banco: money(Math.abs(item.paidCents)) })),
   }
 }
 
@@ -502,6 +581,21 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'fluxo_dinheiro',
+      description: 'Análise completa do dinheiro no período: de onde veio (quem pagou, maquininhas), pra onde foi (fornecedores, contas, pessoas, retirada do dono), grupos, gastos que se repetem todo mês, maiores lançamentos, vendas do caixa x o que caiu no banco e notas x pagamentos.',
+      parameters: {
+        type: 'object',
+        properties: {
+          periodo: { type: 'string', enum: ['hoje', 'ontem', 'semana', 'mes', '30dias', 'tudo'] },
+          de: { type: 'string', description: 'AAAA-MM-DD' },
+          ate: { type: 'string', description: 'AAAA-MM-DD' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'trocar_loja',
       description: 'Mostra ao lojista a lista de lojas ligadas a este número para ele escolher com qual falar. Use quando pedirem para trocar, mudar ou conectar outra loja/mercadinho.',
       parameters: { type: 'object', properties: {} },
@@ -570,6 +664,7 @@ function systemPrompt(storeName: string, otherStores: number) {
     'Ao citar produto, use o nome completo e o EAN como vieram da ferramenta. Valores sempre em reais (R$).',
     'Saldo e extrato: as ferramentas consultam o banco na hora. Responda com o valor e o banco. Só mencione data ou atraso se a ferramenta disser que não conseguiu atualizar com o banco.',
     '"Quanto ganhei/entrou hoje": use extrato com periodo hoje e tipo entradas, e diga o total e de onde veio (entradas_por_origem).',
+    '"De onde veio / pra onde foi / com o que gastei / quem mais me pagou / pra quem mais paguei / gastos fixos / meu dinheiro sumiu": use fluxo_dinheiro (padrão 30dias). Responda com os 3 maiores de cada lado, com valor, e 1 observação útil (ex.: gasto que se repete, retirada do dono alta, venda no cartão que não caiu). Se saidas_com_destino_identificado for baixo, avise que o banco não mandou o nome de parte dos pagamentos.',
     'Links: se pedirem para abrir ou ir para vendas/caixa, ler código, prateleira/estoque ou subir estoque, mande o link com gerar_link (uma linha explicando + o link).',
     'Se pedirem para "ver o estoque" sem dizer como, pergunte em uma linha: "Te conto aqui ou te mando o link da prateleira?".',
     'Se a pessoa mandar só um número de 1 a 4 sem contexto, é o menu: 1 = vender, 2 = ler código, 3 = prateleira, 4 = subir estoque. Chame gerar_link com o fluxo certo.',
@@ -758,6 +853,7 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
           case 'vendas': result = salesSummary(state, args); break
           case 'saldo_banco': result = await bankBalance(input.storeId); break
           case 'extrato': result = await bankStatement(input.storeId, args); break
+          case 'fluxo_dinheiro': result = await moneyFlow(input.storeId, state, args); break
           case 'trocar_loja': {
             if (stores.length < 2) { result = { observacao: 'Este número só tem acesso a uma loja.', loja_atual: store.displayName }; break }
             const sent = await askStorePick(input.waId, stores, input.inReplyTo)
