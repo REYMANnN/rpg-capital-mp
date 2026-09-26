@@ -19,7 +19,7 @@ test('landing apresenta a marca, o preco e o valor principal do produto', () => 
 
   assert.match(html, /RPG para Balcões/)
   assert.match(html, /Tudo que sua loja precisa para vender, controlar e crescer/)
-  assert.match(html, /R\$\s*5,99/)
+  assert.match(html, /R\$\s*9,99/)
   assert.match(html, /menos de um cafezinho/i)
   assert.match(html, /Inventário/i)
   assert.match(html, /Vendas/i)
@@ -50,7 +50,7 @@ test('landing possui arquivos de descoberta para buscadores e IAs', () => {
   assert.match(robots, /Sitemap: https:\/\/rpgcapital\.com\.br\/sitemap\.xml/)
   assert.match(sitemap, /https:\/\/rpgcapital\.com\.br\//)
   assert.match(llms, /RPG para Balcões/)
-  assert.match(llms, /R\$ 5,99/)
+  assert.match(llms, /R\$ 9,99/)
 })
 
 test('a raiz publica da Vercel renderiza a landing e nao redireciona para a home interna', () => {
@@ -61,7 +61,7 @@ test('a raiz publica da Vercel renderiza a landing e nao redireciona para a home
   assert.match(page, /Tudo que sua loja precisa para vender, controlar e crescer/)
   assert.match(page, /href=["']\/login\?intent=login["']/)
   assert.match(page, /href=["']\/auth\/signup\/reset["']/)
-  assert.match(page, /R\$\s*5,99/)
+  assert.match(page, /R\$\s*9,99/)
   assert.match(page, /Pix sem taxa/i)
 })
 
@@ -83,5 +83,5 @@ test('a Vercel publica robots sitemap e llms na raiz do dominio', () => {
   assert.match(robots, /Sitemap: https:\/\/rpgcapital\.com\.br\/sitemap\.xml/)
   assert.match(sitemap, /https:\/\/rpgcapital\.com\.br\//)
   assert.match(llms, /RPG para Balcões/)
-  assert.match(llms, /R\$ 5,99/)
+  assert.match(llms, /R\$ 9,99/)
 })
