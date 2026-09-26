@@ -8,6 +8,7 @@ import { softDeleteProduct } from '@/lib/inventory/productLifecycle'
 import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
 import { deriveInventoryStateEvents } from '@/lib/platform/events/inventoryStateEvents'
 import { emitPlatformEvent } from '@/lib/platform/events/outbox'
+import { SOLD_WITHOUT_STOCK_NOTE } from '@/lib/rafa-tips'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export type RafaInventoryProduct = Product & {
@@ -327,6 +328,23 @@ export function applyRafaChanges(
 
   const sales = changes.filter((item): item is Extract<RafaChange, { kind: 'venda' }> => item.kind === 'venda')
   if (sales.length) {
+    // Venda não trava por falta de estoque registrado: o que faltar vira ajuste marcado.
+    const needed = new Map<string, number>()
+    for (const item of sales) needed.set(item.productId, (needed.get(item.productId) || 0) + item.quantityMilli)
+    for (const product of next.products) {
+      const missing = (needed.get(product.id) || 0) - product.stockMilli
+      if (missing <= 0) continue
+      product.stockMilli += missing
+      next.movements.push({
+        id: randomUUID(),
+        productId: product.id,
+        type: 'adjustment',
+        quantityMilli: missing,
+        createdAt: now,
+        note: `${SOLD_WITHOUT_STOCK_NOTE} (Rafa)`,
+        origem: 'whatsapp',
+      })
+    }
     const paymentMethod = sales.find((item) => item.paymentMethod)?.paymentMethod
     const completed = completeSale(
       next.products,

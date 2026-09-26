@@ -147,7 +147,7 @@ export type ConfirmRafaResult =
   | { kind: 'expired' }
   | { kind: 'media'; importId: string; storeId: string }
   | { kind: 'invalidated'; message: string }
-  | { kind: 'applied'; changes: RafaChange[]; after: RafaStoreState }
+  | { kind: 'applied'; changes: RafaChange[]; after: RafaStoreState; storeId: string }
 
 export async function confirmRafaPending(waId: string): Promise<ConfirmRafaResult> {
   const admin = createAdminClient()
@@ -200,7 +200,7 @@ export async function confirmRafaPending(waId: string): Promise<ConfirmRafaResul
     status: 'confirmada',
     confirmed_at: new Date().toISOString(),
   }).eq('id', pending.id)
-  return { kind: 'applied', changes, after }
+  return { kind: 'applied', changes, after, storeId: String(pending.store_id) }
 }
 
 // Mensagem de resultado depois do Sim: diz exatamente o que ficou valendo.

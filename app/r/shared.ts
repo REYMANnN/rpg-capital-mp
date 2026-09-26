@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { completeSale, type PaymentMethod } from '@/lib/inventory/core'
 import { calculatePurchaseUpdate } from '@/lib/inventory/intake'
+import { SOLD_WITHOUT_STOCK_NOTE } from '@/lib/rafa-tips'
 import type { WhatsAppFlowSummary } from '@/lib/whatsapp-flow'
 
 // Ferramentas web da Rafa (/r/*): páginas curtas, abertas pelo link do WhatsApp.
@@ -225,7 +226,24 @@ export function addEntry(state: WaState, productId: string, quantityMilli: numbe
   }
 }
 
-export function applySale(state: WaState, lines: Array<{ productId: string; quantityMilli: number }>, method: PaymentMethod) {
+// Caixa não trava por falta de estoque: o que faltar vira um ajuste marcado
+// ("venda sem estoque registrado") e a Rafa pede a nota depois.
+export function coverMissingStock(state: WaState, lines: Array<{ productId: string; quantityMilli: number }>) {
+  const needed = new Map<string, number>()
+  for (const line of lines) needed.set(line.productId, (needed.get(line.productId) || 0) + line.quantityMilli)
+  const adjustments: WaMovement[] = []
+  const products = state.products.map((product) => {
+    const missing = (needed.get(product.id) || 0) - product.stockMilli
+    if (missing <= 0) return product
+    adjustments.push({ id: uid(), productId: product.id, type: 'adjustment', quantityMilli: missing, createdAt: nowIso(), note: `${SOLD_WITHOUT_STOCK_NOTE} (caixa)`, origem: 'whatsapp' })
+    return { ...product, stockMilli: product.stockMilli + missing }
+  })
+  if (!adjustments.length) return state
+  return { ...state, products, movements: [...state.movements, ...adjustments] }
+}
+
+export function applySale(original: WaState, lines: Array<{ productId: string; quantityMilli: number }>, method: PaymentMethod) {
+  const state = coverMissingStock(original, lines)
   const result = completeSale(state.products as never, lines, uid(), { method, confirmedAt: nowIso() })
   const byId = new Map(result.products.map((product) => [product.id, product.stockMilli]))
   const sale = { ...result.sale, origem: 'whatsapp' }

@@ -157,8 +157,8 @@ export default function VenderPage() {
                 <div key={line.productId} className={styles.item}>
                   <div className={styles.grow}>
                     <div className={styles.name}>{product.name}</div>
-                    <div className={styles.meta} style={short ? { color: 'var(--danger)' } : undefined}>
-                      {money(product.priceCents)} {short ? `· só tem ${qty(product.stockMilli, product.unit)}` : ''}
+                    <div className={styles.meta}>
+                      {money(product.priceCents)} {short ? `· estoque registrado: ${qty(Math.max(0, product.stockMilli), product.unit)} (vende mesmo assim)` : ''}
                     </div>
                   </div>
                   <div className={styles.stepper}>

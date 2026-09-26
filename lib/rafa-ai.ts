@@ -341,6 +341,32 @@ export async function extractRafaInvoiceImages(input: {
   })
 }
 
+// Nota em PDF (DANFE com texto) ou XML: mesma extração, lendo o texto em vez da foto.
+export async function extractRafaInvoiceText(input: {
+  storeId: string
+  waId: string
+  text: string
+}) {
+  return groqJson<RafaInvoiceExtraction>({
+    storeId: input.storeId,
+    waId: input.waId,
+    operation: 'invoice_extraction_text',
+    model: RAFA_TEXT_MODEL,
+    maxTokens: 6000,
+    messages: [{
+      role: 'user',
+      content: [
+        'Extraia a nota fiscal abaixo (texto de DANFE ou XML de NF-e) e retorne somente JSON no formato:',
+        '{"supplier_name":..., "supplier_cnpj":..., "items":[{"description","supplier_code","ean","quantity","unit_cost_cents","total_cents","unit_package","confidence":{"product","quantity","cost"}}]}.',
+        'No XML: emit/xNome e emit/CNPJ; cada det/prod: xProd, cProd, cEAN (ignore "SEM GTIN"), qCom, vUnCom, vProd, uCom.',
+        'Não invente campos ausentes; use null. Valores monetários em centavos inteiros. confidence entre 0 e 1.',
+        '',
+        input.text.slice(0, 30_000),
+      ].join('\n'),
+    }],
+  })
+}
+
 export async function transcribeRafaAudio(input: {
   storeId: string
   waId: string
