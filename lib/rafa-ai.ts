@@ -266,7 +266,7 @@ export async function readRafaImage(input: {
     waId: input.waId,
     operation: 'image_reading',
     model: RAFA_VISION_MODEL,
-    maxTokens: 2500,
+    maxTokens: 6000,
     messages: [{
       role: 'user',
       content: [
