@@ -1,3 +1,4 @@
+import { counterpartyFromDescription } from '@/lib/finance/enrich'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMalvoItem, listMalvoAccounts, listMalvoTransactions, parseMalvoClientUserId } from '@/lib/malvo/client'
 
@@ -36,6 +37,13 @@ function counterparty(transaction: any) {
     name: party?.name || party?.legalName || null,
     taxId: party?.document || party?.taxNumber || null,
   }
+}
+
+function rawDetails(transaction: any) {
+  const keys = ['descriptionRaw', 'merchant', 'paymentData', 'creditCardMetadata', 'category', 'categoryId', 'operationType', 'type', 'status', 'providerCode', 'currencyCode']
+  const details: Record<string, unknown> = {}
+  for (const key of keys) if (transaction?.[key] != null) details[key] = transaction[key]
+  return details
 }
 
 function connectionStatus(item: any) {
@@ -135,13 +143,15 @@ export async function syncMalvoItem(input: { itemId: string; clientUserId?: stri
         posted_at: transaction.date,
         amount_cents: cents(transaction.amount),
         description: String(transaction.description || transaction.descriptionRaw || 'Movimentação'),
-        counterparty_name: party.name,
+        counterparty_name: party.name || counterpartyFromDescription(String(transaction.description || transaction.descriptionRaw || ''), transaction.operationType || transaction.type),
         counterparty_tax_id: party.taxId,
         category: transactionCategory(transaction),
         category_confidence: null,
         transaction_type: transaction.operationType || transaction.type || null,
         is_internal_transfer: isInternalTransfer(transaction, ownerDocuments),
         source: 'malvo',
+        // Guarda o que o banco mandou além da descrição (loja, pagador/recebedor, cartão) para análise.
+        details: rawDetails(transaction),
       }
     }).filter((row) => row.posted_at && row.amount_cents !== 0)
 

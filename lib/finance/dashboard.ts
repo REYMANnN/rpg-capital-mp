@@ -1,3 +1,5 @@
+import { counterpartyFromDescription } from '@/lib/finance/enrich'
+
 export type FinanceSource = 'mock' | 'malvo' | 'manual'
 export type MetricSource = 'mock' | 'derived'
 export type CheckoutPaymentMethod = 'pix' | 'card' | 'cash'
@@ -533,7 +535,10 @@ export function buildFinanceDashboard(input: FinanceDashboardInput) {
     expense.transactionCount += 1
     expenseMap.set(category, expense)
 
-    const name = transaction.counterpartyName?.trim() || transaction.description?.trim() || 'Não identificado'
+    const name = transaction.counterpartyName?.trim()
+      || counterpartyFromDescription(transaction.description || '')
+      || transaction.description?.trim()
+      || 'Não identificado'
     const counterparty = counterpartyMap.get(name) ?? { category, amountCents: 0, transactionCount: 0 }
     counterparty.amountCents += amountCents
     counterparty.transactionCount += 1
