@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { markAsRead, sendText } from '@/lib/whatsapp'
 import { enqueueWhatsApp, evoTyping, isEvolutionProvider } from '@/lib/whatsapp-evolution'
 import { askStorePick, bindRafaStore, phoneStores, resolveRafaStore, runRafaAgent, STORE_PICK_PREFIX, type RafaAgentSource } from '@/lib/rafa-agent'
-import { fileKind, looksLikeInvoice, readPdfText, readPlainText, readTable, tooBig } from '@/lib/rafa-files'
+import { fileKind, isNfeXml, looksLikeInvoice, readPdfText, readPlainText, readTable, tooBig } from '@/lib/rafa-files'
 import { buildImportPlan, findHeader, importSummaryMessage, tableToText } from '@/lib/rafa-import'
 import { classifyWhatsAppText, replyForIntent, type WhatsAppIntent } from '@/lib/whatsapp-router'
 import { sendMenu } from '@/lib/whatsapp-menu'
@@ -13,7 +13,8 @@ import { flowIntent, interactiveButtonId, interactiveFlow } from '@/lib/whatsapp
 import { FLOW_HINT } from '@/lib/whatsapp-flows'
 import { extractRafaActions, rafaAiBudgetAvailable, readRafaImage, transcribeRafaAudio, type RafaImageReading, type RafaMediaClass } from '@/lib/rafa-ai'
 import { appliedMessage, CONFIRM_NO_ID, CONFIRM_YES_ID, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
-import { appendInvoiceMedia, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
+import { appendInvoiceMedia, askPendingPrices, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
+import { markPendingRegistered } from '@/lib/rafa-pending-products'
 import { downloadWhatsAppMedia, mediaDataUri, storeInvoiceProof } from '@/lib/rafa-media'
 import { actionToChange, resolveTextProduct } from '@/lib/rafa-products'
 import { loadRafaStore, type RafaChange } from '@/lib/inventory/rafa-store'
@@ -155,6 +156,13 @@ export async function processValue(value: JsonRecord) {
       if (isEvolutionProvider()) {
         const sent = await sendText(fromPhone, appliedMessage(result.after, result.changes), { inReplyTo: wamid })
         if (!sent.ok) throw new Error(sent.error)
+        // Produtos novos da nota: cadastrados saem da espera; os que faltam preço são pedidos agora.
+        await attempt('rafa_pending_products', async () => {
+          const storeId = result.storeId
+          const registered = result.changes.flatMap((change) => change.kind === 'cadastrar' ? [change.barcode] : [])
+          await markPendingRegistered(storeId, registered)
+          await askPendingPrices(fromPhone, storeId)
+        })
         return
       }
       const sent = await sendText(fromPhone, 'Pronto. Alteração confirmada e registrada.\n— Rafa', { inReplyTo: wamid })
@@ -512,7 +520,7 @@ export async function processValue(value: JsonRecord) {
         if (!id) throw new Error('media_id_missing')
         const filenameHint = message.type === 'document' ? message.document?.filename : null
         const caption = String((message.type === 'document' ? message.document?.caption : message.image?.caption) || '').trim()
-        const media = await downloadWhatsAppMedia(id, filenameHint)
+        let media = await downloadWhatsAppMedia(id, filenameHint)
         mediaMime = media.mime
         const kind = fileKind(media.mime, media.filename)
         const reply = async (text: string) => {
@@ -552,7 +560,7 @@ export async function processValue(value: JsonRecord) {
             waId: fromPhone,
             storeId,
             importId: appended.importId,
-            message: `Parece uma nota fiscal${supplier}.${pageText} Quer que eu suba esses produtos para a prateleira?\n— Rafa`,
+            message: `Parece uma nota fiscal${supplier}.${pageText} Leio e coloco no seu estoque? Se a nota tiver mais fotos, manda antes de apertar Sim.\n— Rafa`,
             inReplyTo: wamid,
           })
           if (!result.ok) throw new Error(result.error)
@@ -608,6 +616,18 @@ export async function processValue(value: JsonRecord) {
           }
           intentValue = 'media_pdf'
           await toAgent('document', `PDF ${media.filename}`, text)
+          return
+        }
+
+        if (kind === 'xml') {
+          const text = await readPlainText(media.bytes)
+          if (isNfeXml(text)) {
+            media = { ...media, mime: 'application/xml', filename: /\.xml$/i.test(media.filename) ? media.filename : `${media.filename}.xml` }
+            await invoiceFlow({ classe: 'nota_fiscal', descricao: 'XML de nota fiscal' })
+            return
+          }
+          intentValue = 'media_text'
+          await toAgent('document', `arquivo ${media.filename}`, text)
           return
         }
 

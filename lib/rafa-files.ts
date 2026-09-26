@@ -6,7 +6,7 @@ import { parseCsv, type Table } from '@/lib/rafa-import'
 
 // Arquivos que chegam no WhatsApp: descobre o tipo e tira o conteúdo (tabela ou texto).
 
-export type RafaFileKind = 'image' | 'pdf' | 'xlsx' | 'csv' | 'text' | 'unsupported'
+export type RafaFileKind = 'image' | 'pdf' | 'xml' | 'xlsx' | 'csv' | 'text' | 'unsupported'
 
 const MAX_BYTES = 8 * 1024 * 1024
 
@@ -15,6 +15,7 @@ export function fileKind(mime: string, filename: string): RafaFileKind {
   const type = mime.toLowerCase()
   if (type.startsWith('image/')) return 'image'
   if (type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf'
+  if (type.includes('xml') || name.endsWith('.xml')) return 'xml'
   if (type.includes('spreadsheetml') || name.endsWith('.xlsx')) return 'xlsx'
   if (type.includes('csv') || name.endsWith('.csv')) return 'csv'
   if (type.startsWith('text/') || name.endsWith('.txt')) return 'text'
@@ -56,4 +57,9 @@ export async function readPdfText(bytes: Uint8Array) {
 export function looksLikeInvoice(text: string) {
   const compact = text.replace(/\s+/g, '')
   return /DANFE|DOCUMENTO AUXILIAR DA NOTA FISCAL|NOTA FISCAL ELETR/i.test(text) || /\d{44}/.test(compact)
+}
+
+// XML de NF-e: lido de forma exata por lib/inventory/nfe (sem IA).
+export function isNfeXml(text: string) {
+  return /<infNFe[\s>]/.test(text) && /<det[\s>]/.test(text)
 }

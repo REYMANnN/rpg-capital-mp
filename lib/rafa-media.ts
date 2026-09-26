@@ -92,6 +92,13 @@ export async function storeInvoiceProof(input: {
   return path
 }
 
+export async function loadInvoiceProofBytes(path: string) {
+  const admin = createAdminClient()
+  const { data, error } = await admin.storage.from(RAFA_PROOF_BUCKET).download(path)
+  if (error || !data) throw error || new Error('invoice_proof_missing')
+  return new Uint8Array(await data.arrayBuffer())
+}
+
 export async function loadInvoiceProofDataUri(path: string) {
   const admin = createAdminClient()
   const { data, error } = await admin.storage.from(RAFA_PROOF_BUCKET).download(path)

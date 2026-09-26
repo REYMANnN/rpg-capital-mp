@@ -9,6 +9,9 @@ import { getMalvoItem, refreshMalvoItem } from '@/lib/malvo/client'
 import { syncMalvoItem } from '@/lib/malvo/sync'
 import { rafaAiBudgetAvailable, recordAiUsage } from '@/lib/rafa-ai'
 import { askRafaConfirmation } from '@/lib/rafa-confirm'
+import { pendingProductsBlock, type PendingProductRow } from '@/lib/rafa-invoice-plan'
+import { listPendingProducts } from '@/lib/rafa-pending-products'
+import { inventoryAdviceBlock, inventoryFacts, pickDailyTip } from '@/lib/rafa-tips'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendText } from '@/lib/whatsapp'
 import { enqueueWhatsApp, normalizePhone } from '@/lib/whatsapp-evolution'
@@ -371,17 +374,21 @@ function milli(value: unknown) {
   return Number.isFinite(number) ? Math.round(number * 1000) : NaN
 }
 
-export function buildRafaChanges(state: RafaStoreState, items: any[]): { changes: RafaChange[] } | { error: string } {
+// pending: produtos da nota esperando preço. Custo, quantidade e nome vêm da nota (não do modelo);
+// o modelo só traz o preço de venda que o lojista falou.
+export function buildRafaChanges(state: RafaStoreState, items: any[], pending: PendingProductRow[] = []): { changes: RafaChange[] } | { error: string } {
   if (!Array.isArray(items) || !items.length) return { error: 'Nenhuma alteração informada.' }
+  const pendingByBarcode = new Map(pending.map((row) => [row.barcode, row]))
   const changes: RafaChange[] = []
   for (const item of items) {
     const tipo = String(item?.tipo || '')
     if (tipo === 'cadastrar') {
       const barcode = String(item.ean || '').replace(/\D/g, '')
-      const name = String(item.nome || '').trim().slice(0, 120)
+      const fromInvoice = pendingByBarcode.get(barcode)
+      const name = String(fromInvoice?.name || item.nome || '').trim().slice(0, 120)
       const priceCents = cents(item.preco_reais)
-      const costCents = cents(item.custo_reais)
-      const stockMilli = item.estoque_inicial == null ? 0 : milli(item.estoque_inicial)
+      const costCents = fromInvoice ? Number(fromInvoice.cost_cents) : cents(item.custo_reais)
+      const stockMilli = fromInvoice ? Number(fromInvoice.quantity_milli) : item.estoque_inicial == null ? 0 : milli(item.estoque_inicial)
       if (!isValidGtin(barcode)) return { error: `EAN inválido para "${name || 'produto novo'}". Peça o código de barras correto.` }
       if (!name) return { error: 'Falta o nome do produto novo.' }
       if (!(priceCents > 0)) return { error: `Falta o preço de venda de "${name}".` }
@@ -574,6 +581,7 @@ function systemPrompt(storeName: string, otherStores: number) {
     'ÁUDIO: se a mensagem começar com [ÁUDIO transcrito], comece a resposta com "Entendi: " e um resumo do pedido em uma frase (ex.: "Entendi: você quer saber quanto vendeu hoje."). Depois responda ou faça o que foi pedido. A transcrição pode ter erros; leia pelo sentido.',
     'IMAGEM/ARQUIVO: se vier [IMAGEM: ...] ou [ARQUIVO: ...], diga em uma linha o que você leu (ex.: "Li sua lista com 8 itens."). Se o lojista pediu algo (ou a legenda indica), faça: busque cada produto com buscar_produtos e chame propor_alteracoes de uma vez com todos os itens entendidos. Se não pediu nada, resuma o conteúdo e pergunte o que ele quer fazer (ex.: "Quer que eu dê entrada desses itens no estoque?").',
     'Item ambíguo (ex.: "papel higiênico 12 rolos" e a loja tem 3 marcas): não chute. Liste as opções com nome e EAN e pergunte qual é. Item que não existe na loja: diga que não achou e pergunte se quer cadastrar (precisa de EAN, preço e custo). Nunca invente item, quantidade ou preço que não esteja no arquivo.',
+    'ESTOQUE SEM TRABALHO: se perguntarem como subir/montar/organizar o estoque, ou se a loja estiver com pouco cadastro, aconselhe com base na SITUAÇÃO DO ESTOQUE: o principal é mandar a foto, PDF ou XML das notas de compra (eu leio produto, quantidade e custo) e o que for vendido sem cadastro o caixa cadastra. Dê 1 tarefa concreta por vez, com o ganho.',
     'Se perguntarem quem você é ou o que faz: diga que é a Rafa, da RPG Capital, e que consulta estoque, preços, vendas e banco da loja, e muda preço, estoque e produtos com confirmação.',
     'Se o assunto não tiver a ver com a loja, responda em uma linha e volte para a loja.',
   ].join('\n')
@@ -671,6 +679,17 @@ export function cleanReply(text: string) {
   return out.replace(/\n{3,}/g, '\n\n').trim()
 }
 
+async function claimDailyTip(waId: string, storeId: string, state: RafaStoreState, pendingPrices: number) {
+  const tip = pickDailyTip(inventoryFacts(state, pendingPrices))
+  if (!tip) return null
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+  // unique (wa_id, day): quem inserir primeiro manda a dica; o resto ignora.
+  const { error } = await createAdminClient().from('rafa_daily_tips').insert({
+    wa_id: normalizePhone(waId), store_id: storeId, day, tip_key: tip.key, message: tip.message,
+  })
+  return error ? null : tip.message
+}
+
 export type RafaAgentOutcome = 'replied' | 'confirmation' | 'budget' | 'error'
 
 export type RafaAgentSource = 'text' | 'audio' | 'image' | 'document'
@@ -688,17 +707,18 @@ export function agentUserContent(input: { text: string; source?: RafaAgentSource
 }
 
 export async function runRafaAgent(input: { waId: string; storeId: string; text: string; inReplyTo?: string; source?: RafaAgentSource; attachment?: { label: string; content: string } }): Promise<RafaAgentOutcome> {
-  const [budget, loaded, history, stores] = await Promise.all([
+  const [budget, loaded, history, stores, pending] = await Promise.all([
     rafaAiBudgetAvailable(input.storeId),
     loadRafaStore(input.storeId),
     recentHistory(input.waId).catch(() => []),
     phoneStores(input.waId).catch(() => []),
+    listPendingProducts(input.storeId).catch(() => []),
   ])
   if (!budget.allowed) return 'budget'
   const { store, state } = loaded
   const otherStores = stores.filter((item) => item.id !== input.storeId).length
   const messages: any[] = [
-    { role: 'system', content: `${systemPrompt(store.displayName || 'sua loja', otherStores)}\n\n${catalogBlock(state)}` },
+    { role: 'system', content: [systemPrompt(store.displayName || 'sua loja', otherStores), catalogBlock(state), pendingProductsBlock(pending), inventoryAdviceBlock(state, pending.length)].filter(Boolean).join('\n\n') },
     ...history,
     { role: 'user', content: agentUserContent(input) },
   ]
@@ -713,8 +733,11 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
       const text = String(reply.content || '').trim()
       if (!text) throw new Error('rafa_agent_empty')
       const body = cleanReply(text)
+      // No máximo 1 dica/tarefa por dia, junto da resposta (sem mensagem extra).
+      const tip = await claimDailyTip(input.waId, input.storeId, state, pending.length).catch(() => null)
+      const withTip = tip && !body.includes(tip) ? `${body}\n\nDica do dia: ${tip}` : body
       // O menu vem sempre depois da resposta (mensagem separada).
-      const sent = await sendText(input.waId, body, { inReplyTo: input.inReplyTo })
+      const sent = await sendText(input.waId, withTip, { inReplyTo: input.inReplyTo })
       if (!sent.ok) throw new Error(sent.error)
       return 'replied'
     }
@@ -751,7 +774,7 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
             return 'replied'
           }
           case 'propor_alteracoes': {
-            const built = buildRafaChanges(state, args.alteracoes)
+            const built = buildRafaChanges(state, args.alteracoes, pending)
             if ('error' in built) { result = { erro: built.error }; break }
             const sent = await askRafaConfirmation({ waId: input.waId, storeId: input.storeId, changes: built.changes, state, inReplyTo: input.inReplyTo })
             if (!sent.ok) throw new Error(sent.error)
