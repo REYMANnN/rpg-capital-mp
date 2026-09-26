@@ -1,8 +1,10 @@
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import OnboardingWizard from '@/components/accounts/OnboardingWizard'
 import OnboardingBillingStep from '@/components/accounts/OnboardingBillingStep'
 import OnboardingBankStep from '@/components/accounts/OnboardingBankStep'
 import { getAccountState, getCurrentUser, getManagementContext } from '@/lib/accounts/currentUser'
+import { COUPON_COOKIE, normalizeCouponCode } from '@/lib/admin/coupons'
 
 export default async function OnboardingPage() {
   const user = await getCurrentUser()
@@ -18,7 +20,7 @@ export default async function OnboardingPage() {
     if (store) {
       if (!billingConfigured) {
         return <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950">
-          <OnboardingBillingStep storeId={store.id} userName={userName} userEmail={user.email ?? ''} />
+          <OnboardingBillingStep storeId={store.id} userName={userName} userEmail={user.email ?? ''} initialCoupon={normalizeCouponCode((await cookies()).get(COUPON_COOKIE)?.value) ?? ''} />
         </main>
       }
       return <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950"><OnboardingBankStep userName={userName} storeId={store.id} /></main>
