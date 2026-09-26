@@ -3,13 +3,15 @@ import 'server-only'
 import { createClient } from '@supabase/supabase-js'
 import { markAsRead, sendText } from '@/lib/whatsapp'
 import { enqueueWhatsApp, evoTyping, isEvolutionProvider } from '@/lib/whatsapp-evolution'
-import { askStorePick, bindRafaStore, phoneStores, resolveRafaStore, runRafaAgent, STORE_PICK_PREFIX } from '@/lib/rafa-agent'
+import { askStorePick, bindRafaStore, phoneStores, resolveRafaStore, runRafaAgent, STORE_PICK_PREFIX, type RafaAgentSource } from '@/lib/rafa-agent'
+import { fileKind, looksLikeInvoice, readPdfText, readPlainText, readTable, tooBig } from '@/lib/rafa-files'
+import { buildImportPlan, findHeader, importSummaryMessage, tableToText } from '@/lib/rafa-import'
 import { classifyWhatsAppText, replyForIntent, type WhatsAppIntent } from '@/lib/whatsapp-router'
 import { sendMenu } from '@/lib/whatsapp-menu'
 import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { flowIntent, interactiveButtonId, interactiveFlow } from '@/lib/whatsapp-interactive'
 import { FLOW_HINT } from '@/lib/whatsapp-flows'
-import { classifyRafaImage, extractRafaActions, rafaAiBudgetAvailable, transcribeRafaAudio, type RafaMediaClass } from '@/lib/rafa-ai'
+import { extractRafaActions, rafaAiBudgetAvailable, readRafaImage, transcribeRafaAudio, type RafaImageReading, type RafaMediaClass } from '@/lib/rafa-ai'
 import { appliedMessage, CONFIRM_NO_ID, CONFIRM_YES_ID, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
 import { appendInvoiceMedia, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
 import { downloadWhatsAppMedia, mediaDataUri, storeInvoiceProof } from '@/lib/rafa-media'
@@ -172,6 +174,7 @@ export async function processValue(value: JsonRecord) {
     wamid: string,
     text: string,
     routing: ReturnType<typeof classifyWhatsAppText>,
+    extra?: { source: RafaAgentSource; attachment?: { label: string; content: string } },
   ) => {
     if (routing.intent === 'opt_out' || routing.intent === 'opt_in') {
       const result = await sendText(fromPhone, replyForIntent(routing.intent), { inReplyTo: wamid })
@@ -249,7 +252,7 @@ export async function processValue(value: JsonRecord) {
       }
       let outcome: Awaited<ReturnType<typeof runRafaAgent>>
       try {
-        outcome = await runRafaAgent({ waId: fromPhone, storeId: resolved.storeId, text, inReplyTo: wamid })
+        outcome = await runRafaAgent({ waId: fromPhone, storeId: resolved.storeId, text, inReplyTo: wamid, ...(extra || {}) })
       } catch (error) {
         const missingKey = error instanceof Error && error.message.includes('GROQ_API_KEY')
         const budgetHit = error instanceof Error && error.message === 'rafa_ai_budget_exceeded'
@@ -492,15 +495,15 @@ export async function processValue(value: JsonRecord) {
         routedText = transcript
         const routing = classifyWhatsAppText(transcript)
         intentValue = routing.intent
-        await routeOperationalText(fromPhone, wamid, transcript, routing)
+        await routeOperationalText(fromPhone, wamid, transcript, routing, { source: 'audio' })
       })
-    } else if (message.type === 'image' || (message.type === 'document' && String(message.document?.mime_type || '').includes('pdf'))) {
+    } else if (message.type === 'image' || message.type === 'document') {
       intentValue = 'media'
       await attempt('media', async () => {
         const session = await sessionFor(fromPhone)
         const storeId = typeof session?.store_id === 'string' ? session.store_id : null
         if (!storeId) {
-          const menu = await sendMenu(fromPhone, 'Primeiro abra o fluxo da sua loja pelo menu.', { inReplyTo: wamid })
+          const menu = await sendMenu(fromPhone, 'Ainda não achei uma loja ligada a este número. Confere se o telefone cadastrado no Balcão é este mesmo.', { inReplyTo: wamid })
           if (!menu.ok) throw new Error(menu.error)
           return
         }
@@ -508,54 +511,143 @@ export async function processValue(value: JsonRecord) {
         const id = mediaId(message)
         if (!id) throw new Error('media_id_missing')
         const filenameHint = message.type === 'document' ? message.document?.filename : null
+        const caption = String((message.type === 'document' ? message.document?.caption : message.image?.caption) || '').trim()
         const media = await downloadWhatsAppMedia(id, filenameHint)
         mediaMime = media.mime
-        const dataUri = mediaDataUri(media)
-
-        let classification: { classe: RafaMediaClass; descricao: string; fornecedor_nome?: string | null }
-        try {
-          classification = await classifyRafaImage({ storeId, waId: fromPhone, dataUri })
-        } catch (error) {
+        const kind = fileKind(media.mime, media.filename)
+        const reply = async (text: string) => {
+          const sent = await sendText(fromPhone, text, { inReplyTo: wamid })
+          if (!sent.ok) throw new Error(sent.error)
+        }
+        const budgetOrKey = async (error: unknown) => {
           if (error instanceof Error && error.message === 'rafa_ai_budget_exceeded') {
-            const menu = await sendMenu(fromPhone, 'O limite de respostas livres de hoje foi atingido. Os botões continuam funcionando normalmente; respostas livres voltam amanhã.', { inReplyTo: wamid })
+            const menu = await sendMenu(fromPhone, BUDGET_MESSAGE, { inReplyTo: wamid })
             if (!menu.ok) throw new Error(menu.error)
-            return
+            return true
           }
           if (error instanceof Error && error.message.includes('GROQ_API_KEY')) {
-            const sent = await sendText(fromPhone, 'A leitura automática de imagem ainda não está disponível agora. Você pode usar Prateleira manualmente.\n— Rafa', { inReplyTo: wamid })
-            if (!sent.ok) throw new Error(sent.error)
-            return
+            await reply('A leitura automática ainda não está disponível agora.\n— Rafa')
+            return true
           }
-          const hint = `${String(filenameHint || '')} ${String(message.document?.caption || '')}`.toLowerCase()
-          classification = /danfe|nfe|nf-e|nota/.test(hint)
-            ? { classe: 'nota_fiscal', descricao: 'documento PDF que parece ser uma nota fiscal' }
-            : { classe: 'outro', descricao: media.mime === 'application/pdf' ? 'documento PDF' : 'imagem não classificada' }
+          return false
         }
-        intentValue = `media_${classification.classe}`
 
-        if (classification.classe !== 'nota_fiscal') {
-          const sent = await sendText(fromPhone, unsupportedRafaClassMessage(classification.classe), { inReplyTo: wamid })
-          if (!sent.ok) throw new Error(sent.error)
-          const menu = await sendMenu(fromPhone)
-          if (!menu.ok) throw new Error(menu.error)
+        if (kind === 'unsupported') {
+          await reply('Ainda não consigo abrir esse tipo de arquivo. Me manda em PDF, planilha (.xlsx ou .csv), foto ou print.\n— Rafa')
+          return
+        }
+        if (tooBig(media.bytes)) {
+          await reply('Esse arquivo é grande demais pra mim (máximo 8 MB). Me manda uma parte ou um print.\n— Rafa')
           return
         }
 
-        const mediaPath = await storeInvoiceProof({ storeId, waId: fromPhone, media })
-        const appended = await appendInvoiceMedia({
+        // Nota fiscal segue o fluxo próprio (conferência + subir para a prateleira).
+        const invoiceFlow = async (classification: { classe: RafaMediaClass; descricao: string; fornecedor_nome?: string | null }) => {
+          intentValue = 'media_nota_fiscal'
+          const mediaPath = await storeInvoiceProof({ storeId, waId: fromPhone, media })
+          const appended = await appendInvoiceMedia({ waId: fromPhone, storeId, mediaPath, classification })
+          const supplier = classification.fornecedor_nome ? ` da ${classification.fornecedor_nome}` : ''
+          const pageText = appended.pageCount > 1 ? ` Recebi ${appended.pageCount} fotos dessa nota.` : ''
+          const result = await askRafaMediaConfirmation({
+            waId: fromPhone,
+            storeId,
+            importId: appended.importId,
+            message: `Parece uma nota fiscal${supplier}.${pageText} Quer que eu suba esses produtos para a prateleira?\n— Rafa`,
+            inReplyTo: wamid,
+          })
+          if (!result.ok) throw new Error(result.error)
+        }
+
+        const toAgent = async (source: RafaAgentSource, label: string, content: string) => {
+          transcript = `[${label}] ${content}`.slice(0, 1500)
+          routedText = caption || null
+          await routeOperationalText(fromPhone, wamid, caption, classifyWhatsAppText(caption || 'arquivo'), { source, attachment: { label, content } })
+        }
+
+        if (kind === 'image') {
+          let reading: RafaImageReading
+          try {
+            reading = await readRafaImage({ storeId, waId: fromPhone, dataUri: mediaDataUri(media), caption })
+          } catch (error) {
+            if (await budgetOrKey(error)) return
+            await reply('Não consegui ler essa imagem. Tenta mandar uma foto mais nítida, de frente e com boa luz.\n— Rafa')
+            return
+          }
+          intentValue = `media_${reading.classe}`
+          if (reading.classe === 'nota_fiscal') {
+            await invoiceFlow({ classe: 'nota_fiscal', descricao: reading.descricao, fornecedor_nome: reading.fornecedor_nome })
+            return
+          }
+          const items = (reading.itens || []).map((item) => [
+            item.nome, item.ean ? `EAN ${item.ean}` : null,
+            item.quantidade != null ? `qtd ${item.quantidade}${item.unidade ? ` ${item.unidade}` : ''}` : null,
+            item.preco_reais != null ? `preço R$ ${item.preco_reais}` : null,
+            item.custo_reais != null ? `custo R$ ${item.custo_reais}` : null,
+            item.observacao ? `(${item.observacao})` : null,
+          ].filter(Boolean).join(' · ')).filter(Boolean)
+          const content = [
+            `O que é: ${reading.descricao}`,
+            reading.texto ? `Texto lido:\n${reading.texto}` : null,
+            items.length ? `Itens (${items.length}):\n${items.map((line) => `- ${line}`).join('\n')}` : null,
+          ].filter(Boolean).join('\n\n')
+          await toAgent('image', `imagem (${reading.classe})`, content)
+          return
+        }
+
+        if (kind === 'pdf') {
+          let text = ''
+          try { text = await readPdfText(media.bytes) } catch { text = '' }
+          const hint = `${String(filenameHint || '')} ${caption}`.toLowerCase()
+          if (looksLikeInvoice(text) || (!text && /danfe|nfe|nf-e|nota/.test(hint))) {
+            await invoiceFlow({ classe: 'nota_fiscal', descricao: 'PDF de nota fiscal' })
+            return
+          }
+          if (text.length < 30) {
+            await reply('Esse PDF parece ser uma imagem escaneada e eu não consigo ler o texto dele. Me manda uma foto ou print das páginas.\n— Rafa')
+            return
+          }
+          intentValue = 'media_pdf'
+          await toAgent('document', `PDF ${media.filename}`, text)
+          return
+        }
+
+        if (kind === 'text') {
+          intentValue = 'media_text'
+          await toAgent('document', `texto ${media.filename}`, await readPlainText(media.bytes))
+          return
+        }
+
+        // Planilha: com colunas reconhecidas (nome/EAN + preço/custo/estoque) vira importação direta.
+        let rows: string[][] = []
+        try { rows = await readTable(media.bytes, kind) } catch {
+          await reply('Não consegui abrir essa planilha. Salva de novo em .xlsx ou .csv e me manda.\n— Rafa')
+          return
+        }
+        if (!rows.length) {
+          await reply('Essa planilha está vazia.\n— Rafa')
+          return
+        }
+        intentValue = 'media_planilha'
+        const header = findHeader(rows)
+        if (!header) {
+          await toAgent('document', `planilha ${media.filename}`, tableToText(rows))
+          return
+        }
+        const { state } = await loadRafaStore(storeId)
+        const mode = /entrada|chegou|compra|recebi|pedido/i.test(`${caption} ${media.filename}`) ? 'entrada' : 'set'
+        const plan = buildImportPlan(state, rows, header, mode)
+        transcript = `[planilha ${media.filename}] ${plan.rows} produtos; ${plan.changes.length} alterações`
+        if (!plan.changes.length) {
+          await reply(`${importSummaryMessage(plan, media.filename)}\n\nNada para mudar na loja.\n— Rafa`)
+          return
+        }
+        const result = await askRafaConfirmation({
           waId: fromPhone,
           storeId,
-          mediaPath,
-          classification,
-        })
-        const supplier = classification.fornecedor_nome ? ` da ${classification.fornecedor_nome}` : ''
-        const pageText = appended.pageCount > 1 ? ` Recebi ${appended.pageCount} fotos dessa nota.` : ''
-        const result = await askRafaMediaConfirmation({
-          waId: fromPhone,
-          storeId,
-          importId: appended.importId,
-          message: `Parece uma nota fiscal${supplier}.${pageText} Quer que eu suba esses produtos para a prateleira?\n— Rafa`,
+          changes: plan.changes,
+          state,
           inReplyTo: wamid,
+          message: `${importSummaryMessage(plan, media.filename)}\n— Rafa`,
         })
         if (!result.ok) throw new Error(result.error)
       })
