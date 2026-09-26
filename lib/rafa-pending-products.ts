@@ -39,6 +39,7 @@ export async function savePendingProducts(input: {
         brand: item.brand || null,
         quantity_milli: item.quantityMilli,
         cost_cents: item.costCents,
+        unit: item.unit || 'UN',
       })
     }
   }
@@ -47,7 +48,7 @@ export async function savePendingProducts(input: {
 export async function listPendingProducts(storeId: string): Promise<PendingProduct[]> {
   const admin = createAdminClient()
   const { data } = await admin.from('rafa_pending_products')
-    .select('id,barcode,name,quantity_milli,cost_cents,asked_at')
+    .select('id,barcode,name,quantity_milli,cost_cents,unit,asked_at')
     .eq('store_id', storeId)
     .eq('status', 'aguardando_preco')
     .order('created_at', { ascending: true })
@@ -58,6 +59,7 @@ export async function listPendingProducts(storeId: string): Promise<PendingProdu
     name: String(row.name),
     quantity_milli: Number(row.quantity_milli),
     cost_cents: Number(row.cost_cents),
+    unit: String(row.unit || 'UN'),
     asked_at: row.asked_at ? String(row.asked_at) : null,
   }))
 }

@@ -186,17 +186,25 @@ export async function rememberSupplierProduct(input: {
 }
 
 export async function resolveInvoiceExtraction(state: RafaStoreState, extraction: RafaInvoiceExtraction) {
-  const lines = []
-  for (const item of extraction.items || []) {
-    const resolution = await resolveRafaInvoiceProduct({
-      state,
-      supplierCnpj: extraction.supplier_cnpj,
-      supplierCode: item.supplier_code,
-      description: item.description,
-      ean: item.ean,
-    })
-    lines.push({ ...item, resolution })
+  // Até 6 itens em paralelo: nota de atacado com 30+ linhas não pode estourar o tempo.
+  const items = extraction.items || []
+  const lines: Array<(typeof items)[number] & { resolution: RafaProductResolution }> = new Array(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++
+      const item = items[index]
+      const resolution = await resolveRafaInvoiceProduct({
+        state,
+        supplierCnpj: extraction.supplier_cnpj,
+        supplierCode: item.supplier_code,
+        description: item.description,
+        ean: item.ean,
+      }).catch(() => ({ status: 'unresolved', candidates: [] }) as RafaProductResolution)
+      lines[index] = { ...item, resolution }
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(6, items.length) }, worker))
   return {
     supplier_name: extraction.supplier_name || null,
     supplier_cnpj: String(extraction.supplier_cnpj || '').replace(/\D/g, '') || null,
