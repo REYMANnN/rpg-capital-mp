@@ -54,7 +54,8 @@ export async function getAccountState(userId: string): Promise<{ onboarded: bool
   return {
     onboarded: profile?.onboarding_completed === true,
     hasBusiness: true,
-    billingConfigured: billing?.status === 'configured' || billing?.status === 'active',
+    // Cortesia (cupom) conta como cobrança resolvida: o cadastro segue para o banco sem cartão.
+    billingConfigured: ['configured', 'active', 'courtesy', 'courtesy_ending'].includes(String(billing?.status)),
   }
 }
 

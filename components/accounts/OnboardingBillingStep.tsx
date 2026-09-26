@@ -17,10 +17,18 @@ export default function OnboardingBillingStep({
   storeId,
   userName,
   userEmail,
+  initialCoupon = '',
+  allowCoupon = true,
+  successHref = '/onboarding?step=bank',
+  stepLabel = true,
 }: {
   storeId: string
   userName: string
   userEmail: string
+  initialCoupon?: string
+  allowCoupon?: boolean
+  successHref?: string
+  stepLabel?: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -28,6 +36,10 @@ export default function OnboardingBillingStep({
   const [fieldErrors, setFieldErrors] = useState<BillingFieldErrors>({})
   const [accepted, setAccepted] = useState(false)
   const [card, setCard] = useState({ holderName: userName, number: '', expiryMonth: '', expiryYear: '', ccv: '' })
+  const [coupon, setCoupon] = useState(initialCoupon)
+  const [couponOpen, setCouponOpen] = useState(Boolean(initialCoupon))
+  const [couponBusy, setCouponBusy] = useState(false)
+  const [couponError, setCouponError] = useState('')
   const [holder, setHolder] = useState({ name: userName, email: userEmail, cpfCnpj: '', postalCode: '', addressNumber: '', addressComplement: '', mobilePhone: '' })
 
   function clearFieldError(field: keyof BillingFieldErrors) {
@@ -38,6 +50,26 @@ export default function OnboardingBillingStep({
       return next
     })
     setError('')
+  }
+
+  async function redeemCoupon() {
+    if (couponBusy) return
+    setCouponBusy(true)
+    setCouponError('')
+    try {
+      const response = await fetch('/api/balcao/billing/coupon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId, code: coupon }),
+      })
+      const payload = await response.json().catch(() => ({})) as { error?: string }
+      if (!response.ok) throw new Error(payload.error || 'Não consegui aplicar o cupom.')
+      router.replace(successHref)
+      router.refresh()
+    } catch (caught) {
+      setCouponError(caught instanceof Error ? caught.message : 'Não consegui aplicar o cupom.')
+      setCouponBusy(false)
+    }
   }
 
   async function submit(event: FormEvent) {
@@ -76,7 +108,7 @@ export default function OnboardingBillingStep({
       }
 
       setCard({ holderName: '', number: '', expiryMonth: '', expiryYear: '', ccv: '' })
-      router.replace('/onboarding?step=bank')
+      router.replace(successHref)
       router.refresh()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Não foi possível configurar a cobrança.')
@@ -93,11 +125,29 @@ export default function OnboardingBillingStep({
   return <div className="mx-auto w-full max-w-3xl">
     <header className="mb-7 px-1">
       <p className="text-sm font-bold tracking-[0.18em] text-blue-700">BALCÃO</p>
-      <div className="mt-5 flex items-center justify-between gap-4 text-sm font-medium text-slate-600">
-        <span>Etapa 5 de 6</span><span>83%</span>
-      </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full w-5/6 rounded-full bg-blue-700" /></div>
+      {stepLabel && <>
+        <div className="mt-5 flex items-center justify-between gap-4 text-sm font-medium text-slate-600">
+          <span>Etapa 5 de 6</span><span>83%</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full w-5/6 rounded-full bg-blue-700" /></div>
+      </>}
     </header>
+
+    {allowCoupon && <section className="mb-5 rounded-3xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6">
+      {!couponOpen ? (
+        <button type="button" onClick={() => setCouponOpen(true)} className="text-sm font-semibold text-emerald-800 underline underline-offset-4">Tenho um cupom</button>
+      ) : (
+        <div>
+          <p className="text-base font-bold text-emerald-900">{initialCoupon ? 'Você tem um cupom de cortesia' : 'Usar cupom'}</p>
+          <p className="mt-1 text-sm text-emerald-900/80">Com o cupom você usa sem cadastrar cartão agora.</p>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <input value={coupon} onChange={(event) => { setCoupon(event.target.value.toUpperCase()); setCouponError('') }} placeholder="RPG-XXXXXX" autoCapitalize="characters" className="min-h-12 flex-1 rounded-xl border border-emerald-300 bg-white px-4 py-3 font-mono text-base tracking-wider text-slate-950 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100" />
+            <button type="button" onClick={redeemCoupon} disabled={couponBusy || !coupon.trim()} className="min-h-12 rounded-xl bg-emerald-700 px-5 py-3 text-base font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">{couponBusy ? 'Aplicando…' : 'Continuar sem cartão'}</button>
+          </div>
+          {couponError && <p className="mt-2 text-sm font-medium text-rose-700" role="alert">{couponError}</p>}
+        </div>
+      )}
+    </section>}
 
     <form onSubmit={submit} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
       <p className="text-sm font-semibold text-blue-700">Plano e cobrança</p>
