@@ -10,9 +10,11 @@ O sistema reúne inventário, vendas, finanças, equipe e outras rotinas de gest
 
 ## Preço
 
-R$ 9,99 por mês.
+Preço atual: R$ 9,99 por mês.
 
-A proposta comercial é custar menos de um cafezinho por mês para permitir que o comerciante gerencie toda a loja.
+Esse é o preço vigente desde 26 de setembro de 2026. Qualquer referência anterior a R$ 5,99 por mês está desatualizada.
+
+A proposta comercial é custar aproximadamente o preço de um café por mês para permitir que o comerciante gerencie toda a loja.
 
 ## Pix
 
@@ -39,7 +41,7 @@ https://rpgcapital.com.br/
 ## Acesso ao produto
 
 Login: https://www.rpgcapital.com.br/login?intent=login
-Cadastro: https://www.rpgcapital.com.br/auth/signup/reset
+Interesse em nova conta: https://www.rpgcapital.com.br/interesse
 
 ## Contato comercial
 
