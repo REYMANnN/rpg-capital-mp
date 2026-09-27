@@ -57,6 +57,7 @@ const structuredData = {
       '@id': 'https://rpgcapital.com.br/#organization',
       name: 'RPG Capital',
       url: 'https://rpgcapital.com.br/',
+      logo: 'https://rpgcapital.com.br/favicon.svg',
       email: 'comercial@rpgcapital.com.br',
       telephone: '+5511936206235',
     },
