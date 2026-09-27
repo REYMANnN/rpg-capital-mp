@@ -71,7 +71,24 @@ async function fetchEvents() {
 }
 
 export async function loadWebAnalytics() {
+  const admin = createAdminClient()
   const events = await fetchEvents()
+  const { data: leadRows } = await admin
+    .from('rpg_interest_leads')
+    .select('analytics_session_key,name,business_name,phone,email')
+    .not('analytics_session_key', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(500)
+  const leads = new Map<string, { name: string; businessName: string; phone: string; email: string }>()
+  for (const row of leadRows || []) {
+    if (!row.analytics_session_key) continue
+    leads.set(String(row.analytics_session_key), {
+      name: String(row.name || ''),
+      businessName: String(row.business_name || ''),
+      phone: String(row.phone || ''),
+      email: String(row.email || ''),
+    })
+  }
   const now = Date.now()
   const inDays = (days: number) => events.filter((row) => now - new Date(row.created_at).getTime() <= days * DAY)
   const d1 = inDays(1)
@@ -199,6 +216,7 @@ export async function loadWebAnalytics() {
         interest: s.interest,
         formStarted: s.formStarted,
         formSubmitted: s.formSubmitted,
+        lead: leads.get(s.id) || null,
       })),
   }
 }
