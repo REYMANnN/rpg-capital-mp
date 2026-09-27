@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import styles from './landing.module.css'
 
-const signupHref = '/auth/signup/reset'
+const signupHref = '/interesse'
 const loginHref = '/login?intent=login'
 const demoHref = '/demo'
 
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     siteName: 'RPG para Balcões',
     title: 'RPG para Balcões — Sua loja inteira por R$ 9,99/mês',
     description:
-      'Inventário, vendas, finanças, equipe e muito mais. Menos de um cafezinho por mês para gerenciar toda a sua loja.',
+      'Inventário, vendas, finanças, equipe e muito mais. O preço de um café por mês para gerenciar toda a sua loja.',
     url: 'https://rpgcapital.com.br/',
     images: [
       {
@@ -81,7 +81,7 @@ const structuredData = {
         '@type': 'Offer',
         price: '9.99',
         priceCurrency: 'BRL',
-        url: 'https://www.rpgcapital.com.br/auth/signup/reset',
+        url: 'https://www.rpgcapital.com.br/interesse',
       },
     },
   ],
@@ -120,7 +120,7 @@ export default function Home() {
             <a href="#preco">Preço</a>
             <a href={demoHref}>Conta de teste</a>
             <a className={styles.loginLink} href="/login?intent=login">Entrar</a>
-            <a className={styles.smallButton} href="/auth/signup/reset">Criar conta</a>
+            <a className={styles.smallButton} href="/interesse">Criar conta</a>
           </nav>
         </div>
       </header>
@@ -247,15 +247,15 @@ export default function Home() {
           <div className={styles.container + ' ' + styles.priceCard}>
             <div className={styles.priceCopy}>
               <p className={styles.eyebrowLight}>PREÇO QUE CABE NO BALCÃO</p>
-              <h2>Menos de um cafezinho por mês. <span>E você gerencia toda a sua loja.</span></h2>
-              <p>Pague menos de um cafezinho por mês e gerencie <strong>TODO o seu negócio:</strong> inventário, vendas, finanças, equipe e muito mais.</p>
+              <h2>O preço de um café por mês. <span>E você gerencia toda a sua loja.</span></h2>
+              <p>Pague o preço de um café por mês e gerencie <strong>TODO o seu negócio:</strong> inventário, vendas, finanças, equipe e muito mais.</p>
               <div className={styles.price}><span>R$</span><strong>9,99</strong><small>/ mês</small></div>
               <a className={styles.yellowButton} href={signupHref}>Criar minha conta</a>
             </div>
             <div className={styles.coffeeCard}>
               <div className={styles.coffeeIcon}>☕</div>
-              <p><strong>1 cafezinho</strong></p>
-              <span>pode custar mais que um mês inteiro de gestão da sua loja.</span>
+              <p><strong>1 café</strong></p>
+              <span>custa praticamente o mesmo que um mês inteiro de gestão da sua loja.</span>
               <hr />
               <p className={styles.coffeeResult}>RPG para Balcões<br /><strong>R$ 9,99/mês</strong></p>
             </div>
