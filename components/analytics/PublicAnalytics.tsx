@@ -75,11 +75,13 @@ function sourceFrom(referrer: string, utmSource: string | null) {
 
 export default function PublicAnalytics() {
   const [consent, setConsent] = useState<'yes' | 'no' | null>(null)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    if (!allowedPath(location.pathname)) return
+    if (!allowedPath(location.pathname)) { setReady(true); return }
     const saved = localStorage.getItem(CONSENT_KEY)
     setConsent(saved === 'yes' ? 'yes' : saved === 'no' ? 'no' : null)
+    setReady(true)
   }, [])
 
   useEffect(() => {
@@ -283,7 +285,7 @@ export default function PublicAnalytics() {
     }
   }, [consent])
 
-  if (!allowedPath(typeof location === 'undefined' ? '/__server' : location.pathname) || consent !== null) return null
+  if (!ready || !allowedPath(typeof location === 'undefined' ? '/__server' : location.pathname) || consent !== null) return null
 
   return <div style={{
     position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 9999,
