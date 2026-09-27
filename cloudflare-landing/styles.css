@@ -235,7 +235,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .rafa-lead strong { color: var(--yellow); }
 .rafa-chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
 .rafa-chips span { padding: 9px 13px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(255,255,255,.07); color: #e8f0fb; font-size: 12px; font-weight: 750; }
-.rafa-number-note { margin: 24px 0 0; color: #9fb4d1; font-size: 14px; }
+.rafa-contact { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 26px; }
+.rafa-number-note { margin: 0; color: #9fb4d1; font-size: 14px; }
 .rafa-number-note strong { color: #fff; }
 .whatsapp-mock { overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 28px; background: #e9f5ec; box-shadow: 0 30px 80px rgba(0,0,0,.24); }
 .whatsapp-top { display: flex; align-items: center; gap: 12px; padding: 18px 20px; color: #fff; background: #075e54; }
