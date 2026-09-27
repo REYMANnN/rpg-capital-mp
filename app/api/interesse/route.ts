@@ -5,9 +5,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const optionalText = (max: number) =>
-  z.string().trim().max(max).optional().transform((value) => value || null)
-
 const schema = z.object({
   name: z.string().trim().min(2).max(120),
   businessName: z.string().trim().min(2).max(160),
