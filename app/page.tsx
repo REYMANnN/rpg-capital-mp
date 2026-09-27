@@ -229,7 +229,7 @@ export default function Home() {
                 <strong>Super mega simples de usar.</strong> A Rafa tira todas as suas dúvidas, não só te ajuda a usar a plataforma, mas faz as coisas por você!
               </p>
               <p>
-                Mande mensagem, foto e áudio e a Rafa entende tudo. Ela conversa com você de um jeito simples e transforma o que você manda em ação dentro da RPG para Balcões.
+                Mande mensagem, foto e áudio e a Rafa entende tudo! Ela conversa com você de um jeito simples e transforma o que você manda em ação dentro da RPG para Balcões.
               </p>
               <div className={styles.rafaSalesGrid}>
                 <article>
@@ -238,7 +238,7 @@ export default function Home() {
                 </article>
                 <article>
                   <strong>Mande foto da nota fiscal.</strong>
-                  <span>A Rafa lê a nota e ajuda a subir todos os novos itens para o seu inventário.</span>
+                  <span>Mande uma foto da nota fiscal e a Rafa sobe os novos itens para o seu inventário.</span>
                 </article>
                 <article>
                   <strong>Fale como você já fala no WhatsApp.</strong>
