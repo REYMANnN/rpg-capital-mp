@@ -20,7 +20,7 @@ test('landing apresenta a marca, o preco e o valor principal do produto', () => 
   assert.match(html, /RPG para Balcões/)
   assert.match(html, /Tudo que sua loja precisa para vender, controlar e crescer/)
   assert.match(html, /R\$\s*9,99/)
-  assert.match(html, /menos de um cafezinho/i)
+  assert.match(html, /o preço de um café por mês/i)
   assert.match(html, /Inventário/i)
   assert.match(html, /Vendas/i)
   assert.match(html, /Finanças/i)
