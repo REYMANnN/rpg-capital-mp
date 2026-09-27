@@ -114,7 +114,7 @@ export default async function AnalyticsAdminPage() {
             />
           }))}
         </div>
-        <div className="mt-2 flex justify-between text-[11px] text-slate-500"><span>Topo</span><span>Fim da página</span></div>
+        <div className="mt-2 grid gap-1 text-[11px] text-slate-500"><span>↑ Topo da página</span><span>↓ Fim da página</span></div>
       </section>
 
       <section className="mt-6">
@@ -122,11 +122,14 @@ export default async function AnalyticsAdminPage() {
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
           <table className="w-full min-w-[1050px] text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-              <tr><th className="p-3">Quando</th><th className="p-3">Origem</th><th className="p-3">Local</th><th className="p-3">Dispositivo</th><th className="p-3">Entrada</th><th className="p-3">Uso</th><th className="p-3">Funil</th></tr>
+              <tr><th className="p-3">Quando</th><th className="p-3">Pessoa / lead</th><th className="p-3">Origem</th><th className="p-3">Local</th><th className="p-3">Dispositivo</th><th className="p-3">Entrada</th><th className="p-3">Uso</th><th className="p-3">Funil</th></tr>
             </thead>
             <tbody>
               {data.recentSessions.map((s) => <tr key={s.id} className="border-t border-slate-100">
                 <td className="p-3 whitespace-nowrap">{date(s.last)}</td>
+                <td className="p-3">
+                  {s.lead ? <div><strong>{s.lead.businessName || s.lead.name}</strong><div className="text-xs text-slate-500">{s.lead.name} · {s.lead.phone} · {s.lead.email}</div></div> : <span className="text-slate-400">Anônimo</span>}
+                </td>
                 <td className="p-3">{s.source}</td>
                 <td className="p-3">{s.city !== '—' ? s.city + ' · ' + s.country : s.country}</td>
                 <td className="p-3">{s.device}<div className="text-xs text-slate-500">{s.browser} · {s.os}</div></td>
@@ -138,7 +141,7 @@ export default async function AnalyticsAdminPage() {
                   </span>
                 </td>
               </tr>)}
-              {!data.recentSessions.length ? <tr><td colSpan={7} className="p-6 text-center text-slate-500">Ainda não há sessões com consentimento.</td></tr> : null}
+              {!data.recentSessions.length ? <tr><td colSpan={8} className="p-6 text-center text-slate-500">Ainda não há sessões com consentimento.</td></tr> : null}
             </tbody>
           </table>
         </div>
