@@ -47,7 +47,10 @@ export default function InterestForm() {
       const response = await fetch('/api/interesse', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          analyticsSessionId: sessionStorage.getItem('rpg_analytics_session_v1') || null,
+        }),
       })
       const result = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null
 
