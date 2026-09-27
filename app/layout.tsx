@@ -20,6 +20,11 @@ const deploymentCommit = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || "loca
 export const metadata: Metadata = {
   title: "RPG Capital — Pagamentos simples. Crédito justo.",
   description: "Infraestrutura de pagamentos zero taxa para lojistas brasileiros.",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
