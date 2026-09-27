@@ -60,6 +60,10 @@ const structuredData = {
       logo: 'https://rpgcapital.com.br/favicon.svg',
       email: 'comercial@rpgcapital.com.br',
       telephone: '+5511936201445',
+      sameAs: [
+        'https://www.instagram.com/rpgcapital/',
+        'https://www.linkedin.com/company/rpgcapital/',
+      ],
     },
     {
       '@type': 'WebSite',
@@ -146,7 +150,8 @@ export default function Home() {
               <ul className={styles.heroPoints} aria-label="Destaques">
                 <li>✓ R$ 9,99 por mês</li>
                 <li>✓ Pix sem taxa</li>
-                <li>✓ Sem equipamento caro</li>
+                <li>✓ Rafa no WhatsApp</li>
+                <li>✓ Sem migração complicada</li>
               </ul>
             </div>
             <figure className={styles.heroVisual}>
@@ -224,8 +229,22 @@ export default function Home() {
                 <strong>Super mega simples de usar.</strong> A Rafa tira todas as suas dúvidas, não só te ajuda a usar a plataforma, mas faz as coisas por você!
               </p>
               <p>
-                Mande mensagem, áudio, foto, nota fiscal ou planilha. A Rafa entende o que você quer e ajuda a transformar isso em ação dentro da RPG para Balcões.
+                Mande mensagem, foto e áudio e a Rafa entende tudo. Ela conversa com você de um jeito simples e transforma o que você manda em ação dentro da RPG para Balcões.
               </p>
+              <div className={styles.rafaSalesGrid}>
+                <article>
+                  <strong>Não precisa migrar banco de dados.</strong>
+                  <span>Não tem burocracia. Você começa simples e vai colocando sua operação para dentro da RPG do jeito mais fácil.</span>
+                </article>
+                <article>
+                  <strong>Mande foto da nota fiscal.</strong>
+                  <span>A Rafa lê a nota e ajuda a subir todos os novos itens para o seu inventário.</span>
+                </article>
+                <article>
+                  <strong>Fale como você já fala no WhatsApp.</strong>
+                  <span>Mensagem, foto ou áudio: a Rafa entende o que você quer, tira suas dúvidas e faz as coisas por você.</span>
+                </article>
+              </div>
               <div className={styles.rafaChips} aria-label="O que a Rafa faz">
                 <span>Registra vendas</span>
                 <span>Atualiza estoque</span>
@@ -370,7 +389,7 @@ export default function Home() {
           <div><a className={styles.brand} href="#topo"><span className={styles.brandMark}>RPG</span><span className={styles.brandCopy}><strong>RPG para Balcões</strong><small>por RPG Capital</small></span></a><p>Gestão simples para quem tem uma loja para tocar.</p></div>
           <div><strong>Produto</strong><a href="#produto">Funcionalidades</a><a href="#rafa">Rafa no WhatsApp</a><a href="#credito">Crédito</a><a href="#preco">Preço</a><a href="#como-funciona">Como funciona</a></div>
           <div><strong>Acesso</strong><a href={demoHref}>Conta de teste</a><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a></div>
-          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">WhatsApp: +55 11 93620-1445</a></div>
+          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">WhatsApp: +55 11 93620-1445</a><a href="https://www.instagram.com/rpgcapital/" target="_blank" rel="noreferrer">Instagram</a><a href="https://www.linkedin.com/company/rpgcapital/" target="_blank" rel="noreferrer">LinkedIn</a></div>
         </div>
         <div className={styles.container + ' ' + styles.footerBottom}><span>© 2026 RPG Capital.</span><span>Feito para o varejo brasileiro.</span></div>
       </footer>
