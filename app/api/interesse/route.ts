@@ -15,6 +15,7 @@ const schema = z.object({
   secondaryEmail: z.union([z.string().trim().email().max(180), z.literal('')]).optional().transform((value) => value || null),
   referralSource: z.string().trim().min(2).max(240),
   helpText: z.string().trim().min(5).max(2000),
+  analyticsSessionId: z.string().uuid().optional().nullable(),
 })
 
 export async function POST(request: NextRequest) {
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
     referral_source: parsed.data.referralSource,
     help_text: parsed.data.helpText,
     source: 'public_interest_page',
+    analytics_session_key: parsed.data.analyticsSessionId || null,
   })
 
   if (error) {
