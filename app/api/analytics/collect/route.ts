@@ -46,7 +46,8 @@ const bodySchema = z.object({
 
 function header(request: NextRequest, name: string) {
   const value = request.headers.get(name)?.trim()
-  return value ? decodeURIComponent(value).slice(0, 160) : null
+  if (!value) return null
+  try { return decodeURIComponent(value).slice(0, 160) } catch { return value.slice(0, 160) }
 }
 
 export async function POST(request: NextRequest) {
