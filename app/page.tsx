@@ -59,7 +59,7 @@ const structuredData = {
       url: 'https://rpgcapital.com.br/',
       logo: 'https://rpgcapital.com.br/favicon.svg',
       email: 'comercial@rpgcapital.com.br',
-      telephone: '+5511936206235',
+      telephone: '+5511936201445',
     },
     {
       '@type': 'WebSite',
@@ -234,7 +234,10 @@ export default function Home() {
                 <span>Ajuda no financeiro</span>
                 <span>Responde suas dúvidas</span>
               </div>
-              <p className={styles.rafaNumberNote}>Número oficial da Rafa no WhatsApp: <strong>em atualização</strong></p>
+              <div className={styles.rafaContact}>
+                <a className={styles.yellowButton} href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">Falar com a Rafa no WhatsApp</a>
+                <p className={styles.rafaNumberNote}>WhatsApp RPG: <strong>+55 11 93620-1445</strong></p>
+              </div>
             </div>
             <div className={styles.whatsappMock} aria-label="Exemplo de conversa com a Rafa no WhatsApp">
               <div className={styles.whatsappTop}>
@@ -367,7 +370,7 @@ export default function Home() {
           <div><a className={styles.brand} href="#topo"><span className={styles.brandMark}>RPG</span><span className={styles.brandCopy}><strong>RPG para Balcões</strong><small>por RPG Capital</small></span></a><p>Gestão simples para quem tem uma loja para tocar.</p></div>
           <div><strong>Produto</strong><a href="#produto">Funcionalidades</a><a href="#rafa">Rafa no WhatsApp</a><a href="#credito">Crédito</a><a href="#preco">Preço</a><a href="#como-funciona">Como funciona</a></div>
           <div><strong>Acesso</strong><a href={demoHref}>Conta de teste</a><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a></div>
-          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="tel:+5511936206235">+55 11 93620-6235</a></div>
+          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">WhatsApp: +55 11 93620-1445</a></div>
         </div>
         <div className={styles.container + ' ' + styles.footerBottom}><span>© 2026 RPG Capital.</span><span>Feito para o varejo brasileiro.</span></div>
       </footer>
