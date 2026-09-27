@@ -57,6 +57,7 @@ export default function InterestForm() {
         return
       }
 
+      window.rpgTrack?.('form_submit_success', { target: 'formulário de interesse' })
       setStatus('success')
       setForm(initialState)
       setMessage('Recebemos seu interesse. Em breve entraremos em contato para lhe entregar sua conta RPG.')
