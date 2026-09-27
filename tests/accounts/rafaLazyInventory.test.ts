@@ -32,7 +32,7 @@ test('nota: conhecido vira entrada, novo espera preço, resto é dúvida', () =>
   assert.equal(plan.entradas[0].quantityMilli, 12000)
   assert.equal(plan.entradas[0].unitCostCents, 810)
   assert.equal(plan.novos.length, 1)
-  assert.deepEqual({ ...plan.novos[0], brand: undefined }, { barcode: '7891000100103', name: 'Feijão Kicaldo Carioca 1kg', brand: undefined, quantityMilli: 10000, costCents: 650 })
+  assert.deepEqual({ ...plan.novos[0], brand: undefined }, { barcode: '7891000100103', name: 'Feijão Kicaldo Carioca 1kg', brand: undefined, quantityMilli: 10000, costCents: 650, unit: 'UN', supplierCode: null })
   assert.deepEqual(plan.duvidas.map((doubt) => doubt.reason), ['não achei o produto', 'não li a quantidade'])
   const message = invoicePlanMessage(plan, 'Atacadão', 'https://x/l/abc')
   assert.match(message, /Li a nota de Atacadão: 4 produto/)
@@ -79,4 +79,15 @@ test('dica do dia: prioridade e conselhos', () => {
 test('reconhece XML de NF-e', () => {
   assert.equal(isNfeXml('<nfeProc><NFe><infNFe Id="x"><det nItem="1"><prod></prod></det></infNFe></NFe></nfeProc>'), true)
   assert.equal(isNfeXml('<lista><item/></lista>'), false)
+})
+
+test('nota de cupom: EAN válido fora dos catálogos vira produto novo com o nome da nota; nota vazia avisa', () => {
+  const plan = buildInvoicePlan(state, [
+    { description: 'PAO FRANCES KG', ean: '7891000100103', quantity: 10, unit_cost_cents: 1290, unit_package: 'KG', confidence: sure, resolution: { status: 'unresolved', candidates: [] } },
+    { description: 'ARROZ TIPO 1 5KG', ean: '7891000023456', quantity: 5, unit_cost_cents: 2490, confidence: sure, resolution: { status: 'unresolved', candidates: [] } },
+  ])
+  assert.deepEqual(plan.novos.map((item) => [item.name, item.unit, item.quantityMilli]), [['Pao Frances Kg', 'KG', 10000]])
+  assert.equal(plan.duvidas[0].reason, 'código não reconhecido')
+  assert.match(invoicePlanMessage({ entradas: [], novos: [], duvidas: [] }, 'Bom Preço'), /não consegui ler os itens/)
+  assert.match(priceRequestMessage([{ barcode: '1', name: 'Pão', quantity_milli: 10000, cost_cents: 1290, unit: 'KG' }]), /custo R\$\s?12,90\/kg · 10 kg/)
 })

@@ -4,9 +4,12 @@ import { loadRafaStore } from '@/lib/inventory/rafa-store'
 import { askRafaConfirmation } from '@/lib/rafa-confirm'
 import { parseNfeXml } from '@/lib/inventory/nfe'
 import { isNfeXml, readPdfText } from '@/lib/rafa-files'
-import { buildInvoicePlan, invoicePlanMessage, priceRequestMessage, type InvoicePlanLine } from '@/lib/rafa-invoice-plan'
+import { buildInvoicePlan, invoicePlanMessage, type InvoicePlanLine } from '@/lib/rafa-invoice-plan'
 import { loadInvoiceProofBytes, loadInvoiceProofDataUri } from '@/lib/rafa-media'
-import { listPendingProducts, markPendingAsked, savePendingProducts } from '@/lib/rafa-pending-products'
+import { resolveNamesToEan } from '@/lib/rafa-name-ean'
+import { savePendingProducts } from '@/lib/rafa-pending-products'
+import { startPriceQuestions } from '@/lib/rafa-price-questions'
+import { isValidGtin } from '@/lib/whatsapp-router'
 import { resolveInvoiceExtraction } from '@/lib/rafa-products'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendText } from '@/lib/whatsapp'
@@ -131,6 +134,35 @@ export async function processApprovedInvoiceMedia(input: {
 
   const { state } = await loadRafaStore(input.storeId)
   const resolved = await resolveInvoiceExtraction(state, extraction)
+
+  // Linhas sem código de barras válido: tenta achar o produto exato pelo nome da nota.
+  const byName = resolved.lines
+    .map((line: any, index: number) => ({ line, index }))
+    .filter(({ line }) => {
+      const ean = String(line.ean || '').replace(/\D/g, '')
+      if (isValidGtin(ean)) return false
+      const status = line.resolution?.status
+      if (status === 'resolved') return false
+      if (status === 'ambiguous' && line.resolution.candidates.some((candidate: any) => candidate.id)) return false
+      return Boolean(String(line.description || '').trim())
+    })
+  if (byName.length) {
+    const found = await resolveNamesToEan({
+      storeId: input.storeId,
+      waId: input.waId,
+      items: byName.map(({ line, index }) => ({ index, description: String(line.description) })),
+    }).catch(() => new Map())
+    for (const { line, index } of byName) {
+      const hit = found.get(index)
+      if (!hit) continue
+      if ('missing' in hit) { line.missing = hit.missing; continue }
+      const inStore = state.products.find((product) => product.barcode === hit.barcode && !product.deletedAt)
+      line.resolution = inStore
+        ? { status: 'resolved', candidate: { id: inStore.id, barcode: inStore.barcode, name: inStore.name, source: 'catalog' } }
+        : { status: 'new', candidate: { barcode: hit.barcode, name: hit.name, source: 'catalog' } }
+    }
+  }
+
   const plan = buildInvoicePlan(state, resolved.lines as InvoicePlanLine[])
 
   const lines = resolved.lines
@@ -154,7 +186,7 @@ export async function processApprovedInvoiceMedia(input: {
   }).eq('id', invoice.id)
   if (updateError) throw updateError
 
-  await savePendingProducts({ storeId: input.storeId, waId: input.waId, invoiceImportId: String(invoice.id), items: plan.novos })
+  await savePendingProducts({ storeId: input.storeId, waId: input.waId, invoiceImportId: String(invoice.id), supplierCnpj: resolved.supplier_cnpj, items: plan.novos })
 
   // Só as dúvidas precisam de tela: o link abre a conferência dessa nota.
   let reviewLink: string | undefined
@@ -185,12 +217,7 @@ export async function processApprovedInvoiceMedia(input: {
 }
 
 // Pede o preço de venda dos produtos novos que ainda não foram perguntados.
-export async function askPendingPrices(waId: string, storeId: string, options: { force?: boolean } = {}) {
-  const pending = await listPendingProducts(storeId)
-  const toAsk = options.force ? pending : pending.filter((row) => !row.asked_at)
-  if (!toAsk.length) return false
-  const sent = await sendText(waId, `${priceRequestMessage(pending)}\n— Rafa`)
-  if (!sent.ok) throw new Error(sent.error)
-  await markPendingAsked(pending.map((row) => row.id))
-  return true
+// Começa as perguntas de preço dos produtos novos (uma por vez).
+export async function askPendingPrices(waId: string, storeId: string) {
+  return startPriceQuestions(waId, storeId)
 }

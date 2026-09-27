@@ -89,7 +89,10 @@ async function groqJson<T>(input: {
   const budget = await rafaAiBudgetAvailable(input.storeId)
   if (!budget.allowed) throw new Error('rafa_ai_budget_exceeded')
 
-  const response = await fetch(`${GROQ_BASE}/chat/completions`, {
+  // Modelo de imagem (Qwen) "pensa" antes de responder e gasta o limite de tokens nisso:
+  // em extração de JSON pedimos sem raciocínio. Se a API recusar o parâmetro, repete sem ele.
+  const noThinking = input.model === RAFA_VISION_MODEL
+  const call = (withReasoningOff: boolean) => fetch(`${GROQ_BASE}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${groqKey()}`,
@@ -101,11 +104,14 @@ async function groqJson<T>(input: {
       temperature: 0,
       max_completion_tokens: input.maxTokens || 1800,
       response_format: { type: 'json_object' },
+      ...(withReasoningOff ? { reasoning_effort: 'none' } : {}),
       stream: false,
     }),
     cache: 'no-store',
-    signal: AbortSignal.timeout(35_000),
+    signal: AbortSignal.timeout(60_000),
   })
+  let response = await call(noThinking)
+  if (noThinking && response.status === 400) response = await call(false)
 
   const json = await response.json().catch(() => null) as any
   if (!response.ok) {
@@ -319,7 +325,7 @@ export async function extractRafaInvoiceImages(input: {
     waId: input.waId,
     operation: 'invoice_extraction',
     model: RAFA_VISION_MODEL,
-    maxTokens: 5000,
+    maxTokens: 12000,
     messages: [{
       role: 'user',
       content: [
@@ -330,6 +336,8 @@ export async function extractRafaInvoiceImages(input: {
             'Leia todas as páginas recebidas como uma única nota quando forem continuação.',
             'Cabeçalho: supplier_name e supplier_cnpj.',
             'Para cada linha: description, supplier_code, ean, quantity, unit_cost_cents, total_cents, unit_package.',
+            'ean só se o código tiver 8, 12, 13 ou 14 dígitos e for código de barras; código interno do vendedor vai em supplier_code. unit_package é a unidade da linha (UN, KG, CX, DZ...).',
+            'Leia TODAS as linhas da nota, sem pular nenhuma.',
             'Não invente campos ausentes; use null.',
             'confidence deve ter product, quantity e cost, cada um entre 0 e 1, avaliados separadamente.',
             'Valores monetários em centavos inteiros.',
@@ -339,6 +347,38 @@ export async function extractRafaInvoiceImages(input: {
       ],
     }],
   })
+}
+
+// Nome da nota → código de barras: a IA só ESCOLHE entre candidatos reais do catálogo (nunca inventa).
+export type NameEanChoice = { n: number; ean: string | null; nome?: string | null; falta?: string | null }
+
+export async function chooseEanByName(input: {
+  storeId: string
+  waId: string
+  items: Array<{ n: number; descricao: string; candidatos: Array<{ ean: string; nome: string; marca?: string; tamanho?: string }> }>
+}) {
+  if (!input.items.length) return [] as NameEanChoice[]
+  const result = await groqJson<{ itens?: NameEanChoice[] }>({
+    storeId: input.storeId,
+    waId: input.waId,
+    operation: 'invoice_name_ean',
+    model: RAFA_TEXT_MODEL,
+    maxTokens: 6000,
+    messages: [{
+      role: 'user',
+      content: [
+        'Você identifica produtos de mercado brasileiro a partir da descrição abreviada de uma nota fiscal.',
+        'Para cada item, escolha o código de barras (ean) SOMENTE entre os candidatos listados, e só quando a descrição deixa claro qual é: a marca bate E o tamanho/variante bate (ex.: "REFRIG COCA PET 2L" = Coca-Cola PET 2L; "COCA LT 350" = lata 350ml).',
+        'Abreviações comuns: REFRIG=refrigerante, LT=lata, PET=garrafa, CX=caixa, FD=fardo, PCT=pacote, UN=unidade, TP1=tipo 1, INTEG=integral, DESN=desnatado, ZERO/DIET, C/12=com 12.',
+        'Se a descrição não tem marca ("ARROZ TIPO 1 5KG") ou falta tamanho ("COCA COLA"), ou nenhum candidato bate, devolva ean null e diga em "falta" o que falta ("marca", "tamanho", "marca e tamanho" ou "não encontrado").',
+        'Nunca invente código. nome = nome completo do produto escolhido (marca, tipo, tamanho).',
+        'Responda só JSON: {"itens":[{"n":0,"ean":"7894900018448","nome":"Refrigerante Coca-Cola PET 2L"},{"n":1,"ean":null,"falta":"marca"}]}',
+        '',
+        JSON.stringify(input.items),
+      ].join('\n'),
+    }],
+  })
+  return Array.isArray(result?.itens) ? result.itens : []
 }
 
 // Nota em PDF (DANFE com texto) ou XML: mesma extração, lendo o texto em vez da foto.

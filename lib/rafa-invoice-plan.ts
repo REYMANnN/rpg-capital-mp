@@ -11,6 +11,10 @@ export type InvoicePlanLine = {
   ean?: string | null
   quantity?: number | null
   unit_cost_cents?: number | null
+  unit_package?: string | null
+  supplier_code?: string | null
+  // o que falta no nome para achar o produto (preenchido pela busca por nome)
+  missing?: string | null
   confidence?: { product?: number; quantity?: number; cost?: number } | null
   resolution?: RafaProductResolution | null
 }
@@ -21,6 +25,8 @@ export type PendingNewProduct = {
   brand: string
   quantityMilli: number
   costCents: number
+  unit?: 'UN' | 'KG'
+  supplierCode?: string | null
 }
 
 export type InvoiceDoubt = { description: string; reason: string }
@@ -32,6 +38,14 @@ export type InvoicePlan = {
 }
 
 const MIN_CONFIDENCE = 0.85
+
+const isKg = (value?: string | null) => /^\s*(kg|quilo|kilo)/i.test(String(value || ''))
+
+// "ARROZ TIPO 1 5KG" → "Arroz Tipo 1 5kg"
+function niceName(value: string) {
+  return value.toLowerCase().replace(/(^|\s)(\S)/g, (_, space, char) => space + char.toUpperCase())
+    .replace(/(\d)(Kg|G|Ml|L|Un)\b/g, (_, digit, unit) => digit + unit.toLowerCase()).slice(0, 120)
+}
 
 export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]): InvoicePlan {
   const plan: InvoicePlan = { entradas: [], novos: [], duvidas: [] }
@@ -77,14 +91,33 @@ export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
           brand: String(resolution.candidate.brand || ''),
           quantityMilli,
           costCents,
+          unit: isKg(line.unit_package) ? 'KG' : 'UN',
+          supplierCode: line.supplier_code || null,
         })
+      }
+      continue
+    }
+
+    // Código de barras válido que não está em nenhum catálogo: a própria nota dá o nome.
+    const ean = String(line.ean || '').replace(/\D/g, '')
+    const inStore = state.products.some((product) => product.barcode === ean && !product.deletedAt)
+    if (resolution?.status !== 'ambiguous' && isValidGtin(ean) && !inStore && sure) {
+      const current = novos.get(ean)
+      if (current) {
+        const total = current.costCents * current.quantityMilli + costCents * quantityMilli
+        current.quantityMilli += quantityMilli
+        current.costCents = Math.round(total / current.quantityMilli)
+      } else {
+        novos.set(ean, { barcode: ean, name: niceName(description), brand: '', quantityMilli, costCents, unit: isKg(line.unit_package) ? 'KG' : 'UN', supplierCode: line.supplier_code || null })
       }
       continue
     }
 
     plan.duvidas.push({
       description,
-      reason: resolution?.status === 'ambiguous' ? 'mais de um produto parecido' : 'não achei o produto',
+      reason: line.missing && line.missing !== 'não encontrado' ? `falta ${line.missing} no nome`
+        : resolution?.status === 'ambiguous' ? 'mais de um produto parecido'
+          : ean ? 'código não reconhecido' : 'não achei o produto',
     })
   }
 
@@ -108,9 +141,12 @@ const units = (milli: number) => (milli / 1000).toLocaleString('pt-BR', { maximu
 
 export function invoicePlanMessage(plan: InvoicePlan, supplier: string | null, reviewLink?: string) {
   const total = plan.entradas.length + plan.novos.length + plan.duvidas.length
+  if (!total) {
+    return `Reconheci a nota${supplier ? ` de ${supplier}` : ''}, mas não consegui ler os itens. Me manda uma foto mais de perto, reta e com boa luz (pode ser em 2 partes), ou o PDF/XML da nota.`
+  }
   const lines = [`Li a nota${supplier ? ` de ${supplier}` : ''}: ${total} produto(s).`]
   if (plan.entradas.length) lines.push(`• ${plan.entradas.length} já são da loja: dou entrada no estoque com o custo da nota`)
-  if (plan.novos.length) lines.push(`• ${plan.novos.length} novo(s): cadastro assim que você me passar o preço de venda`)
+  if (plan.novos.length) lines.push(`• ${plan.novos.length} novo(s): já te pergunto o preço de venda de cada um`)
   if (plan.duvidas.length) {
     const examples = plan.duvidas.slice(0, 3).map((doubt) => `${doubt.description} (${doubt.reason})`).join('; ')
     lines.push(`• ${plan.duvidas.length} com dúvida: ${examples}${plan.duvidas.length > 3 ? '…' : ''}${reviewLink ? `\n  Confere aqui: ${reviewLink}` : ''}`)
@@ -124,12 +160,13 @@ export type PendingProductRow = {
   name: string
   quantity_milli: number
   cost_cents: number
+  unit?: string
 }
 
 export function priceRequestMessage(rows: PendingProductRow[]) {
   if (!rows.length) return ''
   const list = rows.slice(0, 15).map((row, index) =>
-    `${index + 1}. ${row.name} — custo ${money(Number(row.cost_cents))} · ${units(Number(row.quantity_milli))} un.`)
+    `${index + 1}. ${row.name} — custo ${money(Number(row.cost_cents))}${row.unit === 'KG' ? '/kg' : ''} · ${units(Number(row.quantity_milli))} ${row.unit === 'KG' ? 'kg' : 'un.'}`)
   const more = rows.length > 15 ? `\n(+${rows.length - 15} depois desses)` : ''
   return [
     rows.length === 1 ? 'Só falta o preço de venda desse produto novo:' : `Só falta o preço de venda de ${rows.length} produtos novos:`,

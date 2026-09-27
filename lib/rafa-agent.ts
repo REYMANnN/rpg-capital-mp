@@ -480,7 +480,7 @@ export function buildRafaChanges(state: RafaStoreState, items: any[], pending: P
         productId: existing?.id || randomUUID(),
         barcode,
         name,
-        unit: String(item.unidade || 'UN').toUpperCase() === 'KG' ? 'KG' : 'UN',
+        unit: String(fromInvoice?.unit || item.unidade || 'UN').toUpperCase() === 'KG' ? 'KG' : 'UN',
         priceCents,
         costCents,
         stockMilli,
