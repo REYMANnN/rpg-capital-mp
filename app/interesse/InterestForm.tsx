@@ -47,7 +47,10 @@ export default function InterestForm() {
       const response = await fetch('/api/interesse', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          analyticsSessionId: sessionStorage.getItem('rpg_analytics_session_v1') || null,
+        }),
       })
       const result = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null
 
@@ -57,6 +60,7 @@ export default function InterestForm() {
         return
       }
 
+      window.rpgTrack?.('form_submit_success', { target: 'formulário de interesse' })
       setStatus('success')
       setForm(initialState)
       setMessage('Recebemos seu interesse. Em breve entraremos em contato para lhe entregar sua conta RPG.')
