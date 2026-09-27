@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { INVENTORY_APP_VERSION } from "@/lib/inventory/version";
 import LegalFooter from "@/components/LegalFooter";
+import PublicAnalytics from "@/components/analytics/PublicAnalytics";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,6 +37,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
+        <PublicAnalytics />
         <LegalFooter />
         <div
           data-build-version
