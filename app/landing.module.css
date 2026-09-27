@@ -116,6 +116,35 @@
 .activityList span { color: #64748b; }
 .activityList strong { color: #27354c; }
 
+
+.rafaSection { color: #fff; background: #0b1730; }
+.rafaGrid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 70px; align-items: center; }
+.rafaCopy h2 { margin: 0; max-width: 760px; font-size: clamp(42px, 5.4vw, 72px); line-height: .98; letter-spacing: -.055em; }
+.rafaCopy > p:not(.eyebrowLight):not(.rafaNumberNote) { max-width: 720px; color: #c8d7ec; font-size: 17px; line-height: 1.72; }
+.rafaLead { margin-top: 26px; font-size: 21px !important; color: #fff !important; }
+.rafaLead strong { color: var(--yellow); }
+.rafaChips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+.rafaChips span { padding: 9px 13px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(255,255,255,.07); color: #e8f0fb; font-size: 12px; font-weight: 750; }
+.rafaContact { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 26px; }
+.rafaNumberNote { margin: 0; color: #9fb4d1; font-size: 14px; }
+.rafaNumberNote strong { color: #fff; }
+.whatsappMock { overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 28px; background: #e9f5ec; box-shadow: 0 30px 80px rgba(0,0,0,.24); }
+.whatsappTop { display: flex; align-items: center; gap: 12px; padding: 18px 20px; color: #fff; background: #075e54; }
+.whatsappTop > span:last-child { display: grid; gap: 2px; }
+.whatsappTop small { color: #c9e8df; font-size: 11px; }
+.rafaAvatar { display: inline-grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; background: #fff; color: #075e54; font-weight: 900; }
+.whatsappBody { display: grid; gap: 12px; min-height: 430px; align-content: center; padding: 28px 22px; background-image: radial-gradient(rgba(16, 92, 77, .08) 1px, transparent 1px); background-size: 18px 18px; }
+.chatUser, .chatRafa { max-width: 82%; padding: 12px 14px; border-radius: 14px; color: #1f2937; font-size: 14px; line-height: 1.45; box-shadow: 0 2px 7px rgba(15,23,42,.08); }
+.chatUser { justify-self: end; border-bottom-right-radius: 4px; background: #d9fdd3; }
+.chatRafa { justify-self: start; border-bottom-left-radius: 4px; background: #fff; }
+
+.creditSection { background: #fff8d8; }
+.creditInner { display: grid; grid-template-columns: 1.05fr .95fr; gap: 72px; align-items: start; }
+.creditInner h2 { margin: 0; max-width: 760px; font-size: clamp(42px, 5vw, 68px); line-height: 1; letter-spacing: -.055em; }
+.creditCopy { padding-top: 32px; }
+.creditCopy > p:first-child { margin: 0; color: #354052; font-size: 18px; line-height: 1.72; }
+.creditNote { margin-top: 24px; padding-top: 18px; border-top: 1px solid rgba(17,24,39,.14); color: #697386; font-size: 13px; line-height: 1.6; }
+
 .pricing { background: #f4f7fb; }
 .priceCard { display: grid; grid-template-columns: 1.35fr .65fr; gap: 56px; padding: 64px; border-radius: 34px; color: #fff; background: var(--blue); box-shadow: 0 30px 80px rgba(7,86,216,.24); }
 .priceCopy h2 span { color: var(--yellow); }

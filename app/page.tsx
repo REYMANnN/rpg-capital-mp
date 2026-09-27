@@ -8,7 +8,7 @@ const demoHref = '/demo'
 export const metadata: Metadata = {
   title: 'RPG para Balcões — Gestão completa da sua loja por R$ 9,99/mês',
   description:
-    'Gerencie inventário, vendas, finanças e equipe da sua loja em um só lugar. RPG para Balcões custa R$ 9,99 por mês e não cobra taxa no Pix.',
+    'Gerencie inventário, vendas, finanças e equipe por R$ 9,99/mês. Use a Rafa pelo WhatsApp para tirar dúvidas e fazer tarefas por você. A RPG também quer ajudar comerciantes a terem acesso a crédito mais barato.',
   alternates: { canonical: 'https://rpgcapital.com.br/' },
   robots: {
     index: true,
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     siteName: 'RPG para Balcões',
     title: 'RPG para Balcões — Sua loja inteira por R$ 9,99/mês',
     description:
-      'Inventário, vendas, finanças, equipe e muito mais. O preço de um café por mês para gerenciar toda a sua loja.',
+      'Inventário, vendas, finanças e Rafa no WhatsApp. Super mega simples de usar, por R$ 9,99/mês.',
     url: 'https://rpgcapital.com.br/',
     images: [
       {
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'RPG para Balcões — Sua loja inteira por R$ 9,99/mês',
-    description: 'Inventário, vendas, finanças, equipe e Pix sem taxa em um sistema simples para o varejo.',
+    description: 'Rafa no WhatsApp, inventário, vendas, finanças, equipe, Pix sem taxa e gestão por R$ 9,99/mês.',
     images: [
       'https://images.unsplash.com/photo-1750262701480-91fc40e726ba?auto=format&fit=crop&fm=jpg&q=85&w=1200&h=630',
     ],
@@ -59,7 +59,7 @@ const structuredData = {
       url: 'https://rpgcapital.com.br/',
       logo: 'https://rpgcapital.com.br/favicon.svg',
       email: 'comercial@rpgcapital.com.br',
-      telephone: '+5511936206235',
+      telephone: '+5511936201445',
     },
     {
       '@type': 'WebSite',
@@ -76,7 +76,7 @@ const structuredData = {
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'Web',
       description:
-        'Sistema de gestão para pequenos varejistas com inventário, vendas, finanças, equipe e cobrança Pix sem taxa da RPG.',
+        'Sistema de gestão para pequenos varejistas com Rafa no WhatsApp, inventário, vendas, finanças, equipe e cobrança Pix sem taxa da RPG.',
       publisher: { '@id': 'https://rpgcapital.com.br/#organization' },
       offers: {
         '@type': 'Offer',
@@ -117,6 +117,7 @@ export default function Home() {
           </a>
           <nav className={styles.nav} aria-label="Navegação principal">
             <a href="#produto">Produto</a>
+            <a href="#rafa">Rafa</a>
             <a href="#como-funciona">Como funciona</a>
             <a href="#preco">Preço</a>
             <a href={demoHref}>Conta de teste</a>
@@ -213,6 +214,46 @@ export default function Home() {
           </div>
         </section>
 
+
+        <section className={styles.rafaSection + ' ' + styles.section} id="rafa">
+          <div className={styles.container + ' ' + styles.rafaGrid}>
+            <div className={styles.rafaCopy}>
+              <p className={styles.eyebrowLight}>CONHEÇA A RAFA</p>
+              <h2>A RPG roda dentro do WhatsApp.</h2>
+              <p className={styles.rafaLead}>
+                <strong>Super mega simples de usar.</strong> A Rafa tira todas as suas dúvidas, não só te ajuda a usar a plataforma, mas faz as coisas por você!
+              </p>
+              <p>
+                Mande mensagem, áudio, foto, nota fiscal ou planilha. A Rafa entende o que você quer e ajuda a transformar isso em ação dentro da RPG para Balcões.
+              </p>
+              <div className={styles.rafaChips} aria-label="O que a Rafa faz">
+                <span>Registra vendas</span>
+                <span>Atualiza estoque</span>
+                <span>Lê notas fiscais</span>
+                <span>Consulta produtos</span>
+                <span>Ajuda no financeiro</span>
+                <span>Responde suas dúvidas</span>
+              </div>
+              <div className={styles.rafaContact}>
+                <a className={styles.yellowButton} href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">Falar com a Rafa no WhatsApp</a>
+                <p className={styles.rafaNumberNote}>WhatsApp RPG: <strong>+55 11 93620-1445</strong></p>
+              </div>
+            </div>
+            <div className={styles.whatsappMock} aria-label="Exemplo de conversa com a Rafa no WhatsApp">
+              <div className={styles.whatsappTop}>
+                <span className={styles.rafaAvatar}>R</span>
+                <span><strong>Rafa · RPG</strong><small>online</small></span>
+              </div>
+              <div className={styles.whatsappBody}>
+                <div className={styles.chatUser}>Rafa, vendi 3 Coca-Cola 2L e 2 pacotes de arroz.</div>
+                <div className={styles.chatRafa}>Pronto. Registrei a venda e atualizei o estoque.</div>
+                <div className={styles.chatUser}>E o que está acabando?</div>
+                <div className={styles.chatRafa}>Posso te mostrar agora. Também consigo abrir sua prateleira e organizar a reposição.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className={styles.section}>
           <div className={styles.container + ' ' + styles.previewGrid}>
             <div className={styles.previewCopy}>
@@ -263,6 +304,23 @@ export default function Home() {
           </div>
         </section>
 
+
+        <section className={styles.creditSection + ' ' + styles.section} id="credito">
+          <div className={styles.container + ' ' + styles.creditInner}>
+            <div>
+              <p className={styles.eyebrow}>MAIS ACESSO. MENOS CUSTO.</p>
+              <h2>A RPG quer ajudar comerciantes a terem acesso a crédito mais barato.</h2>
+            </div>
+            <div className={styles.creditCopy}>
+              <p>
+                Pequenos lojistas movimentam negócios todos os dias, mas muitas vezes ainda pagam caro para ter acesso a capital.
+                Um dos objetivos da RPG é usar tecnologia e dados da operação para ajudar a aproximar o comerciante de opções de crédito mais acessíveis.
+              </p>
+              <p className={styles.creditNote}>Crédito é uma frente em desenvolvimento da RPG.</p>
+            </div>
+          </div>
+        </section>
+
         <section className={styles.section} id="como-funciona">
           <div className={styles.container}>
             <div className={styles.sectionHeading}>
@@ -292,6 +350,8 @@ export default function Home() {
               <details><summary>Quanto custa a RPG para Balcões?</summary><p>O acesso custa R$ 9,99 por mês.</p></details>
               <details><summary>A RPG cobra taxa no Pix?</summary><p>Não. A RPG não cobra taxa sobre as vendas em Pix feitas pelo fluxo do Balcões.</p></details>
               <details><summary>O que eu consigo gerenciar?</summary><p>Inventário, vendas, finanças, equipe e outras rotinas de gestão da loja em um só sistema.</p></details>
+              <details><summary>O que é a Rafa?</summary><p>A Rafa é a assistente da RPG dentro do WhatsApp. Ela tira suas dúvidas, ajuda a usar a plataforma e também faz tarefas por você, como registrar vendas, consultar produtos, atualizar estoque e interpretar arquivos.</p></details>
+              <details><summary>A RPG trabalha com crédito?</summary><p>Crédito é uma frente em desenvolvimento. A RPG quer ajudar comerciantes a terem acesso a crédito mais barato usando tecnologia e dados da operação.</p></details>
               <details><summary>Preciso trocar minha maquininha?</summary><p>Não. A proposta é funcionar com a operação que o comerciante já tem, sem exigir uma maquininha própria da RPG.</p></details>
             </div>
           </div>
@@ -308,9 +368,9 @@ export default function Home() {
       <footer className={styles.footer}>
         <div className={styles.container + ' ' + styles.footerGrid}>
           <div><a className={styles.brand} href="#topo"><span className={styles.brandMark}>RPG</span><span className={styles.brandCopy}><strong>RPG para Balcões</strong><small>por RPG Capital</small></span></a><p>Gestão simples para quem tem uma loja para tocar.</p></div>
-          <div><strong>Produto</strong><a href="#produto">Funcionalidades</a><a href="#preco">Preço</a><a href="#como-funciona">Como funciona</a></div>
+          <div><strong>Produto</strong><a href="#produto">Funcionalidades</a><a href="#rafa">Rafa no WhatsApp</a><a href="#credito">Crédito</a><a href="#preco">Preço</a><a href="#como-funciona">Como funciona</a></div>
           <div><strong>Acesso</strong><a href={demoHref}>Conta de teste</a><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a></div>
-          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="tel:+5511936206235">+55 11 93620-6235</a></div>
+          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">WhatsApp: +55 11 93620-1445</a></div>
         </div>
         <div className={styles.container + ' ' + styles.footerBottom}><span>© 2026 RPG Capital.</span><span>Feito para o varejo brasileiro.</span></div>
       </footer>
