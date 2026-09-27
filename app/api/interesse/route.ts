@@ -14,7 +14,7 @@ const schema = z.object({
   address: z.string().trim().min(5).max(240),
   phone: z.string().trim().min(8).max(32),
   email: z.string().trim().email().max(180),
-  secondaryPhone: optionalText(32),
+  secondaryPhone: z.union([z.string().trim().min(8).max(32), z.literal('')]).optional().transform((value) => value || null),
   secondaryEmail: z.union([z.string().trim().email().max(180), z.literal('')]).optional().transform((value) => value || null),
   referralSource: z.string().trim().min(2).max(240),
   helpText: z.string().trim().min(5).max(2000),
