@@ -116,6 +116,7 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
       </div>
       <nav className="mx-auto mt-4 flex max-w-6xl gap-2 overflow-x-auto">
         {tabs.map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${tab === id ? 'bg-white text-slate-950' : 'bg-white/10 text-white'}`}>{label}</button>)}
+        <a href="/admin/analytics" className="shrink-0 rounded-full bg-emerald-500 px-4 py-2 text-sm font-bold text-slate-950">Site / tráfego</a>
       </nav>
     </header>
 
