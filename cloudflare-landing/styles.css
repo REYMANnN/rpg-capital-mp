@@ -233,6 +233,10 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .rafa-copy > p:not(.eyebrow):not(.rafa-number-note) { max-width: 720px; color: #c8d7ec; font-size: 17px; line-height: 1.72; }
 .rafa-lead { margin-top: 26px; font-size: 21px !important; color: #fff !important; }
 .rafa-lead strong { color: var(--yellow); }
+.rafa-sales-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
+.rafa-sales-grid article { display: grid; gap: 8px; padding: 18px; border: 1px solid rgba(255,255,255,.13); border-radius: 18px; background: rgba(255,255,255,.06); }
+.rafa-sales-grid strong { color: #fff; font-size: 14px; line-height: 1.35; }
+.rafa-sales-grid span { color: #b8c9df; font-size: 12px; line-height: 1.55; }
 .rafa-chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
 .rafa-chips span { padding: 9px 13px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(255,255,255,.07); color: #e8f0fb; font-size: 12px; font-weight: 750; }
 .rafa-contact { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 26px; }
@@ -323,6 +327,7 @@ details p { margin: -3px 0 22px; padding-right: 28px; color: var(--muted); line-
   .scan-visual img { aspect-ratio: 16 / 10; }
   .preview-grid { gap: 40px; }
   .rafa-grid, .credit-inner { gap: 44px; }
+  .rafa-sales-grid { grid-template-columns: 1fr; }
   .whatsapp-mock { max-width: 700px; }
   .price-card { padding: 52px; }
   .coffee-card { max-width: 540px; }
