@@ -8,6 +8,21 @@ Tudo que sua loja precisa para vender, controlar e crescer.
 
 O sistema reúne inventário, vendas, finanças, equipe e outras rotinas de gestão da loja em um só lugar, com foco em simplicidade para quem trabalha no balcão.
 
+## Rafa no WhatsApp
+
+A RPG também roda dentro do WhatsApp por meio da Rafa.
+
+A Rafa tira dúvidas, ajuda o lojista a usar a plataforma e também faz tarefas por ele.
+
+- Mande mensagem, foto ou áudio: a Rafa entende o pedido.
+- Não precisa migrar banco de dados para começar.
+- A proposta é reduzir burocracia e permitir que o lojista comece de forma simples.
+- Mande foto da nota fiscal e a Rafa ajuda a subir os novos itens para o inventário.
+- A Rafa pode ajudar a registrar vendas, atualizar estoque, consultar produtos, interpretar documentos e responder dúvidas da operação.
+
+WhatsApp RPG: +55 11 93620-1445
+https://wa.me/5511936201445
+
 ## Preço
 
 Preço atual: R$ 9,99 por mês.
@@ -18,7 +33,11 @@ A proposta comercial é custar aproximadamente o preço de um café por mês par
 
 ## Pix
 
-A RPG para Balcões não cobra taxa sobre as vendas em Pix realizadas pelo fluxo do produto. O objetivo é permitir cobrança no balcão sem taxa da RPG sobre o Pix.
+A RPG para Balcões não cobra taxa sobre as vendas em Pix realizadas pelo fluxo do produto.
+
+## Crédito
+
+A RPG quer ajudar comerciantes a terem acesso a crédito mais barato. Crédito é uma frente em desenvolvimento da RPG.
 
 ## Principais funcionalidades
 
@@ -29,6 +48,7 @@ A RPG para Balcões não cobra taxa sobre as vendas em Pix realizadas pelo fluxo
 - Cobrança Pix sem taxa da RPG.
 - Leitura e cadastro de produtos por código de barras.
 - Uso no celular e no computador.
+- Rafa no WhatsApp.
 
 ## Público
 
@@ -45,4 +65,7 @@ Interesse em nova conta: https://www.rpgcapital.com.br/interesse
 
 ## Contato comercial
 
-comercial@rpgcapital.com.br
+E-mail: comercial@rpgcapital.com.br
+WhatsApp: +55 11 93620-1445
+Instagram: https://www.instagram.com/rpgcapital/
+LinkedIn: https://www.linkedin.com/company/rpgcapital/

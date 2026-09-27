@@ -123,6 +123,10 @@
 .rafaCopy > p:not(.eyebrowLight):not(.rafaNumberNote) { max-width: 720px; color: #c8d7ec; font-size: 17px; line-height: 1.72; }
 .rafaLead { margin-top: 26px; font-size: 21px !important; color: #fff !important; }
 .rafaLead strong { color: var(--yellow); }
+.rafaSalesGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
+.rafaSalesGrid article { display: grid; gap: 8px; padding: 18px; border: 1px solid rgba(255,255,255,.13); border-radius: 18px; background: rgba(255,255,255,.06); }
+.rafaSalesGrid strong { color: #fff; font-size: 14px; line-height: 1.35; }
+.rafaSalesGrid span { color: #b8c9df; font-size: 12px; line-height: 1.55; }
 .rafaChips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
 .rafaChips span { padding: 9px 13px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(255,255,255,.07); color: #e8f0fb; font-size: 12px; font-weight: 750; }
 .rafaContact { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 26px; }
