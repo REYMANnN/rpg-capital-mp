@@ -33,7 +33,7 @@ test('landing envia login e cadastro para o web app que continua no Vercel', () 
   const html = read('index.html')
 
   assert.match(html, /https:\/\/www\.rpgcapital\.com\.br\/login\?intent=login/)
-  assert.match(html, /https:\/\/www\.rpgcapital\.com\.br\/auth\/signup\/reset/)
+  assert.match(html, /https:\/\/www\.rpgcapital\.com\.br\/interesse/)
 })
 
 test('landing possui arquivos de descoberta para buscadores e IAs', () => {
@@ -60,7 +60,7 @@ test('a raiz publica da Vercel renderiza a landing e nao redireciona para a home
   assert.match(page, /RPG para Balcões/)
   assert.match(page, /Tudo que sua loja precisa para vender, controlar e crescer/)
   assert.match(page, /href=["']\/login\?intent=login["']/)
-  assert.match(page, /href=["']\/auth\/signup\/reset["']/)
+  assert.match(page, /href=["']\/interesse["']/)
   assert.match(page, /R\$\s*9,99/)
   assert.match(page, /Pix sem taxa/i)
 })
