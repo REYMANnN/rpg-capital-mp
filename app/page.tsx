@@ -316,7 +316,7 @@ export default function Home() {
                 Pequenos lojistas movimentam negócios todos os dias, mas muitas vezes ainda pagam caro para ter acesso a capital.
                 Um dos objetivos da RPG é usar tecnologia e dados da operação para ajudar a aproximar o comerciante de opções de crédito mais acessíveis.
               </p>
-              <p className={styles.creditNote}>Crédito é uma frente em desenvolvimento da RPG e não está incluído automaticamente na assinatura do Balcão.</p>
+              <p className={styles.creditNote}>Crédito é uma frente em desenvolvimento da RPG.</p>
             </div>
           </div>
         </section>
