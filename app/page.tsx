@@ -61,7 +61,7 @@ const structuredData = {
       email: 'comercial@rpgcapital.com.br',
       telephone: '+5511936201445',
       sameAs: [
-        'https://www.instagram.com/rpgcapital/',
+        'https://www.instagram.com/rpg_capital_credito/',
         'https://www.linkedin.com/company/rpgcapital/',
       ],
     },
@@ -233,25 +233,25 @@ export default function Home() {
               </p>
               <div className={styles.rafaSalesGrid}>
                 <article>
-                  <strong>Não precisa migrar banco de dados.</strong>
-                  <span>Não tem burocracia. Você começa simples e vai colocando sua operação para dentro da RPG do jeito mais fácil.</span>
+                  <strong>Venda uma vez. O resto acontece sozinho.</strong>
+                  <span>Use Vender para fechar a venda. Ela já fica registrada e o estoque é atualizado automaticamente.</span>
                 </article>
                 <article>
-                  <strong>Mande foto da nota fiscal.</strong>
-                  <span>Mande uma foto da nota fiscal e a Rafa sobe os novos itens para o seu inventário.</span>
+                  <strong>Suba estoque pela nota fiscal.</strong>
+                  <span>Mande foto, PDF ou XML da nota. A Rafa lê produtos, quantidades e custos e prepara a entrada no estoque.</span>
                 </article>
                 <article>
-                  <strong>Fale como você já fala no WhatsApp.</strong>
-                  <span>Mensagem, foto ou áudio: a Rafa entende o que você quer, tira suas dúvidas e faz as coisas por você.</span>
+                  <strong>Pergunte sobre a sua loja.</strong>
+                  <span>Consulte vendas, ticket médio, lucro, produtos, estoque e financeiro conversando normalmente com a Rafa.</span>
                 </article>
               </div>
               <div className={styles.rafaChips} aria-label="O que a Rafa faz">
-                <span>Registra vendas</span>
-                <span>Atualiza estoque</span>
-                <span>Lê notas fiscais</span>
-                <span>Consulta produtos</span>
-                <span>Ajuda no financeiro</span>
-                <span>Responde suas dúvidas</span>
+                <span>Vender</span>
+                <span>Ler código</span>
+                <span>Prateleira</span>
+                <span>Subir estoque</span>
+                <span>Consultar vendas</span>
+                <span>Ver financeiro</span>
               </div>
               <div className={styles.rafaContact}>
                 <a className={styles.yellowButton} href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">Falar com a Rafa no WhatsApp</a>
@@ -264,10 +264,21 @@ export default function Home() {
                 <span><strong>Rafa · RPG</strong><small>online</small></span>
               </div>
               <div className={styles.whatsappBody}>
-                <div className={styles.chatUser}>Rafa, vendi 3 Coca-Cola 2L e 2 pacotes de arroz.</div>
-                <div className={styles.chatRafa}>Pronto. Registrei a venda e atualizei o estoque.</div>
-                <div className={styles.chatUser}>E o que está acabando?</div>
-                <div className={styles.chatRafa}>Posso te mostrar agora. Também consigo abrir sua prateleira e organizar a reposição.</div>
+                <div className={styles.chatRafa}>Oi! Sou a Rafa. O que você quer fazer agora?</div>
+                <div className={styles.rafaMenuMock} aria-label="Menu da Rafa">
+                  <span>Vender</span>
+                  <span>Ler código</span>
+                  <span>Prateleira</span>
+                  <span>Subir estoque</span>
+                </div>
+                <div className={styles.chatUser}>Quanto eu vendi hoje?</div>
+                <div className={styles.chatRafa}>
+                  Hoje foram <strong>27 vendas</strong>, com <strong>R$ 1.486,40</strong> de faturamento e ticket médio de <strong>R$ 55,05</strong>.
+                </div>
+                <div className={styles.chatUser}>E quais foram os produtos mais vendidos?</div>
+                <div className={styles.chatRafa}>Posso te mostrar os mais vendidos por faturamento e quantidade. Também consigo comparar com ontem, a semana ou o mês.</div>
+                <div className={styles.chatUser}>Subir estoque</div>
+                <div className={styles.chatRafa}>Manda a foto, PDF ou XML da nota fiscal. Eu leio os produtos, quantidades e custos e preparo a entrada no seu estoque.</div>
               </div>
             </div>
           </div>
@@ -389,7 +400,7 @@ export default function Home() {
           <div><a className={styles.brand} href="#topo"><span className={styles.brandMark}>RPG</span><span className={styles.brandCopy}><strong>RPG para Balcões</strong><small>por RPG Capital</small></span></a><p>Gestão simples para quem tem uma loja para tocar.</p></div>
           <div><strong>Produto</strong><a href="#produto">Funcionalidades</a><a href="#rafa">Rafa no WhatsApp</a><a href="#credito">Crédito</a><a href="#preco">Preço</a><a href="#como-funciona">Como funciona</a></div>
           <div><strong>Acesso</strong><a href={demoHref}>Conta de teste</a><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a></div>
-          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">WhatsApp: +55 11 93620-1445</a><a href="https://www.instagram.com/rpgcapital/" target="_blank" rel="noreferrer">Instagram</a><a href="https://www.linkedin.com/company/rpgcapital/" target="_blank" rel="noreferrer">LinkedIn</a></div>
+          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">WhatsApp: +55 11 93620-1445</a><a href="https://www.instagram.com/rpg_capital_credito/" target="_blank" rel="noreferrer">Instagram</a><a href="https://www.linkedin.com/company/rpgcapital/" target="_blank" rel="noreferrer">LinkedIn</a></div>
         </div>
         <div className={styles.container + ' ' + styles.footerBottom}><span>© 2026 RPG Capital.</span><span>Feito para o varejo brasileiro.</span></div>
       </footer>

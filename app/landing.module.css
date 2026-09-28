@@ -137,10 +137,12 @@
 .whatsappTop > span:last-child { display: grid; gap: 2px; }
 .whatsappTop small { color: #c9e8df; font-size: 11px; }
 .rafaAvatar { display: inline-grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; background: #fff; color: #075e54; font-weight: 900; }
-.whatsappBody { display: grid; gap: 12px; min-height: 430px; align-content: center; padding: 28px 22px; background-image: radial-gradient(rgba(16, 92, 77, .08) 1px, transparent 1px); background-size: 18px 18px; }
-.chatUser, .chatRafa { max-width: 82%; padding: 12px 14px; border-radius: 14px; color: #1f2937; font-size: 14px; line-height: 1.45; box-shadow: 0 2px 7px rgba(15,23,42,.08); }
+.whatsappBody { display: grid; gap: 10px; min-height: 520px; align-content: center; padding: 24px 22px; background-image: radial-gradient(rgba(16, 92, 77, .08) 1px, transparent 1px); background-size: 18px 18px; }
+.chatUser, .chatRafa { max-width: 88%; padding: 11px 14px; border-radius: 14px; color: #1f2937; font-size: 13px; line-height: 1.42; box-shadow: 0 2px 7px rgba(15,23,42,.08); }
 .chatUser { justify-self: end; border-bottom-right-radius: 4px; background: #d9fdd3; }
 .chatRafa { justify-self: start; border-bottom-left-radius: 4px; background: #fff; }
+.rafaMenuMock { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; width: 88%; }
+.rafaMenuMock span { display: grid; place-items: center; min-height: 38px; padding: 8px 10px; border: 1px solid rgba(7,94,84,.20); border-radius: 11px; background: #fff; color: #075e54; font-size: 12px; font-weight: 800; box-shadow: 0 2px 7px rgba(15,23,42,.06); }
 
 .creditSection { background: #fff8d8; }
 .creditInner { display: grid; grid-template-columns: 1.05fr .95fr; gap: 72px; align-items: start; }
