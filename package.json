@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:scanner": "node --experimental-strip-types --test tests/scanner-policy.test.ts",
-    "test:whatsapp": "node --experimental-strip-types --test tests/whatsapp-router.test.ts"
+    "test:whatsapp": "node --experimental-strip-types --test tests/whatsapp-router.test.ts",
+    "test:rafa-ai": "node --experimental-strip-types --test tests/rafa-ai-parse.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
