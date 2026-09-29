@@ -77,11 +77,14 @@ type LoadStatus = 'loading' | 'ready' | 'ended' | 'error'
 
 class SessionEnded extends Error {}
 
+let lastStateVersion: number | null = null
+
 async function fetchState(): Promise<WaState> {
   const response = await fetch('/api/inventory/state', { cache: 'no-store' })
   const result = await response.json().catch(() => null)
   if (result?.error === 'wa_session_ended' || response.status === 401) throw new SessionEnded('ended')
   if (!response.ok || !result?.ok) throw new Error('load_failed')
+  lastStateVersion = typeof result.stateVersion === 'number' ? result.stateVersion : null
   return result.found && result.state
     ? { ...result.state, products: result.state.products || [], sales: result.state.sales || [], movements: result.state.movements || [] }
     : { products: [], sales: [], movements: [] }
@@ -107,18 +110,23 @@ export function useWaStore() {
     busy.current = true
     setSaving(true)
     try {
-      const latest = await fetchState()
-      const { state: next, result } = mutate(latest)
-      const response = await fetch('/api/inventory/state', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      })
-      const body = await response.json().catch(() => null)
-      if (body?.error === 'wa_session_ended') throw new SessionEnded('ended')
-      if (!response.ok || !body?.ok) throw new Error('Não consegui salvar. Tente de novo.')
-      setState(next)
-      return result
+      // Se a loja mudou entre ler e gravar (409), relê e refaz a mudança por cima do mais novo.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const latest = await fetchState()
+        const { state: next, result } = mutate(latest)
+        const response = await fetch('/api/inventory/state', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...(lastStateVersion !== null ? { 'x-state-version': String(lastStateVersion) } : {}) },
+          body: JSON.stringify(next),
+        })
+        const body = await response.json().catch(() => null)
+        if (body?.error === 'wa_session_ended') throw new SessionEnded('ended')
+        if (response.status === 409) continue
+        if (!response.ok || !body?.ok) throw new Error('Não consegui salvar. Tente de novo.')
+        setState(next)
+        return result
+      }
+      throw new Error('A loja mudou enquanto você salvava. Tente de novo.')
     } catch (error) {
       if (error instanceof SessionEnded) setStatus('ended')
       throw error
