@@ -142,7 +142,7 @@ export async function claudeMessages(input: {
   const body = JSON.stringify({
     model,
     max_tokens: input.maxTokens || 2048,
-    temperature: input.temperature ?? 0.2,
+    // Sonnet/Opus 5.5 recusam `temperature` (400 "deprecated"): não enviar. O parâmetro fica só por compatibilidade.
     system,
     messages: input.messages,
     ...(tools ? { tools } : {}),
