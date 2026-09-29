@@ -27,6 +27,14 @@ type CloudStateResponse = {
   state?: unknown
 }
 
+// Versão do estado da loja (sobe a cada gravação). O cliente devolve no PUT para não gravar
+// em cima de algo mais novo (ex.: a Rafa mudou pelo WhatsApp enquanto a tela estava aberta).
+async function storeVersion(installationId: string) {
+  const { data } = await createAdminClient().from('inventory_v1_stores')
+    .select('id,state_version').eq('installation_id', installationId).maybeSingle()
+  return data ? { storeId: String(data.id), version: Number(data.state_version ?? 0) } : null
+}
+
 function accountsEnforced() {
   return process.env.BALCAO_ACCOUNTS_ENFORCED === 'true'
 }
@@ -127,10 +135,12 @@ export async function GET(request: NextRequest) {
   }
 
   const result = (data ?? {}) as CloudStateResponse
+  const current = result.found ? await storeVersion(installation.id).catch(() => null) : null
   return withInstallationCookie(NextResponse.json({
     ok: true,
     found: Boolean(result.found),
     version: result.version || INVENTORY_APP_VERSION,
+    ...(current ? { stateVersion: current.version } : {}),
     ...(result.found ? { state: result.state } : {}),
   }), installation.id, installation.fresh)
 }
@@ -182,12 +192,26 @@ export async function PUT(request: NextRequest) {
     }
   }
 
-  const { data, error } = await supabase.rpc('inventory_v1_sync_state', {
-    p_installation_id: installation.id,
-    p_state: state,
-    p_app_version: INVENTORY_APP_VERSION,
-  })
+  // Com x-state-version: grava só se ninguém mudou a loja desde a leitura (senão 409 e o app relê).
+  const expectedHeader = request.headers.get('x-state-version')
+  const expected = expectedHeader !== null && /^\d+$/.test(expectedHeader) ? Number(expectedHeader) : null
+  const target = expected !== null ? await storeVersion(installation.id).catch(() => null) : null
+  const { data, error } = target && expected !== null
+    ? await createAdminClient().rpc('rafa_sync_state_checked', {
+        p_store_id: target.storeId,
+        p_state: state,
+        p_app_version: INVENTORY_APP_VERSION,
+        p_expected_version: expected,
+      }).then((result) => ({ data: result.error ? null : target.storeId, error: result.error }))
+    : await supabase.rpc('inventory_v1_sync_state', {
+        p_installation_id: installation.id,
+        p_state: state,
+        p_app_version: INVENTORY_APP_VERSION,
+      })
 
+  if (error && String(error.message || '').includes('state_version_conflict')) {
+    return withInstallationCookie(NextResponse.json({ ok: false, error: 'state_conflict' }, { status: 409 }), installation.id, installation.fresh)
+  }
   if (error) {
     console.error('inventory_v1_sync_state failed', error)
     return withInstallationCookie(NextResponse.json({ ok: false, error: 'sync_failed' }, { status: 500 }), installation.id, installation.fresh)
