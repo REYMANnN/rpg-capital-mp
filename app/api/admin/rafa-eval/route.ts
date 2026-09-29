@@ -21,6 +21,7 @@ type Step =
   | { image: { base64: string; mime?: string }; caption?: string }
   | { audio: { base64: string; mime?: string } }
   | { together: Step[] }
+  | { document: { base64: string; mime: string; filename: string }; caption?: string }
   | { button: 'confirm_yes' | 'confirm_no' }
 
 const EVAL_TEMPLATE_STORE_ID = '9650d7a0-a29b-4fc5-a0fa-5bd318e4f782'
@@ -77,11 +78,15 @@ export async function POST(request: NextRequest) {
     } else if ('audio' in step) {
       sink.media[id] = { bytes: new Uint8Array(Buffer.from(step.audio.base64, 'base64')), mime: step.audio.mime || 'audio/ogg', fileName: 'audio.ogg' }
       Object.assign(message, { type: 'audio', audio: { id: `evo:${id}`, mime_type: step.audio.mime || 'audio/ogg; codecs=opus' } })
+    } else if ('document' in step) {
+      sink.media[id] = { bytes: new Uint8Array(Buffer.from(step.document.base64, 'base64')), mime: step.document.mime, fileName: step.document.filename }
+      Object.assign(message, { type: 'document', document: { id: `evo:${id}`, mime_type: step.document.mime, filename: step.document.filename, caption: step.caption || '' } })
     } else if ('button' in step) Object.assign(message, { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: step.button, title: step.button === 'confirm_yes' ? 'Sim' : 'Não' } } })
     return message
   }
   const describe = (step: Step): unknown => 'image' in step ? { image: `${step.image.base64.length} b64 chars`, caption: step.caption }
     : 'audio' in step ? { audio: `${step.audio.base64.length} b64 chars` }
+    : 'document' in step ? { document: step.document.filename, caption: step.caption }
     : 'together' in step ? { together: step.together.map(describe) } : step
   const send = (message: Record<string, unknown>) => processValue({ contacts: [{ wa_id: scope.waId, profile: { name: 'Eval' } }], messages: [message] })
 
