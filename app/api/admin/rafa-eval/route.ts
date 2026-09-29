@@ -19,7 +19,11 @@ export const maxDuration = 300
 type Step =
   | { text: string }
   | { image: { base64: string; mime?: string }; caption?: string }
+  | { audio: { base64: string; mime?: string } }
+  | { together: Step[] }
   | { button: 'confirm_yes' | 'confirm_no' }
+
+const EVAL_TEMPLATE_STORE_ID = '9650d7a0-a29b-4fc5-a0fa-5bd318e4f782'
 
 async function authorize(request: NextRequest) {
   const token = request.headers.get('x-rafa-eval-token') || ''
@@ -43,6 +47,14 @@ async function reset(storeId: string, waId: string) {
     admin.from('rafa_daily_tips').delete().eq('wa_id', waId),
   ])
   await admin.from('rafa_operations').delete().eq('store_id', storeId)
+  // Volta a loja de teste ao catálogo-base (cópia da loja modelo, sem vendas nem movimentos).
+  const { data: evalStore } = await admin.from('inventory_v1_stores').select('installation_id').eq('id', storeId).maybeSingle()
+  if (evalStore?.installation_id) {
+    const { state: template } = await loadRafaStore(EVAL_TEMPLATE_STORE_ID)
+    const products = template.products.filter((product) => !product.deletedAt).map((product) => ({ ...product, id: randomUUID() }))
+    const { error } = await admin.rpc('inventory_v1_sync_state', { p_installation_id: evalStore.installation_id, p_state: { products, sales: [], movements: [], scaleRule: template.scaleRule || {} }, p_app_version: 'rafa-eval' })
+    if (error) throw error
+  }
   await admin.from('wa_store_bindings').upsert({ wa_id: waId, store_id: storeId, updated_at: new Date().toISOString() }, { onConflict: 'wa_id' })
 }
 
@@ -55,19 +67,38 @@ export async function POST(request: NextRequest) {
   if (body.reset) await reset(scope.storeId, scope.waId)
 
   const transcript: Array<{ step: unknown; replies: string[]; errors?: string[]; ms: number }> = []
-  for (const step of (body.steps || []).slice(0, 12)) {
-    const sink: RafaSink = { messages: [], media: {}, forceBrain: true, errors: [] }
+  const toMessage = (step: Step, sink: RafaSink) => {
     const id = `EVAL${randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase()}`
     const message: Record<string, unknown> = { id, from: scope.waId, timestamp: String(Math.floor(Date.now() / 1000)) }
     if ('text' in step) Object.assign(message, { type: 'text', text: { body: step.text } })
     else if ('image' in step) {
       sink.media[id] = { bytes: new Uint8Array(Buffer.from(step.image.base64, 'base64')), mime: step.image.mime || 'image/jpeg' }
       Object.assign(message, { type: 'image', image: { id: `evo:${id}`, mime_type: step.image.mime || 'image/jpeg', caption: step.caption || '' } })
-    } else Object.assign(message, { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: step.button, title: step.button === 'confirm_yes' ? 'Sim' : 'Não' } } })
+    } else if ('audio' in step) {
+      sink.media[id] = { bytes: new Uint8Array(Buffer.from(step.audio.base64, 'base64')), mime: step.audio.mime || 'audio/ogg', fileName: 'audio.ogg' }
+      Object.assign(message, { type: 'audio', audio: { id: `evo:${id}`, mime_type: step.audio.mime || 'audio/ogg; codecs=opus' } })
+    } else if ('button' in step) Object.assign(message, { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: step.button, title: step.button === 'confirm_yes' ? 'Sim' : 'Não' } } })
+    return message
+  }
+  const describe = (step: Step): unknown => 'image' in step ? { image: `${step.image.base64.length} b64 chars`, caption: step.caption }
+    : 'audio' in step ? { audio: `${step.audio.base64.length} b64 chars` }
+    : 'together' in step ? { together: step.together.map(describe) } : step
+  const send = (message: Record<string, unknown>) => processValue({ contacts: [{ wa_id: scope.waId, profile: { name: 'Eval' } }], messages: [message] })
+
+  for (const step of (body.steps || []).slice(0, 12)) {
+    const sink: RafaSink = { messages: [], media: {}, forceBrain: true, errors: [] }
     const started = Date.now()
-    await runWithRafaSink(sink, () => processValue({ contacts: [{ wa_id: scope.waId, profile: { name: 'Eval' } }], messages: [message] }))
+    if ('together' in step) {
+      // Várias mensagens quase juntas (ex.: 2 fotos da mesma nota), como o WhatsApp entrega.
+      const messages = step.together.slice(0, 4).map((inner) => toMessage(inner, sink))
+      await runWithRafaSink(sink, () => Promise.all(messages.map((message, index) =>
+        new Promise((resolve) => setTimeout(resolve, index * 900)).then(() => send(message)))))
+    } else {
+      const message = toMessage(step, sink)
+      await runWithRafaSink(sink, () => send(message))
+    }
     transcript.push({
-      step: 'image' in step ? { image: `${step.image.base64.length} b64 chars`, caption: step.caption } : step,
+      step: describe(step),
       replies: sink.messages.map((item) => item.body + (Array.isArray(item.payload.buttons) ? ` [botões: ${(item.payload.buttons as Array<{ title?: string }>).map((b) => b.title).join(' / ')}]` : '')),
       ...(sink.errors?.length ? { errors: sink.errors } : {}),
       ms: Date.now() - started,
@@ -85,5 +116,6 @@ export async function POST(request: NextRequest) {
     admin.from('rafa_memory').select('fact,deleted_at').eq('store_id', scope.storeId).limit(40),
     admin.from('rafa_ai_errors').select('*').eq('store_id', scope.storeId).order('created_at', { ascending: false }).limit(5),
   ])
-  return Response.json({ transcript, products, operations: ops || [], pendingProducts: pending || [], memory: memory || [], aiErrors: (aiErrors || []).map((row: Record<string, unknown>) => ({ ...row, raw: String(row.raw || '').slice(0, 600) })) })
+  const sales = state.sales.slice(-10).map((sale) => ({ total: sale.totalCents, pagamento: sale.payment?.method || null, lucro: sale.grossProfitCents ?? null, itens: sale.items.length }))
+  return Response.json({ transcript, products, sales, operations: ops || [], pendingProducts: pending || [], memory: memory || [], aiErrors: (aiErrors || []).map((row: Record<string, unknown>) => ({ ...row, raw: String(row.raw || '').slice(0, 600) })) })
 }
