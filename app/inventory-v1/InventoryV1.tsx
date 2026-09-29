@@ -25,6 +25,7 @@ import { calculatePurchaseUpdate } from '@/lib/inventory/intake'
 import { parseNfeXml, type ParsedNfe, type ParsedNfeItem } from '@/lib/inventory/nfe'
 import { validateNewProductCommercialData, validateSalePrice } from '@/lib/inventory/productRules'
 import { INVENTORY_APP_VERSION } from '@/lib/inventory/version'
+import { mergeStoreStates } from '@/lib/inventory/merge'
 import QuaggaScanner from './QuaggaScanner'
 import DirectBarcodeScanner from './DirectBarcodeScanner'
 import InvoiceIntakeV10 from './InvoiceIntakeV10'
@@ -151,13 +152,41 @@ function invoiceMarker(invoice: Pick<ParsedNfe, 'accessKey' | 'number' | 'suppli
   return `NF-e:${invoice.accessKey || `${invoice.supplierDocument}:${invoice.number}:${invoice.issuedAt}`}`
 }
 
-async function pushCloudState(state: StoreData) {
-  const response = await fetch('/api/inventory/state', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(state),
-  })
-  if (!response.ok) throw new Error('cloud_sync_failed')
+// Última versão lida/gravada na nuvem. Com ela o servidor recusa (409) gravar por cima de algo
+// mais novo — por exemplo, uma entrada de nota feita pela Rafa no WhatsApp com esta tela aberta.
+const cloudSync: { base: StoreData | null; version: number | null } = { base: null, version: null }
+
+function rememberCloud(state: StoreData, version: unknown) {
+  cloudSync.base = state
+  cloudSync.version = typeof version === 'number' ? version : null
+}
+
+// Grava; se a nuvem mudou, junta as duas mudanças (a da tela e a de fora) e grava de novo.
+// Devolve o estado final quando precisou juntar, para a tela mostrar o resultado.
+async function pushCloudState(state: StoreData): Promise<StoreData | null> {
+  let local = state
+  let merged = false
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch('/api/inventory/state', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...(cloudSync.version !== null ? { 'x-state-version': String(cloudSync.version) } : {}) },
+      body: JSON.stringify(local),
+    })
+    const body = await response.json().catch(() => null)
+    if (response.status === 409) {
+      const fresh = await fetch('/api/inventory/state', { cache: 'no-store' }).then((res) => res.json()).catch(() => null)
+      if (!fresh?.ok || !fresh.found || !validStoreData(fresh.state)) throw new Error('cloud_sync_failed')
+      const remote = { ...fresh.state, scaleRule: fresh.state.scaleRule || DEFAULT_RULE } as StoreData
+      local = cloudSync.base ? mergeStoreStates(cloudSync.base, local, remote) : remote
+      rememberCloud(remote, fresh.stateVersion)
+      merged = true
+      continue
+    }
+    if (!response.ok || !body?.ok) throw new Error('cloud_sync_failed')
+    rememberCloud(local, body.stateVersion)
+    return merged ? local : null
+  }
+  throw new Error('cloud_sync_failed')
 }
 
 export default function InventoryV1() {
@@ -254,6 +283,7 @@ export default function InventoryV1() {
         }
         if (response.ok && result?.ok && result?.found && validStoreData(result.state)) {
           const remote = { ...result.state, scaleRule: result.state.scaleRule || DEFAULT_RULE }
+          rememberCloud(remote, result.stateVersion)
           setData(remote)
           localStorage.setItem(STORAGE_KEY, JSON.stringify(remote))
           setCloud('synced')
@@ -285,10 +315,12 @@ export default function InventoryV1() {
   useEffect(() => {
     if (!loaded) return
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    if (cloudSync.base && JSON.stringify(cloudSync.base) === JSON.stringify(data)) return
     const timer = window.setTimeout(async () => {
       setCloud('syncing')
       try {
-        await pushCloudState(data)
+        const merged = await pushCloudState(data)
+        if (merged) setData(merged)
         setCloud('synced')
       } catch {
         setCloud('offline')
