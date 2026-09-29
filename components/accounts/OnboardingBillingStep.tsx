@@ -18,7 +18,7 @@ export default function OnboardingBillingStep({
   userName,
   userEmail,
   initialCoupon = '',
-  allowCoupon = true,
+  allowCoupon = false,
   successHref = '/onboarding?step=bank',
   stepLabel = true,
 }: {

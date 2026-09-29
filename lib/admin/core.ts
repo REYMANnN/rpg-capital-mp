@@ -62,7 +62,7 @@ export function normalizeCouponCode(value: unknown) {
 }
 
 export function couponLink(code: string) {
-  return `${SITE_URL}/c/${code}`
+  return `${SITE_URL}/convite/${code}`
 }
 
 export function courtesyEndMessage(storeName: string, endsAt: Date) {

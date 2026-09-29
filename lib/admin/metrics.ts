@@ -47,21 +47,33 @@ export type AdminCoupon = {
   note: string
   status: string
   link: string
+  inviteeName: string
+  inviteePhone: string | null
+  storeNameHint: string | null
   createdAt: string
+  openedAt: string | null
+  revokedAt: string | null
   redeemedAt: string | null
   businessName: string | null
+  bankConnected: boolean
+  rafaWelcomed: boolean
+  paying: boolean
 }
 
 export type AdminAccount = {
   businessId: string
   name: string
+  ownerName: string
   phone: string | null
   createdAt: string
   billingStatus: string
   couponCode: string | null
   courtesyEndsAt: string | null
   bank: string | null
+  bankConnected: boolean
   rafaNumbers: number
+  rafaWelcomed: boolean
+  paidUntil: string | null
   sales30d: number
 }
 
@@ -74,12 +86,12 @@ export async function loadAdminMetrics() {
   const d30 = since(30)
 
   const [
-    businessesQ, storesQ, billingQ, couponsQ, financeQ, aiQ, outboxQ, inboundQ, instanceQ, salesQ, bindingsQ, linksQ, usersQ, fx,
+    businessesQ, storesQ, billingQ, couponsQ, financeQ, aiQ, outboxQ, inboundQ, instanceQ, salesQ, bindingsQ, linksQ, usersQ, paymentsQ, settingsQ, fx,
   ] = await Promise.all([
-    admin.from('balcao_businesses').select('id, display_name, phone, created_at, active').order('created_at', { ascending: false }),
+    admin.from('balcao_businesses').select('*').order('created_at', { ascending: false }),
     admin.from('inventory_v1_stores').select('id, business_id, display_name, active, created_at'),
     admin.from('balcao_billing_accounts').select('business_id, status, monthly_amount_cents, coupon_code, courtesy_ends_at, created_at'),
-    admin.from('balcao_coupons').select('code, note, status, created_at, redeemed_at, redeemed_business_id').order('created_at', { ascending: false }),
+    admin.from('balcao_coupons').select('*').order('created_at', { ascending: false }),
     admin.from('balcao_finance_connections').select('business_id, store_id, provider, institution_name, status, execution_status, last_synced_at, last_error_message'),
     admin.from('ai_usage').select('store_id, operation, model, input_tokens, output_tokens, estimated_cost_usd, created_at').gte('created_at', d30).limit(20000),
     admin.from('wa_outbox').select('status, to_phone, created_at').gte('created_at', d30).limit(20000),
@@ -89,6 +101,8 @@ export async function loadAdminMetrics() {
     admin.from('wa_store_bindings').select('wa_id, store_id'),
     admin.from('wa_links').select('fluxo, created_at, opened_at').gte('created_at', d30).limit(20000),
     admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    admin.from('rpg_pix_payments').select('*').order('paid_at', { ascending: false }).limit(5000),
+    admin.from('rpg_admin_settings').select('key,value').in('key', ['pix_key', 'plan_price_cents']),
     usdToBrl(),
   ])
 
@@ -104,11 +118,28 @@ export async function loadAdminMetrics() {
   const bindings = (bindingsQ.data || []) as Row[]
   const links = (linksQ.data || []) as Row[]
   const users = usersQ.data?.users || []
+  const payments = (paymentsQ.data || []) as Row[]
+  const settingsRows = (settingsQ.data || []) as Row[]
 
   const activeBusinesses = businesses.filter((row) => row.active !== false)
   const businessName = new Map(businesses.map((row) => [String(row.id), String(row.display_name || 'Loja')]))
   const storeBusiness = new Map(stores.map((row) => [String(row.id), String(row.business_id || '')]))
   const billingByBusiness = new Map(billing.map((row) => [String(row.business_id), row]))
+  const userNameById = new Map(users.map((user) => [
+    String(user.id),
+    String(user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'Dono'),
+  ]))
+  const latestPaymentByBusiness = new Map<string, Row>()
+  for (const row of payments) {
+    const id = String(row.business_id || '')
+    if (id && !latestPaymentByBusiness.has(id)) latestPaymentByBusiness.set(id, row)
+  }
+  const settingsMap = new Map(settingsRows.map((row) => [String(row.key), String(row.value)]))
+  const planPriceRaw = Number(settingsMap.get('plan_price_cents') || 999)
+  const adminSettings = {
+    pixKey: settingsMap.get('pix_key') || '',
+    planPriceCents: Number.isInteger(planPriceRaw) && planPriceRaw > 0 ? planPriceRaw : 999,
+  }
 
   // Cobrança
   const billingStatus = countBy(billing, 'status')
@@ -176,7 +207,12 @@ export async function loadAdminMetrics() {
       error: row.last_error_message ? String(row.last_error_message).slice(0, 140) : null,
     }))
   const bankByBusiness = new Map<string, string>()
-  for (const row of malvo) bankByBusiness.set(String(row.business_id), `${row.institution_name || 'Banco'} · ${row.status}`)
+  const bankConnectedByBusiness = new Set<string>()
+  for (const row of malvo) {
+    const businessId = String(row.business_id)
+    bankByBusiness.set(businessId, `${row.institution_name || 'Banco'} · ${row.status}`)
+    if (row.status === 'active' || row.status === 'connected' || row.execution_status === 'active') bankConnectedByBusiness.add(businessId)
+  }
 
   // Vendas
   const sales7 = sales.filter((row) => String(row.sold_at) >= d7)
@@ -197,26 +233,42 @@ export async function loadAdminMetrics() {
     return {
       businessId: id,
       name: String(row.display_name || 'Loja'),
+      ownerName: row.created_by ? userNameById.get(String(row.created_by)) || 'Dono' : 'Dono',
       phone: row.phone ? String(row.phone) : null,
       createdAt: String(row.created_at),
       billingStatus: bill ? String(bill.status) : 'sem_cobranca',
       couponCode: bill?.coupon_code ? String(bill.coupon_code) : null,
       courtesyEndsAt: bill?.courtesy_ends_at ? String(bill.courtesy_ends_at) : null,
       bank: bankByBusiness.get(id) || null,
+      bankConnected: bankConnectedByBusiness.has(id),
       rafaNumbers: rafaByBusiness.get(id) || 0,
+      rafaWelcomed: Boolean(row.rafa_welcomed_at) || (rafaByBusiness.get(id) || 0) > 0,
+      paidUntil: latestPaymentByBusiness.get(id)?.paid_until ? String(latestPaymentByBusiness.get(id)?.paid_until) : null,
       sales30d: salesByBusiness.get(id) || 0,
     }
   })
 
-  const couponList: AdminCoupon[] = coupons.map((row) => ({
-    code: String(row.code),
-    note: String(row.note || ''),
-    status: String(row.status),
-    link: couponLink(String(row.code)),
-    createdAt: String(row.created_at),
-    redeemedAt: row.redeemed_at ? String(row.redeemed_at) : null,
-    businessName: row.redeemed_business_id ? businessName.get(String(row.redeemed_business_id)) || 'Loja' : null,
-  }))
+  const couponList: AdminCoupon[] = coupons.map((row) => {
+    const businessId = row.redeemed_business_id ? String(row.redeemed_business_id) : ''
+    const paidUntil = businessId ? latestPaymentByBusiness.get(businessId)?.paid_until : null
+    return {
+      code: String(row.code),
+      note: String(row.note || ''),
+      status: String(row.status),
+      link: couponLink(String(row.code)),
+      inviteeName: String(row.invitee_name || row.note || 'Convidado'),
+      inviteePhone: row.invitee_phone ? String(row.invitee_phone) : null,
+      storeNameHint: row.store_name_hint ? String(row.store_name_hint) : null,
+      createdAt: String(row.created_at),
+      openedAt: row.opened_at ? String(row.opened_at) : null,
+      revokedAt: row.revoked_at ? String(row.revoked_at) : null,
+      redeemedAt: row.redeemed_at ? String(row.redeemed_at) : null,
+      businessName: businessId ? businessName.get(businessId) || 'Loja' : null,
+      bankConnected: businessId ? bankConnectedByBusiness.has(businessId) : false,
+      rafaWelcomed: businessId ? (activeBusinesses.find((business) => String(business.id) === businessId)?.rafa_welcomed_at != null || (rafaByBusiness.get(businessId) || 0) > 0) : false,
+      paying: Boolean(paidUntil && String(paidUntil) >= new Date().toISOString().slice(0, 10)),
+    }
+  })
 
   return {
     generatedAt: new Date().toISOString(),
@@ -250,6 +302,7 @@ export async function loadAdminMetrics() {
     },
     whatsapp,
     malvo: { total: malvo.length, status: malvoStatus, problems: malvoProblems },
+    settings: adminSettings,
     accounts,
     coupons: couponList,
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminRequest } from '@/lib/admin/auth'
-import { createCoupon, deleteCoupon, normalizeCouponCode } from '@/lib/admin/coupons'
+import { createInvite, revokeInvite } from '@/lib/admin/invites'
+import { normalizeCouponCode } from '@/lib/admin/coupons'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -9,17 +10,26 @@ const denied = () => NextResponse.json({ ok: false, error: 'not_admin' }, { stat
 
 export async function POST(request: NextRequest) {
   if (!isAdminRequest(request)) return denied()
-  const body = await request.json().catch(() => null) as { note?: unknown } | null
-  const note = typeof body?.note === 'string' ? body.note.trim() : ''
-  const coupon = await createCoupon(note)
-  return NextResponse.json({ ok: true, ...coupon })
+  const body = await request.json().catch(() => null) as { inviteeName?: unknown; inviteePhone?: unknown; storeNameHint?: unknown } | null
+  const inviteeName = typeof body?.inviteeName === 'string' ? body.inviteeName.trim() : ''
+  if (!inviteeName) return NextResponse.json({ ok: false, error: 'invitee_name_required' }, { status: 400 })
+  try {
+    const invite = await createInvite({
+      inviteeName,
+      inviteePhone: typeof body?.inviteePhone === 'string' ? body.inviteePhone : '',
+      storeNameHint: typeof body?.storeNameHint === 'string' ? body.storeNameHint : '',
+    })
+    return NextResponse.json({ ok: true, ...invite })
+  } catch {
+    return NextResponse.json({ ok: false, error: 'invite_create_failed' }, { status: 500 })
+  }
 }
 
 export async function DELETE(request: NextRequest) {
   if (!isAdminRequest(request)) return denied()
   const code = normalizeCouponCode(request.nextUrl.searchParams.get('code'))
   if (!code) return NextResponse.json({ ok: false, error: 'invalid_code' }, { status: 400 })
-  const deleted = await deleteCoupon(code)
-  if (!deleted) return NextResponse.json({ ok: false, error: 'not_deletable' }, { status: 409 })
+  const revoked = await revokeInvite(code)
+  if (!revoked) return NextResponse.json({ ok: false, error: 'not_revocable' }, { status: 409 })
   return NextResponse.json({ ok: true })
 }
