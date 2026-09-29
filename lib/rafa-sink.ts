@@ -12,6 +12,7 @@ export type RafaSink = {
   media: Record<string, { bytes: Uint8Array; mime: string; fileName?: string | null }>
   // Bateria de testes sempre roda a Rafa 3.0.
   forceBrain?: boolean
+  errors?: string[]
 }
 
 const storage = new AsyncLocalStorage<RafaSink>()

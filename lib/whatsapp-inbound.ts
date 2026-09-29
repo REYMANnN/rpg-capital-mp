@@ -75,6 +75,7 @@ export function safeLogError(error: unknown, stage = 'processing', privateValues
       .replace(/\+?\d[\d ()-]{8,}\d/g, '[REDACTED]')
       .slice(0, 8000)
   }
+  currentRafaSink()?.errors?.push(`${stage}: ${redact(fields.message ?? (typeof error === 'string' ? error : 'Unknown error'))}`)
   console.error('WhatsApp webhook processing failed', {
     stage,
     name: redact(fields.name) ?? 'Error',
@@ -281,7 +282,8 @@ export async function processValue(value: JsonRecord) {
       if (handled) return
     }
 
-    if (routing.intent === 'menu') {
+    // Na 3.0 só a palavra "menu" abre o menu; "oi", "bom dia" etc. vão para a conversa.
+    if (routing.intent === 'menu' && (!v3 || /^\s*menu\s*$/i.test(text))) {
       const result = await sendMenu(fromPhone, undefined, { inReplyTo: wamid })
       if (!result.ok) throw new Error(result.error)
       return
