@@ -4,9 +4,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { newCouponCode, normalizeCouponCode } from '@/lib/admin/core'
 import { inviteLink, normalizeInvitePhone, paidUntilDate } from '@/lib/admin/invite-core'
 
-export async function createInvite(input: { inviteeName: string; inviteePhone?: string; storeNameHint?: string }) {
-  const inviteeName = input.inviteeName.trim().slice(0, 120)
-  if (!inviteeName) throw new Error('invitee_name_required')
+// Convite = link de uso único para criar UMA conta. Nenhum dado é obrigatório: o admin só gera e manda.
+export async function createInvite(input: { inviteeName?: string; inviteePhone?: string; storeNameHint?: string } = {}) {
+  const inviteeName = String(input.inviteeName || '').trim().slice(0, 120)
   const inviteePhone = normalizeInvitePhone(input.inviteePhone || '')
   const storeNameHint = String(input.storeNameHint || '').trim().slice(0, 160)
   const admin = createAdminClient()
@@ -14,8 +14,8 @@ export async function createInvite(input: { inviteeName: string; inviteePhone?: 
     const code = newCouponCode()
     const { error } = await admin.from('balcao_coupons').insert({
       code,
-      note: inviteeName,
-      invitee_name: inviteeName,
+      note: inviteeName || 'Convite',
+      invitee_name: inviteeName || null,
       invitee_phone: inviteePhone || null,
       store_name_hint: storeNameHint || null,
     })

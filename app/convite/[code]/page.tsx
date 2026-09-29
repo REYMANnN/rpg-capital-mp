@@ -19,7 +19,7 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
       <p className="text-sm font-bold tracking-[0.18em] text-blue-700">BALCÃO · RPG CAPITAL</p>
       <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         {valid && code ? <>
-          <h1 className="text-3xl font-bold tracking-tight">Oi, {String(data?.invitee_name || 'tudo bem')}! Seu acesso ao Balcão está pronto.</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Oi{data?.invitee_name ? `, ${String(data.invitee_name)}` : ''}! Seu acesso ao Balcão está pronto.</h1>
           <p className="mt-3 text-base leading-7 text-slate-600">Leva poucos minutos. Você entra com Google, cadastra a loja e conecta o banco. Não precisa de cartão.</p>
           <div className="mt-7"><InviteGoogleStart code={code} /></div>
         </> : <>

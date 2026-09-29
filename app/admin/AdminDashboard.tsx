@@ -57,26 +57,22 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
   const [tab, setTab] = useState<Tab>('convites')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
-  const [inviteeName, setInviteeName] = useState('')
-  const [inviteePhone, setInviteePhone] = useState('')
-  const [storeNameHint, setStoreNameHint] = useState('')
-  const [created, setCreated] = useState<{ name: string; phone: string | null; link: string } | null>(null)
+  const [created, setCreated] = useState<{ link: string } | null>(null)
   const [pixKey, setPixKey] = useState(data.settings.pixKey)
   const [planPrice, setPlanPrice] = useState((data.settings.planPriceCents / 100).toFixed(2).replace('.', ','))
 
   async function createInvite() {
-    if (busy || !inviteeName.trim()) return
+    if (busy) return
     setBusy(true); setNotice('')
     const response = await fetch('/api/admin/coupons', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inviteeName, inviteePhone, storeNameHint }),
+      body: JSON.stringify({}),
     })
-    const body = await response.json().catch(() => ({})) as { link?: string; inviteeName?: string; inviteePhone?: string | null }
+    const body = await response.json().catch(() => ({})) as { link?: string }
     setBusy(false)
-    if (!response.ok || !body.link) { setNotice('Não consegui criar o convite.'); return }
-    setCreated({ name: body.inviteeName || inviteeName.trim(), phone: body.inviteePhone || null, link: body.link })
-    setInviteeName(''); setInviteePhone(''); setStoreNameHint('')
+    if (!response.ok || !body.link) { setNotice('Não consegui gerar o link.'); return }
+    setCreated({ link: body.link })
     router.refresh()
   }
 
@@ -147,27 +143,15 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
       {tab === 'convites' && <>
         <Section title="Novo convite">
           <div className="rounded-2xl border border-slate-200 bg-white p-5">
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="text-sm font-semibold">Nome da pessoa *
-                <input value={inviteeName} onChange={(e) => setInviteeName(e.target.value)} placeholder="Teste" className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 font-normal outline-none focus:border-slate-900" />
-              </label>
-              <label className="text-sm font-semibold">WhatsApp
-                <input value={inviteePhone} onChange={(e) => setInviteePhone(e.target.value)} placeholder="(12) 99999-9999" className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 font-normal outline-none focus:border-slate-900" />
-              </label>
-              <label className="text-sm font-semibold">Nome da loja
-                <input value={storeNameHint} onChange={(e) => setStoreNameHint(e.target.value)} placeholder="Mercadinho do João" className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 font-normal outline-none focus:border-slate-900" />
-              </label>
-            </div>
-            <button onClick={createInvite} disabled={busy || !inviteeName.trim()} className="mt-4 min-h-12 rounded-xl bg-slate-950 px-6 font-bold text-white disabled:opacity-50">Gerar convite</button>
+            <p className="text-sm text-slate-600">Cada link cria <b>uma conta só</b>, sem cartão. Gera, copia e manda pra pessoa.</p>
+            <button onClick={createInvite} disabled={busy} className="mt-4 min-h-12 rounded-xl bg-slate-950 px-6 font-bold text-white disabled:opacity-50">{busy ? 'Gerando…' : 'Gerar link'}</button>
             {created && (() => {
-              const message = inviteMessage(created.name, created.link)
-              const wa = created.phone ? inviteWhatsAppUrl(created.phone, message) : ''
+              const message = inviteMessage('', created.link)
               return <div className="mt-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-950">
                 <p className="break-all font-semibold">{created.link}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button onClick={() => copy(created.link)} className="rounded-full bg-emerald-700 px-4 py-2 font-semibold text-white">Copiar link</button>
                   <button onClick={() => copy(message)} className="rounded-full border border-emerald-700 px-4 py-2 font-semibold text-emerald-800">Copiar mensagem</button>
-                  {wa && <a href={wa} target="_blank" rel="noreferrer" className="rounded-full border border-emerald-700 px-4 py-2 font-semibold text-emerald-800">Abrir no WhatsApp</a>}
                 </div>
               </div>
             })()}
@@ -184,7 +168,7 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
                   const wa = invite.inviteePhone ? inviteWhatsAppUrl(invite.inviteePhone, message) : ''
                   const revoked = Boolean(invite.revokedAt) || invite.status === 'cancelled'
                   return <tr key={invite.code} className="border-t border-slate-100 align-top">
-                    <td className="p-3"><div className="font-semibold">{invite.inviteeName}</div><div className="text-xs text-slate-500">{invite.storeNameHint || invite.businessName || 'loja não informada'}{invite.inviteePhone ? ` · ${invite.inviteePhone}` : ''}</div><div className="mt-1 text-xs text-slate-400">Criado {date(invite.createdAt)}</div></td>
+                    <td className="p-3"><div className="font-semibold">{invite.businessName || invite.inviteeName || 'Ainda não usado'}</div><div className="font-mono text-xs text-slate-500">{invite.code}{invite.inviteePhone ? ` · ${invite.inviteePhone}` : ''}</div><div className="mt-1 text-xs text-slate-400">Criado {date(invite.createdAt)}</div></td>
                     <td className="max-w-[290px] p-3"><span className="break-all text-xs">{invite.link}</span></td>
                     <td className="p-3">{revoked ? <span className="font-bold text-rose-700">Revogado</span> : <Timeline invite={invite} />}</td>
                     <td className="p-3"><div className="flex min-w-[150px] flex-wrap gap-2">

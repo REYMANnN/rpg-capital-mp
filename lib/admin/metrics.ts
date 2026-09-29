@@ -256,7 +256,7 @@ export async function loadAdminMetrics() {
       note: String(row.note || ''),
       status: String(row.status),
       link: couponLink(String(row.code)),
-      inviteeName: String(row.invitee_name || row.note || 'Convidado'),
+      inviteeName: String(row.invitee_name || ''),
       inviteePhone: row.invitee_phone ? String(row.invitee_phone) : null,
       storeNameHint: row.store_name_hint ? String(row.store_name_hint) : null,
       createdAt: String(row.created_at),

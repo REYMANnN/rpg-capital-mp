@@ -12,8 +12,9 @@ export function inviteLink(code: string) {
   return `${INVITE_SITE_URL}/convite/${String(code || '').trim().toUpperCase()}`
 }
 
-export function inviteMessage(name: string, link: string) {
-  return `Oi, ${name.trim()}! Criei um acesso pra você testar o Balcão da RPG, de graça. Leva 3 minutos: ${link}`
+export function inviteMessage(name: string | null | undefined, link: string) {
+  const who = String(name || '').trim()
+  return `Oi${who ? `, ${who}` : ''}! Criei um acesso pra você testar o Balcão da RPG, de graça. Leva 3 minutos: ${link}`
 }
 
 export function billingMessage(name: string, priceCents: number, pixKey: string) {

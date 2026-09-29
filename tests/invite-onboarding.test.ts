@@ -27,3 +27,9 @@ test('mensagens de convite e cobrança têm os campos certos', () => {
 test('paid_until é data do pagamento mais 30 dias', () => {
   assert.equal(paidUntilDate('2026-10-01T09:30:00.000Z'), '2026-10-31')
 })
+
+test('convite sem nome: mensagem sai sem nome e continua com o link', () => {
+  const link = 'https://www.rpgcapital.com.br/convite/RPG-ABC123'
+  assert.equal(inviteMessage('', link), `Oi! Criei um acesso pra você testar o Balcão da RPG, de graça. Leva 3 minutos: ${link}`)
+  assert.equal(inviteMessage(null, link).startsWith('Oi! '), true)
+})

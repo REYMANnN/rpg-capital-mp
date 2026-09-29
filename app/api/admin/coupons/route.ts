@@ -12,7 +12,6 @@ export async function POST(request: NextRequest) {
   if (!isAdminRequest(request)) return denied()
   const body = await request.json().catch(() => null) as { inviteeName?: unknown; inviteePhone?: unknown; storeNameHint?: unknown } | null
   const inviteeName = typeof body?.inviteeName === 'string' ? body.inviteeName.trim() : ''
-  if (!inviteeName) return NextResponse.json({ ok: false, error: 'invitee_name_required' }, { status: 400 })
   try {
     const invite = await createInvite({
       inviteeName,
