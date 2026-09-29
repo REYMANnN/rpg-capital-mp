@@ -196,18 +196,18 @@ export async function PUT(request: NextRequest) {
   const expectedHeader = request.headers.get('x-state-version')
   const expected = expectedHeader !== null && /^\d+$/.test(expectedHeader) ? Number(expectedHeader) : null
   const target = expected !== null ? await storeVersion(installation.id).catch(() => null) : null
-  const { data, error } = target && expected !== null
+  const { data, error, newVersion } = target && expected !== null
     ? await createAdminClient().rpc('rafa_sync_state_checked', {
         p_store_id: target.storeId,
         p_state: state,
         p_app_version: INVENTORY_APP_VERSION,
         p_expected_version: expected,
-      }).then((result) => ({ data: result.error ? null : target.storeId, error: result.error }))
+      }).then((result) => ({ data: result.error ? null : target.storeId, error: result.error, newVersion: result.error ? null : Number(result.data) }))
     : await supabase.rpc('inventory_v1_sync_state', {
         p_installation_id: installation.id,
         p_state: state,
         p_app_version: INVENTORY_APP_VERSION,
-      })
+      }).then((result) => ({ ...result, newVersion: null as number | null }))
 
   if (error && String(error.message || '').includes('state_version_conflict')) {
     return withInstallationCookie(NextResponse.json({ ok: false, error: 'state_conflict' }, { status: 409 }), installation.id, installation.fresh)
@@ -249,5 +249,6 @@ export async function PUT(request: NextRequest) {
     }).catch(() => {})
   }
 
-  return withInstallationCookie(NextResponse.json({ ok: true, storeId: data, version: INVENTORY_APP_VERSION }), installation.id, installation.fresh)
+  const stateVersion = newVersion ?? (await storeVersion(installation.id).catch(() => null))?.version ?? null
+  return withInstallationCookie(NextResponse.json({ ok: true, storeId: data, version: INVENTORY_APP_VERSION, ...(stateVersion !== null ? { stateVersion } : {}) }), installation.id, installation.fresh)
 }
