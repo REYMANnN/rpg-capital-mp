@@ -68,6 +68,11 @@ export async function POST(request: NextRequest) {
   if (!body) return Response.json({ error: 'invalid body' }, { status: 400 })
   if ((body as { ping?: boolean }).ping) return Response.json(await claudePing().catch((error) => ({ error: error instanceof Error ? error.message : String(error) })))
   if (body.reset) await reset(scope.storeId, scope.waId)
+  const watchTerms = (body.products || []).map((term) => term.toLowerCase())
+  const snapshot = async () => (await loadRafaStore(scope.storeId)).state.products
+    .filter((product) => !product.deletedAt && (!watchTerms.length || watchTerms.some((term) => product.name.toLowerCase().includes(term) || product.barcode === term)))
+    .slice(0, 40).map((product) => ({ nome: product.name, estoque: product.stockMilli / 1000, preco: product.priceCents }))
+  const before = await snapshot()
 
   const transcript: Array<{ step: unknown; replies: string[]; errors?: string[]; ms: number }> = []
   const toMessage = (step: Step, sink: RafaSink) => {
@@ -124,5 +129,5 @@ export async function POST(request: NextRequest) {
     admin.from('rafa_ai_errors').select('*').eq('store_id', scope.storeId).order('created_at', { ascending: false }).limit(5),
   ])
   const sales = state.sales.slice(-10).map((sale) => ({ total: sale.totalCents, pagamento: sale.payment?.method || null, lucro: sale.grossProfitCents ?? null, itens: sale.items.length }))
-  return Response.json({ transcript, products, sales, operations: ops || [], pendingProducts: pending || [], memory: memory || [], aiErrors: (aiErrors || []).map((row: Record<string, unknown>) => ({ ...row, raw: String(row.raw || '').slice(0, 600) })) })
+  return Response.json({ transcript, before, products, sales, operations: ops || [], pendingProducts: pending || [], memory: memory || [], aiErrors: (aiErrors || []).map((row: Record<string, unknown>) => ({ ...row, raw: String(row.raw || '').slice(0, 600) })) })
 }
