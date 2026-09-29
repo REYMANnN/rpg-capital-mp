@@ -35,10 +35,17 @@ function normalizeText(value: string) {
 
 // ---------- Loja do número ----------
 
+export type RafaPhoneStore = {
+  id: string
+  name: string
+  businessId: string
+  rafaWelcomedAt: string | null
+}
+
 export type RafaStoreResolution =
   | { status: 'ok'; storeId: string }
   | { status: 'none' }
-  | { status: 'multiple'; stores: Array<{ id: string; name: string }> }
+  | { status: 'multiple'; stores: RafaPhoneStore[] }
 
 function localPhone(value: string) {
   const digits = String(value || '').replace(/\D/g, '')
@@ -82,13 +89,17 @@ export async function resolveRafaStore(waId: string): Promise<RafaStoreResolutio
 }
 
 // Lojas cujo cadastro (empresa ou perfil do dono/membro) tem este telefone.
-export async function phoneStores(waId: string): Promise<Array<{ id: string; name: string }>> {
+export async function phoneStores(waId: string): Promise<RafaPhoneStore[]> {
   const admin = createAdminClient()
   const phone = localPhone(normalizePhone(waId))
   if (phone.length < 10) return []
   const businessIds = new Set<string>()
-  const { data: businesses } = await admin.from('balcao_businesses').select('id,phone').eq('active', true).not('phone', 'is', null)
-  for (const row of businesses || []) if (localPhone(String(row.phone)) === phone) businessIds.add(String(row.id))
+  const { data: businesses, error: businessError } = await admin.from('balcao_businesses').select('id,phone,rafa_welcomed_at').eq('active', true)
+  if (businessError) return []
+  const businessById = new Map((businesses || []).map((row) => [String(row.id), row]))
+  for (const row of businesses || []) {
+    if (row.phone && localPhone(String(row.phone)) === phone) businessIds.add(String(row.id))
+  }
   const { data: profiles } = await admin.from('balcao_profiles').select('user_id,phone').not('phone', 'is', null)
   const userIds = (profiles || []).filter((row) => localPhone(String(row.phone)) === phone).map((row) => String(row.user_id))
   if (userIds.length) {
@@ -98,11 +109,20 @@ export async function phoneStores(waId: string): Promise<Array<{ id: string; nam
   if (!businessIds.size) return []
 
   const { data: stores } = await admin.from('inventory_v1_stores')
-    .select('id,display_name')
+    .select('id,display_name,business_id')
     .in('business_id', [...businessIds])
     .eq('active', true)
     .order('created_at', { ascending: true })
-  return (stores || []).map((row) => ({ id: String(row.id), name: String(row.display_name || 'Loja') }))
+  return (stores || []).map((row) => {
+    const businessId = String(row.business_id || '')
+    const business = businessById.get(businessId)
+    return {
+      id: String(row.id),
+      name: String(row.display_name || 'Loja'),
+      businessId,
+      rafaWelcomedAt: business?.rafa_welcomed_at ? String(business.rafa_welcomed_at) : null,
+    }
+  })
 }
 
 export const STORE_PICK_PREFIX = 'store:'

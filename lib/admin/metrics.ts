@@ -242,7 +242,7 @@ export async function loadAdminMetrics() {
       bank: bankByBusiness.get(id) || null,
       bankConnected: bankConnectedByBusiness.has(id),
       rafaNumbers: rafaByBusiness.get(id) || 0,
-      rafaWelcomed: Boolean(row.rafa_welcomed_at) || (rafaByBusiness.get(id) || 0) > 0,
+      rafaWelcomed: Boolean(row.rafa_welcomed_at),
       paidUntil: latestPaymentByBusiness.get(id)?.paid_until ? String(latestPaymentByBusiness.get(id)?.paid_until) : null,
       sales30d: salesByBusiness.get(id) || 0,
     }
@@ -265,7 +265,7 @@ export async function loadAdminMetrics() {
       redeemedAt: row.redeemed_at ? String(row.redeemed_at) : null,
       businessName: businessId ? businessName.get(businessId) || 'Loja' : null,
       bankConnected: businessId ? bankConnectedByBusiness.has(businessId) : false,
-      rafaWelcomed: businessId ? (activeBusinesses.find((business) => String(business.id) === businessId)?.rafa_welcomed_at != null || (rafaByBusiness.get(businessId) || 0) > 0) : false,
+      rafaWelcomed: businessId ? activeBusinesses.find((business) => String(business.id) === businessId)?.rafa_welcomed_at != null : false,
       paying: Boolean(paidUntil && String(paidUntil) >= new Date().toISOString().slice(0, 10)),
     }
   })

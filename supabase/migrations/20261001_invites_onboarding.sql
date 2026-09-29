@@ -41,3 +41,8 @@ alter table public.balcao_onboarding_drafts drop constraint if exists balcao_onb
 alter table public.balcao_onboarding_drafts
   add constraint balcao_onboarding_drafts_referral_source_check
   check (referral_source in ('instagram','google','referral','ai','youtube_tiktok','other','convite'));
+
+
+-- C3: primeira conversa da Rafa com a nova conta.
+alter table public.balcao_businesses
+  add column if not exists rafa_welcomed_at timestamptz;

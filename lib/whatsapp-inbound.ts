@@ -19,6 +19,14 @@ import { handlePriceAnswer } from '@/lib/rafa-price-questions'
 import { downloadWhatsAppMedia, mediaDataUri, storeInvoiceProof } from '@/lib/rafa-media'
 import { actionToChange, resolveTextProduct } from '@/lib/rafa-products'
 import { loadRafaStore, type RafaChange } from '@/lib/inventory/rafa-store'
+import {
+  confirmRafaWelcomePending,
+  handleRafaWelcomeNumber,
+  maybeStartRafaWelcome,
+  refuseRafaWelcomePending,
+  selectRafaWelcomeStore,
+  WELCOME_STORE_PREFIX,
+} from '@/lib/rafa-welcome-server'
 
 // Processamento de mensagens de entrada no formato da Cloud API (value.messages / value.statuses).
 // Usado pelo webhook da Meta e pelo adaptador da Evolution (que converte para este formato).
@@ -135,7 +143,8 @@ export async function processValue(value: JsonRecord) {
     return resolved?.status === 'ok' ? { store_id: resolved.storeId, payload: {}, expires_at: null } : null
   }
 
-  const handleConfirmYes = async (fromPhone: string, wamid: string) => {
+  const handleConfirmYes = async (fromPhone: string, wamid: string, profileName?: string | null) => {
+    if (await confirmRafaWelcomePending({ waId: fromPhone, profileName })) return
     const result = await confirmRafaPending(fromPhone)
     if (result.kind === 'media') {
       try {
@@ -195,12 +204,15 @@ export async function processValue(value: JsonRecord) {
       return
     }
 
+    if (await handleRafaWelcomeNumber({ waId: fromPhone, text, profileName: null }).catch(() => false)) return
+
     if (isEvolutionProvider()) {
       const pending = await getPendingRafaAction(fromPhone).catch(() => null)
       const pendingValid = Boolean(pending?.expires_at && new Date(pending.expires_at).getTime() > Date.now())
       if (pendingValid) {
         const confirmationId = confirmationTextId(text)
         if (confirmationId === CONFIRM_NO_ID) {
+          if (await refuseRafaWelcomePending(fromPhone)) return
           const result = await refuseRafaPending(fromPhone)
           if (!result.ok) throw new Error(result.error)
           return
@@ -406,10 +418,28 @@ export async function processValue(value: JsonRecord) {
 
     const buttonId = interactiveButtonId(message)
     const flow = interactiveFlow(message)
+    let welcomeStarted = false
+    try {
+      welcomeStarted = await maybeStartRafaWelcome({ waId: fromPhone, inReplyTo: wamid, profileName })
+    } catch (error) {
+      safeLogError(error, 'rafa_welcome_start', privateValues)
+    }
 
-    if (buttonId === 'confirm_yes') {
+    if (welcomeStarted) {
+      intentValue = 'welcome_start'
+    } else if (buttonId === 'confirm_yes') {
       intentValue = 'confirm_yes'
-      await attempt('confirm_yes', () => handleConfirmYes(fromPhone, wamid))
+      await attempt('confirm_yes', () => handleConfirmYes(fromPhone, wamid, profileName))
+    } else if (buttonId?.startsWith(WELCOME_STORE_PREFIX)) {
+      intentValue = 'welcome_store_pick'
+      await attempt('welcome_store_pick', async () => {
+        const storeId = buttonId.slice(WELCOME_STORE_PREFIX.length)
+        const handled = await selectRafaWelcomeStore({ waId: fromPhone, storeId, profileName })
+        if (!handled) {
+          const sent = await sendText(fromPhone, 'Não consegui identificar essa loja. Me manda uma mensagem de novo.\n— Rafa', { inReplyTo: wamid, noMenu: true })
+          if (!sent.ok) throw new Error(sent.error)
+        }
+      })
     } else if (buttonId?.startsWith(STORE_PICK_PREFIX)) {
       intentValue = 'store_pick'
       await attempt('store_pick', async () => {
@@ -427,6 +457,7 @@ export async function processValue(value: JsonRecord) {
     } else if (buttonId === 'confirm_no') {
       intentValue = 'confirm_no'
       await attempt('confirm_no', async () => {
+        if (await refuseRafaWelcomePending(fromPhone)) return
         const result = await refuseRafaPending(fromPhone)
         if (!result.ok) throw new Error(result.error)
       })
