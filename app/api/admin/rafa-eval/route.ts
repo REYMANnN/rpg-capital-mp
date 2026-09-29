@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { NextRequest } from 'next/server'
 
 import { loadRafaStore } from '@/lib/inventory/rafa-store'
+import { claudePing } from '@/lib/llm/claude'
 import { runWithRafaSink, type RafaSink } from '@/lib/rafa-sink'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { processValue } from '@/lib/whatsapp-inbound'
@@ -50,11 +51,12 @@ export async function POST(request: NextRequest) {
   if (!scope) return new Response('Unauthorized', { status: 401 })
   const body = await request.json().catch(() => null) as { reset?: boolean; steps?: Step[]; products?: string[] } | null
   if (!body) return Response.json({ error: 'invalid body' }, { status: 400 })
+  if ((body as { ping?: boolean }).ping) return Response.json(await claudePing().catch((error) => ({ error: error instanceof Error ? error.message : String(error) })))
   if (body.reset) await reset(scope.storeId, scope.waId)
 
-  const transcript: Array<{ step: unknown; replies: string[]; ms: number }> = []
+  const transcript: Array<{ step: unknown; replies: string[]; errors?: string[]; ms: number }> = []
   for (const step of (body.steps || []).slice(0, 12)) {
-    const sink: RafaSink = { messages: [], media: {}, forceBrain: true }
+    const sink: RafaSink = { messages: [], media: {}, forceBrain: true, errors: [] }
     const id = `EVAL${randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase()}`
     const message: Record<string, unknown> = { id, from: scope.waId, timestamp: String(Math.floor(Date.now() / 1000)) }
     if ('text' in step) Object.assign(message, { type: 'text', text: { body: step.text } })
@@ -67,6 +69,7 @@ export async function POST(request: NextRequest) {
     transcript.push({
       step: 'image' in step ? { image: `${step.image.base64.length} b64 chars`, caption: step.caption } : step,
       replies: sink.messages.map((item) => item.body + (Array.isArray(item.payload.buttons) ? ` [botões: ${(item.payload.buttons as Array<{ title?: string }>).map((b) => b.title).join(' / ')}]` : '')),
+      ...(sink.errors?.length ? { errors: sink.errors } : {}),
       ms: Date.now() - started,
     })
   }
@@ -76,10 +79,11 @@ export async function POST(request: NextRequest) {
   const products = state.products.filter((product) => !product.deletedAt && (!watch.length || watch.some((term) => product.name.toLowerCase().includes(term) || product.barcode === term)))
     .slice(0, 40).map((product) => ({ nome: product.name, ean: product.barcode, preco: product.priceCents, estoque: product.stockMilli / 1000 }))
   const admin = createAdminClient()
-  const [{ data: ops }, { data: pending }, { data: memory }] = await Promise.all([
+  const [{ data: ops }, { data: pending }, { data: memory }, { data: aiErrors }] = await Promise.all([
     admin.from('rafa_operations').select('tool,summary,status,created_at').eq('store_id', scope.storeId).order('created_at', { ascending: false }).limit(10),
     admin.from('rafa_pending_products').select('name,status,price_cents').eq('store_id', scope.storeId).limit(40),
     admin.from('rafa_memory').select('fact,deleted_at').eq('store_id', scope.storeId).limit(40),
+    admin.from('rafa_ai_errors').select('*').eq('store_id', scope.storeId).order('created_at', { ascending: false }).limit(5),
   ])
-  return Response.json({ transcript, products, operations: ops || [], pendingProducts: pending || [], memory: memory || [] })
+  return Response.json({ transcript, products, operations: ops || [], pendingProducts: pending || [], memory: memory || [], aiErrors: (aiErrors || []).map((row: Record<string, unknown>) => ({ ...row, raw: String(row.raw || '').slice(0, 600) })) })
 }
