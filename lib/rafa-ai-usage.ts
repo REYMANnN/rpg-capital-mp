@@ -5,11 +5,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 // Orçamento, custo e falhas de IA por loja. Módulo separado para não criar import circular
 // entre o cliente da Anthropic (lib/llm/claude.ts) e lib/rafa-ai.ts.
 
-// Teto diário de IA por loja, em US$. Padrão US$ 1,00 (≈ R$ 5): cabe um dia de uso normal com
+// Teto diário de IA por loja, em US$. Padrão US$ 3,00 (≈ R$ 15,60; ~200 mensagens/dia) com
 // Claude Sonnet; o teto mensal real fica no workspace da Anthropic. RAFA_AI_DAILY_BUDGET_USD sobrescreve.
 function budgetUsd() {
-  const value = Number(process.env.RAFA_AI_DAILY_BUDGET_USD || '1.00')
-  return Number.isFinite(value) && value > 0 ? value : 1.00
+  const value = Number(process.env.RAFA_AI_DAILY_BUDGET_USD || '3.00')
+  return Number.isFinite(value) && value > 0 ? value : 3.00
 }
 
 function saoPauloDayStartUtc(now = new Date()) {
