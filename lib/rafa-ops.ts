@@ -155,6 +155,44 @@ export async function undoLastRafaOperation(input: { storeId: string; waId: stri
     .limit(1)
     .maybeSingle()
   if (!op) return { status: 'nothing' }
+  return undoRafaOperationRow(op, input)
+}
+
+// Desfaz uma nota inteira: todas as operações ligadas a ela (entradas e cadastros dos produtos
+// novos), da mais nova para a mais antiga. Para no primeiro bloqueio e diz o que já voltou.
+export async function undoRafaInvoice(input: { storeId: string; waId: string; invoiceImportId: string }): Promise<UndoResult> {
+  const admin = createAdminClient()
+  const { data: pending } = await admin.from('rafa_pending_products').select('id').eq('invoice_import_id', input.invoiceImportId)
+  const pendingIds = new Set((pending || []).map((row) => String(row.id)))
+  const { data: ops } = await admin.from('rafa_operations')
+    .select('*')
+    .eq('store_id', input.storeId)
+    .eq('status', 'applied')
+    .is('undo_of', null)
+    .order('created_at', { ascending: false })
+    .limit(200)
+  const linked = (ops || []).filter((op) => {
+    const effects = (op.side_effects || {}) as SideEffects
+    if (effects.invoice_import_id === input.invoiceImportId) return true
+    return (effects.pending_product_ids || []).some((id) => pendingIds.has(id))
+  })
+  if (!linked.length) return { status: 'nothing' }
+  const done: string[] = []
+  for (const op of linked) {
+    const result = await undoRafaOperationRow(op, input)
+    if (result.status === 'blocked') {
+      return { status: 'blocked', message: done.length ? `Desfiz ${done.length} parte(s) da nota, mas parei: ${result.message}` : result.message }
+    }
+    if (result.status === 'undone') done.push(result.summary)
+  }
+  await admin.from('rafa_invoice_imports').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', input.invoiceImportId)
+  await admin.from('rafa_pending_products').update({ status: 'descartado', current: false, updated_at: new Date().toISOString() })
+    .eq('invoice_import_id', input.invoiceImportId).in('status', ['aguardando_preco', 'pulado', 'cadastrado'])
+  return { status: 'undone', summary: `nota inteira (${done.length} alteração(ões))` }
+}
+
+async function undoRafaOperationRow(op: any, input: { storeId: string; waId: string }): Promise<UndoResult> {
+  const admin = createAdminClient()
 
   const beforeProducts = (op.before_products || []) as RafaInventoryProduct[]
   const afterProducts = (op.after_products || []) as RafaInventoryProduct[]

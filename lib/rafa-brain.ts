@@ -27,7 +27,7 @@ import { appliedMessage, askRafaConfirmation, confirmationMessage, confirmRafaPe
 import { formatRafaHistory, recentRafaEvents, recordRafaEvent, type RafaEventRow } from '@/lib/rafa-events'
 import { processApprovedInvoiceMedia } from '@/lib/rafa-invoice'
 import { loadInvoiceProofDataUri } from '@/lib/rafa-media'
-import { commitRafaChanges, lastRafaOperations, rafaOperationRisks, undoLastRafaOperation, validateRafaChangesStrict } from '@/lib/rafa-ops'
+import { commitRafaChanges, lastRafaOperations, rafaOperationRisks, undoLastRafaOperation, undoRafaInvoice, validateRafaChangesStrict } from '@/lib/rafa-ops'
 import { listPendingProducts, markPendingRegistered } from '@/lib/rafa-pending-products'
 import { changesForPrice, registerPendingPrice, remaining as remainingPendingPrices } from '@/lib/rafa-price-questions'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -86,6 +86,7 @@ function systemPrompt(storeName: string, otherStores: number) {
     '• Confirmação aberta: se ele concordar (com qualquer palavra), use confirmar_pendente; se recusar, recusar_pendente. Se ele pedir outra coisa, a confirmação continua aberta; não a repita a cada mensagem.',
     '• Nota fiscal / cupom de compra em foto: use ler_nota (ela lê, dá entrada no que já é da loja e pede preço dos novos). Se na conversa tem outras fotos da mesma nota recentes, passe todas em foto_ids. Foto que não é nota (produto, prateleira, lista, caderno): descreva em 1 linha o que viu e faça o que ele pediu, ou pergunte o que ele quer.',
     '• "desfaz", "volta", "errei", "não era isso" logo depois de uma alteração: use desfazer.',
+    '• LISTA DE PENDÊNCIAS: o bloco EM ANDAMENTO é a sua lista de tarefas com esse lojista. Ela é dele: se ele disser "esquece", "deixa pra lá", "não precisa", "para de perguntar", "não vou cadastrar", "ignora" sobre algo da lista, use esquecer_pendencias (só o que ele citou, ou tudo se ele falou em geral) e confirme em 1 linha o que saiu da lista. Nunca mais cobre o que foi esquecido. "Esquece" sobre preços de nota NÃO desfaz as entradas já feitas: diga que as entradas continuam e que, se quiser tirar a nota inteira do estoque, é só falar. Se ele pedir para apagar/cancelar/desfazer a nota inteira, use desfazer_nota.',
     '• Memória: quando o lojista contar algo sobre a loja que vale para o futuro (fornecedor, dia de entrega, apelido de produto, como prefere ser atendido) ou pedir para lembrar, use lembrar com a frase dele. Só guarde o que ELE disse, nunca suposições suas. Se ele pedir para esquecer, esquecer_fato.',
     '• Links do Balcão (vender, ler-codigo, prateleira, entrada): use gerar_link quando pedirem para abrir ou quando for claramente mais fácil pela tela.',
     '• Número sozinho de 1 a 4 sem contexto é o menu: 1 vender, 2 ler código, 3 prateleira, 4 entrada (gerar_link).',
@@ -235,7 +236,8 @@ const TOOLS: ClaudeTool[] = [
     },
   },
   { name: 'cancelar_nota', description: 'Cancela uma nota ainda não aplicada (se já foi aplicada, use desfazer).', input_schema: { type: 'object', properties: { nota_id: { type: 'string' } }, required: ['nota_id'] } },
-  { name: 'esquecer_pendencias', description: 'Descarta produtos esperando preço (todos, ou só os ids dados) e fecha a confirmação aberta. Use quando o lojista disser que não quer mais cadastrar.', input_schema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } } } } },
+  { name: 'esquecer_pendencias', description: 'Tira itens da lista de pendências: produtos esperando preço (todos; só os ids dados; ou só os de uma nota) e, sem ids/nota, também fecha a confirmação aberta. Use quando o lojista disser esquece, deixa pra lá, não quero mais, para de perguntar. NÃO mexe no estoque.', input_schema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, nota_id: { type: 'string' } } } },
+  { name: 'desfazer_nota', description: 'Apaga do estoque tudo que uma nota fez (entradas e produtos novos cadastrados dela) e tira a nota das pendências. Use quando ele pedir para cancelar/apagar/desfazer a nota que já entrou.', input_schema: { type: 'object', properties: { nota_id: { type: 'string' } } } },
   { name: 'desfazer', description: 'Desfaz a última alteração aplicada pela Rafa (até 48 h), se nada mudou nesses produtos depois.', input_schema: { type: 'object', properties: {} } },
   { name: 'lembrar', description: 'Guarda na memória um fato que o lojista contou (na voz dele, curto).', input_schema: { type: 'object', properties: { fato: { type: 'string' } }, required: ['fato'] } },
   { name: 'esquecer_fato', description: 'Apaga um fato da memória (id da MEMÓRIA).', input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
@@ -508,11 +510,42 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
       }
 
       case 'esquecer_pendencias': {
+        // Tira itens da lista de pendências (a "lista de tarefas" da Rafa). Nada volta a ser cobrado.
         const ids: string[] = Array.isArray(args.ids) ? args.ids : []
-        const targets = ids.length ? ids.map((id) => byPrefix(ctx.pendingProducts, id)).filter(Boolean).map((row) => row!.id) : ctx.pendingProducts.map((row) => row.id)
-        if (targets.length) await admin.from('rafa_pending_products').update({ status: 'descartado', current: false, updated_at: new Date().toISOString() }).in('id', targets)
-        if (ctx.pendingAction && !ids.length) await admin.from('rafa_pending_actions').update({ status: 'invalidada' }).eq('id', ctx.pendingAction.id).eq('status', 'pendente')
-        return { result: { ok: `${targets.length} produto(s) descartado(s)` } }
+        const invoice = args.nota_id ? byPrefix(ctx.invoices, args.nota_id) : undefined
+        const now = new Date().toISOString()
+        let query = admin.from('rafa_pending_products').update({ status: 'descartado', current: false, updated_at: now })
+          .eq('store_id', input.storeId).in('status', ['aguardando_preco', 'pulado'])
+        const named = ids.map((id) => byPrefix(ctx.pendingProducts, id)).filter(Boolean).map((row) => row!.id)
+        if (ids.length) {
+          if (!named.length) return { result: { erro: 'Esses ids não estão na lista de pendências.' } }
+          query = query.in('id', named)
+        } else if (invoice) query = query.eq('invoice_import_id', invoice.id)
+        const { data: cleared } = await query.select('name')
+        let closed = false
+        if (ctx.pendingAction && !ids.length && !invoice) {
+          const { data } = await admin.from('rafa_pending_actions').update({ status: 'invalidada' }).eq('id', ctx.pendingAction.id).eq('status', 'pendente').select('id')
+          closed = Boolean(data?.length)
+        }
+        const names = (cleared || []).map((row) => String(row.name))
+        await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'action', text: `tirou da lista de pendências: ${names.join(', ') || 'nada'}${closed ? ' + confirmação aberta' : ''}` })
+        const left = (await listPendingProducts(input.storeId).catch(() => [])).map((row) => row.name)
+        return { result: { removidos_da_lista: names, confirmacao_fechada: closed, ainda_na_lista: left, observacao: 'Entradas de estoque já feitas NÃO foram desfeitas. Se ele quiser apagar a nota inteira do estoque, use desfazer_nota.' } }
+      }
+
+      case 'desfazer_nota': {
+        const invoice = byPrefix(ctx.invoices, args.nota_id) || (ctx.invoices.length === 1 && !args.nota_id ? ctx.invoices[0] : undefined)
+        if (!invoice) return { result: { erro: 'Diga qual nota (id da lista de notas).' } }
+        const undone = await undoRafaInvoice({ storeId: input.storeId, waId: input.waId, invoiceImportId: invoice.id })
+        if (undone.status === 'nothing') {
+          await admin.from('rafa_invoice_imports').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', invoice.id).neq('status', 'applied')
+          await admin.from('rafa_pending_products').update({ status: 'descartado', current: false, updated_at: new Date().toISOString() }).eq('invoice_import_id', invoice.id).in('status', ['aguardando_preco', 'pulado'])
+          return { result: { ok: 'Essa nota não tinha alterado o estoque; tirei da lista.' } }
+        }
+        if (undone.status === 'blocked') return { result: { erro: undone.message } }
+        state = (await loadRafaStore(input.storeId)).state
+        await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'undo', text: `nota ${short(invoice.id)}: ${undone.summary}` })
+        return { result: { desfeito: `Nota ${invoice.supplier_name || ''} removida do estoque: ${undone.summary}` } }
       }
 
       case 'desfazer': {
