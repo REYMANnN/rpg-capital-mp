@@ -58,3 +58,13 @@ test('código interno passa na validação de EAN usada no cadastro', async () =
   const { isValidGtin } = await import('../lib/rafa-ops-core.ts')
   for (const name of ['PEPSI COLA PET 2L', 'AGUA SANITARIA QBOA 1L', 'x', 'FEIJAO CAMIL CARIOCA T1 1KG']) assert.equal(isValidGtin(internalBarcodeFor(name)), true, name)
 })
+
+test('não confunde feijão com arroz nem ketchup 397g com 1,033kg', async () => {
+  const { plausibleStoreMatch } = await import('../lib/rafa-invoice-plan.ts')
+  assert.equal(plausibleStoreMatch('FEIJAO CAMIL CARIOCA T1 1KG', 'Arroz Camil Tipo 1 1kg'), false)
+  assert.equal(plausibleStoreMatch('KETCHUP HEINZ TRAD 397G', 'Ketchup Heinz 1,033kg'), false)
+  assert.equal(plausibleStoreMatch('COCA COLA ORIGINAL PET 2L', 'Refrigerante Coca-Cola Original 2L'), true)
+  assert.equal(plausibleStoreMatch('ACUCAR UNIAO REFINADO 1KG', 'Açúcar Refinado União 1kg'), true)
+  assert.equal(plausibleStoreMatch('OLEO SOJA LIZA PET 900ML', 'Óleo de Soja Liza 900ml'), true)
+  assert.equal(plausibleStoreMatch('LEITE COND MOCA TP 395G', 'Leite Condensado Moça 395g'), true)
+})
