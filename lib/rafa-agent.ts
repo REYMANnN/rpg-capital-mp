@@ -785,6 +785,23 @@ async function claimDailyTip(waId: string, storeId: string, state: RafaStoreStat
   return error ? null : tip.message
 }
 
+async function claimPriceReminder(waId: string, pending: PendingProductRow[]) {
+  if (!pending.length) return null
+  const admin = createAdminClient()
+  const phone = normalizePhone(waId)
+  const { data } = await admin.from('whatsapp_sessions').select('payload').eq('wa_id', phone).maybeSingle()
+  const payload = data?.payload && typeof data.payload === 'object' ? { ...data.payload as Record<string, unknown> } : {}
+  const last = Date.parse(String(payload.last_price_reminder_at || ''))
+  if (Number.isFinite(last) && Date.now() - last < 30 * 60_000) return null
+
+  const names = pending.slice(0, 4).map((item) => String(item.name || 'produto'))
+  const label = names.length <= 1 ? (names[0] || 'produto') : `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`
+  const now = new Date().toISOString()
+  payload.last_price_reminder_at = now
+  await admin.from('whatsapp_sessions').update({ payload, updated_at: now }).eq('wa_id', phone)
+  return `Ah, faltam ${pending.length} preço${pending.length === 1 ? '' : 's'} da nota: ${label}. Me manda quando puder.`
+}
+
 export type RafaAgentOutcome = 'replied' | 'confirmation' | 'budget' | 'error'
 
 export type RafaAgentSource = 'text' | 'audio' | 'image' | 'document'
@@ -828,11 +845,12 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
       const text = String(reply.content || '').trim()
       if (!text) throw new Error('rafa_agent_empty')
       const body = cleanReply(text)
-      // No máximo 1 dica/tarefa por dia, junto da resposta (sem mensagem extra).
-      const tip = await claimDailyTip(input.waId, input.storeId, state, pending.length).catch(() => null)
+      // Preços pendentes têm lembrete próprio (máx. 1/30 min), nunca "Dica do dia".
+      const tip = pending.length ? null : await claimDailyTip(input.waId, input.storeId, state, 0).catch(() => null)
+      const reminder = await claimPriceReminder(input.waId, pending).catch(() => null)
       const withTip = tip && !body.includes(tip) ? `${body}\n\nDica do dia: ${tip}` : body
-      // O menu vem sempre depois da resposta (mensagem separada).
-      const sent = await sendText(input.waId, withTip, { inReplyTo: input.inReplyTo })
+      const withReminder = reminder && !withTip.includes(reminder) ? `${withTip}\n\n${reminder}` : withTip
+      const sent = await sendText(input.waId, withReminder, { inReplyTo: input.inReplyTo })
       if (!sent.ok) throw new Error(sent.error)
       return 'replied'
     }

@@ -1,6 +1,7 @@
 export type WhatsAppIntent =
   | 'opt_out'
   | 'opt_in'
+  | 'menu'
   | 'produto_por_ean'
   | 'consulta'
   | 'registrar_venda'
@@ -14,6 +15,7 @@ const VENDA_PREFIXES = ['vendi', 'venda', 'vendeu']
 const ENTRADA_PREFIXES = ['entrou', 'comprei', 'chegou', 'entrada']
 const PRECO_PREFIXES = ['muda o preco', 'mudar o preco', 'altera o preco', 'alterar o preco', 'preco novo', 'novo preco']
 const ESTOQUE_PREFIXES = ['ajusta o estoque', 'ajustar o estoque', 'corrige o estoque', 'corrigir o estoque', 'estoque agora']
+const MENU_ONLY = new Set(['oi', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'menu', 'inicio', 'opcoes', 'ajuda'])
 
 export function normalizeWhatsAppText(text: string) {
   return text
@@ -35,6 +37,11 @@ function hasPrefix(text: string, prefixes: string[]) {
   return prefixes.some((prefix) => startsWithWholePrefix(text, prefix))
 }
 
+export function isMenuGreeting(text: string) {
+  const normalized = normalizeWhatsAppText(text).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return MENU_ONLY.has(normalized)
+}
+
 export function isValidGtin(value: string) {
   if (!/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(value)) return false
 
@@ -54,6 +61,7 @@ export function classifyWhatsAppText(text: string): { intent: WhatsAppIntent; no
 
   if (normalizedText === 'parar') return { intent: 'opt_out', normalizedText }
   if (normalizedText === 'voltar') return { intent: 'opt_in', normalizedText }
+  if (isMenuGreeting(text)) return { intent: 'menu', normalizedText }
   if (isValidGtin(normalizedText)) return { intent: 'produto_por_ean', normalizedText }
   if (hasPrefix(normalizedText, CONSULTA_PREFIXES)) return { intent: 'consulta', normalizedText }
   if (hasPrefix(normalizedText, VENDA_PREFIXES)) return { intent: 'registrar_venda', normalizedText }
@@ -70,6 +78,8 @@ export function replyForIntent(intent: WhatsAppIntent) {
       return 'Pronto, você não vai mais receber mensagens da RPG Capital. Para voltar, mande VOLTAR.'
     case 'opt_in':
       return 'Pronto, você voltou a receber mensagens da RPG Capital.'
+    case 'menu':
+      return 'O que você quer fazer agora?'
     case 'produto_por_ean':
       return 'Entendi: você enviou um código de produto válido. A consulta por EAN chega no próximo passo.'
     case 'consulta':

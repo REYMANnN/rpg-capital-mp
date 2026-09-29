@@ -12,7 +12,7 @@ import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { flowIntent, interactiveButtonId, interactiveFlow } from '@/lib/whatsapp-interactive'
 import { FLOW_HINT } from '@/lib/whatsapp-flows'
 import { extractRafaActions, rafaAiBudgetAvailable, readRafaImage, transcribeRafaAudio, type RafaImageReading, type RafaMediaClass } from '@/lib/rafa-ai'
-import { appliedMessage, CONFIRM_NO_ID, CONFIRM_YES_ID, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, isTextConfirmationAttempt, refuseRafaPending } from '@/lib/rafa-confirm'
+import { appliedMessage, CONFIRM_NO_ID, CONFIRM_YES_ID, askRafaConfirmation, askRafaMediaConfirmation, confirmRafaPending, confirmationTextId, getPendingRafaAction, refuseRafaPending } from '@/lib/rafa-confirm'
 import { appendInvoiceMedia, askPendingPrices, processApprovedInvoiceMedia, unsupportedRafaClassMessage } from '@/lib/rafa-invoice'
 import { markPendingRegistered } from '@/lib/rafa-pending-products'
 import { handlePriceAnswer } from '@/lib/rafa-price-questions'
@@ -160,7 +160,11 @@ export async function processValue(value: JsonRecord) {
         // Produtos novos da nota: cadastrados saem da espera; os que faltam preço são pedidos agora.
         await attempt('rafa_pending_products', async () => {
           const storeId = result.storeId
-          const registered = result.changes.flatMap((change) => change.kind === 'cadastrar' ? [change.barcode] : [])
+          const registered = [...new Set(result.changes.flatMap((change) => {
+            if (change.kind === 'cadastrar') return [change.barcode]
+            const product = result.after.products.find((item) => item.id === change.productId)
+            return product?.barcode ? [product.barcode] : []
+          }))]
           await markPendingRegistered(storeId, registered)
           await askPendingPrices(fromPhone, storeId)
         })
@@ -191,42 +195,27 @@ export async function processValue(value: JsonRecord) {
       return
     }
 
-    if (isEvolutionProvider() && (isTextConfirmationAttempt(text) || isTextRefusal(text))) {
-      const { data: pending } = await createDatabase().from('rafa_pending_actions')
-        .select('id')
-        .eq('wa_id', fromPhone)
-        .eq('status', 'pendente')
-        .limit(1)
-        .maybeSingle()
-      if (pending) {
-        if (isTextRefusal(text)) {
+    if (isEvolutionProvider()) {
+      const pending = await getPendingRafaAction(fromPhone).catch(() => null)
+      const pendingValid = Boolean(pending?.expires_at && new Date(pending.expires_at).getTime() > Date.now())
+      if (pendingValid) {
+        const confirmationId = confirmationTextId(text)
+        if (confirmationId === CONFIRM_NO_ID) {
           const result = await refuseRafaPending(fromPhone)
           if (!result.ok) throw new Error(result.error)
-        } else {
-          await handleConfirmYes(fromPhone, wamid)
+          return
         }
-        return
-      }
-    }
-
-    if (isTextConfirmationAttempt(text)) {
-      const { data: pending } = await createDatabase().from('rafa_pending_actions')
-        .select('id')
-        .eq('wa_id', fromPhone)
-        .eq('status', 'pendente')
-        .limit(1)
-        .maybeSingle()
-      if (pending) {
-        const result = isEvolutionProvider()
-          ? await enqueueWhatsApp({
-            to: fromPhone,
-            kind: 'menu_fallback',
-            payload: { body: 'Pra eu confirmar, responda 1 ou 2:', buttons: [{ id: CONFIRM_YES_ID, title: 'Sim' }, { id: CONFIRM_NO_ID, title: 'Não' }] },
-            inReplyTo: wamid,
-          })
-          : await sendText(fromPhone, 'preciso que você aperte o botão Sim pra eu confirmar.\n— Rafa', { inReplyTo: wamid })
-        if (!result.ok) throw new Error(result.error)
-        return
+        if (confirmationId === CONFIRM_YES_ID) {
+          await handleConfirmYes(fromPhone, wamid)
+          return
+        }
+        // Número sozinho nunca confirma e, enquanto houver confirmação pendente,
+        // também não pode escapar para a lista de preços.
+        if (/^\s*\d+\s*$/.test(text)) {
+          const result = await sendText(fromPhone, 'Tem uma confirmação aberta. Responde *sim* ou *não* antes de continuar.\n— Rafa', { inReplyTo: wamid, noMenu: true })
+          if (!result.ok) throw new Error(result.error)
+          return
+        }
       }
     }
 
@@ -242,6 +231,12 @@ export async function processValue(value: JsonRecord) {
         return
       }
       if (handled) return
+    }
+
+    if (routing.intent === 'menu') {
+      const result = await sendMenu(fromPhone, undefined, { inReplyTo: wamid })
+      if (!result.ok) throw new Error(result.error)
+      return
     }
 
     const session = await sessionFor(fromPhone)

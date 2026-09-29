@@ -4,6 +4,7 @@ import 'server-only'
 import { createHash } from 'node:crypto'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fallbackTextForButtons, isConfirmationButtonSet } from '@/lib/rafa-conversation'
 
 // Evolution API (Baileys) como gateway de WhatsApp.
 // Regra de ouro: HTTP 200/201 da Evolution só significa "aceito pelo gateway".
@@ -127,10 +128,33 @@ async function readConnected(): Promise<boolean> {
 
 // ---------- Envio cru ----------
 
-function fallbackText(payload: Record<string, any>) {
-  const buttons: EvoButton[] = Array.isArray(payload.buttons) ? payload.buttons : []
-  const options = buttons.map((button, index) => `${index + 1} - ${button.title}`).join('\n')
-  return `${payload.body}\n\n${options}\n\nResponda com o número da opção.`
+export function fallbackText(payload: Record<string, any>) {
+  return fallbackTextForButtons(payload as { body?: unknown; buttons?: EvoButton[] })
+}
+
+function autoMenuMode() {
+  const value = process.env.EVOLUTION_AUTO_MENU?.trim().toLowerCase()
+  return value === 'always' || value === 'off' ? value : 'idle'
+}
+
+function idleMenuDelayMs() {
+  const minutes = Number(process.env.RAFA_IDLE_MENU_MIN || '5')
+  return (Number.isFinite(minutes) && minutes > 0 ? minutes : 5) * 60_000
+}
+
+function endsWithQuestion(body: unknown) {
+  return /\?\s*$/.test(stripSignature(String(body ?? '')))
+}
+
+export async function cancelIdleMenus(phone: string) {
+  const to = normalizePhone(phone)
+  if (!to) return
+  const admin = createAdminClient()
+  await admin.from('wa_outbox').update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('to_phone', to)
+    .eq('kind', 'menu_fallback')
+    .eq('status', 'queued')
+    .eq('payload->>idle', 'true')
 }
 
 async function rawSend(row: Pick<OutboxRow, 'kind' | 'payload' | 'to_phone'>): Promise<{ ok: true; providerId: string | null } | { ok: false; error: string }> {
@@ -218,21 +242,39 @@ export async function enqueueWhatsApp(input: {
     input = { ...input, payload: { ...input.payload, body: stripSignature(input.payload.body) } }
   }
 
-  // Toda resposta em texto é seguida por uma mensagem separada com o menu principal: o lojista
-  // nunca fica sem próximo passo e responder 1/2/3 funciona a qualquer momento, sem prazo.
-  // noMenu=true só para o pedido de confirmação (1 = Sim, 2 = Não), para os números não conflitarem.
-  // Ligado por padrão; EVOLUTION_AUTO_MENU=off desliga.
-  if (input.kind === 'text' && !input.noMenu && process.env.EVOLUTION_AUTO_MENU !== 'off') {
-    const sent = await enqueueWhatsApp({ ...input, noMenu: true })
-    if (!sent.ok) return sent
-    await enqueueWhatsApp({
-      to: input.to,
-      kind: 'menu_fallback',
-      payload: { body: 'O que você quer fazer agora?', buttons: RAFA_MAIN_MENU },
-      inReplyTo: input.inReplyTo,
-      noMenu: true,
-    })
-    return sent
+  const idle = input.kind === 'menu_fallback' && input.payload.idle === true
+  if (!idle) await cancelIdleMenus(to)
+
+  // EVOLUTION_AUTO_MENU=idle (padrão): menu só depois de ociosidade e nunca após pergunta.
+  // "always" mantém o comportamento antigo; "off" desliga o menu automático.
+  if (input.kind === 'text' && !input.noMenu) {
+    const mode = autoMenuMode()
+    if (mode === 'always') {
+      const sent = await enqueueWhatsApp({ ...input, noMenu: true })
+      if (!sent.ok) return sent
+      await enqueueWhatsApp({
+        to: input.to,
+        kind: 'menu_fallback',
+        payload: { body: 'O que você quer fazer agora?', buttons: RAFA_MAIN_MENU },
+        inReplyTo: input.inReplyTo,
+        noMenu: true,
+      })
+      return sent
+    }
+    if (mode === 'idle') {
+      const sent = await enqueueWhatsApp({ ...input, noMenu: true })
+      if (!sent.ok) return sent
+      if (!endsWithQuestion(input.payload.body)) {
+        await enqueueWhatsApp({
+          to: input.to,
+          kind: 'menu_fallback',
+          payload: { body: 'O que você quer fazer agora?', buttons: RAFA_MAIN_MENU, idle: true },
+          idempotencyKey: `idle-menu:${to}:${Date.now()}`,
+          noMenu: true,
+        })
+      }
+      return sent
+    }
   }
 
   const admin = createAdminClient()
@@ -248,7 +290,8 @@ export async function enqueueWhatsApp(input: {
     kind: input.kind,
     payload: input.payload,
     in_reply_to: input.inReplyTo ?? null,
-    status: connected ? 'sending' : 'queued',
+    status: idle ? 'queued' : connected ? 'sending' : 'queued',
+    ...(idle ? { next_attempt_at: new Date(Date.now() + idleMenuDelayMs()).toISOString() } : {}),
   }).select('*').maybeSingle()
 
   if (error) {
@@ -257,7 +300,7 @@ export async function enqueueWhatsApp(input: {
     return { ok: false, error: `outbox_insert_failed: ${error.message}` }
   }
   if (!inserted) return { ok: false, error: 'outbox_insert_failed' }
-  if (!connected) return { ok: true, data: { outboxId: inserted.id, queued: true } }
+  if (idle || !connected) return { ok: true, data: { outboxId: inserted.id, queued: true } }
 
   let result = await dispatch(inserted as OutboxRow)
   if (!result.ok) {
@@ -374,9 +417,20 @@ export async function runOutboxWorker(): Promise<Record<string, number | string>
     last_error: 'buttons_failed_fallback_to_text', updated_at: new Date().toISOString(),
   }).eq('kind', 'buttons').eq('status', 'failed')
 
-  // 2) Drena a fila (claim atômico).
+  // 2) Drena a fila (claim atômico). Menu ocioso é revalidado antes do envio.
   const { data: claimed } = await admin.rpc('wa_outbox_claim', { p_limit: 20 })
   for (const row of (claimed ?? []) as OutboxRow[]) {
+    if (row.kind === 'menu_fallback' && row.payload?.idle === true) {
+      const now = new Date().toISOString()
+      const [{ data: pending }, { data: prices }] = await Promise.all([
+        admin.from('rafa_pending_actions').select('id').eq('wa_id', row.to_phone).eq('status', 'pendente').gt('expires_at', now).limit(1),
+        admin.from('rafa_pending_products').select('id').eq('wa_id', row.to_phone).eq('status', 'aguardando_preco').limit(1),
+      ])
+      if ((pending?.length || 0) > 0 || (prices?.length || 0) > 0) {
+        await admin.from('wa_outbox').update({ status: 'cancelled', updated_at: now }).eq('id', row.id)
+        continue
+      }
+    }
     await dispatch(row)
     report.dispatched = Number(report.dispatched) + 1
   }
@@ -414,11 +468,12 @@ export async function lastOutboundWasTextMenu(phone: string): Promise<EvoButton[
   const { data } = await admin.from('wa_outbox')
     .select('kind,payload,created_at')
     .eq('to_phone', normalizePhone(phone))
+    .in('status', ['sent', 'server_ack', 'delivered', 'read'])
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  // Sem prazo: vale o menu se ele foi a última mensagem da Rafa, mesmo dias depois.
-  // Se a última mensagem foi uma pergunta aberta (sem menu), o número vai como texto para a Rafa.
   if (!data || data.kind !== 'menu_fallback') return null
-  return Array.isArray(data.payload?.buttons) ? data.payload.buttons as EvoButton[] : null
+  const buttons = Array.isArray(data.payload?.buttons) ? data.payload.buttons as EvoButton[] : []
+  if (isConfirmationButtonSet(buttons)) return null
+  return buttons.length ? buttons : null
 }

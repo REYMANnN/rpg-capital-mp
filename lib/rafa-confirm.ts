@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { confirmationTextId } from '@/lib/rafa-conversation'
 import { applyRafaChanges, loadRafaStore, persistRafaState, refreshRafaSnapshots, revalidateRafaChanges, type RafaChange, type RafaStoreState } from '@/lib/inventory/rafa-store'
 import { sendActionButtons, sendText } from '@/lib/whatsapp'
 
@@ -10,9 +11,10 @@ const money = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 
 const stock = (milli: number) => `${(milli / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} un.`
 
 export function isTextConfirmationAttempt(text: string) {
-  const normalized = text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  return ['sim', 'ss', 'isso', 'pode'].includes(normalized)
+  return confirmationTextId(text) !== null
 }
+
+export { confirmationTextId } from '@/lib/rafa-conversation'
 
 function productLabel(state: RafaStoreState, productId: string) {
   const product = state.products.find((item) => item.id === productId)

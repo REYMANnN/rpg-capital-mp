@@ -2,12 +2,17 @@
 import 'server-only'
 
 import { EVOLUTION_MEDIA_PREFIX } from '@/lib/rafa-media'
-import { lastOutboundWasTextMenu, normalizePhone, RAFA_MAIN_MENU } from '@/lib/whatsapp-evolution'
+import { cancelIdleMenus, lastOutboundWasTextMenu, normalizePhone } from '@/lib/whatsapp-evolution'
+import { confirmationTextId, getPendingRafaAction } from '@/lib/rafa-confirm'
 import { activePriceQuestion } from '@/lib/rafa-price-questions'
 
 type JsonRecord = Record<string, any>
 
-// Converte uma mensagem da Evolution (Baileys) para o formato da Cloud API
+// Converte uma mensagem da Evolution (Baileys) para o formato da Cloud API.
+// Prioridade de interpretação de texto:
+// 1) confirmação Sim/Não pendente; 2) lista de preços aberta;
+// 3) número do menu somente se a última mensagem da Rafa foi o menu; 4) IA.
+// Número sozinho nunca confirma Sim/Não.
 // ({ contacts, messages }) que o processamento da Rafa já entende.
 
 function jidToPhone(key: JsonRecord): string | null {
@@ -64,6 +69,7 @@ export async function evolutionToCloudValue(data: JsonRecord): Promise<{ value: 
   const id = typeof key.id === 'string' ? key.id : ''
   const phone = jidToPhone(key)
   if (!id || !phone) return { value: null, skip: 'missing_id_or_phone' }
+  await cancelIdleMenus(phone).catch(() => {})
 
   const message = unwrap(data?.message ?? {})
   const base: JsonRecord = { id, from: phone, timestamp: timestampOf(data?.messageTimestamp) }
@@ -77,17 +83,20 @@ export async function evolutionToCloudValue(data: JsonRecord): Promise<{ value: 
   if (button) {
     out = { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: button } }
   } else if (text !== null) {
-    // Número sozinho vira clique, sem passar pela IA:
-    // - se a última mensagem foi uma lista (menu, Sim/Não, escolha de loja), vale a opção dela;
-    // - senão, 1 a 4 são sempre o menu principal (vender, ler código, prateleira, subir estoque).
-    // Exceção: com pergunta de preço em aberto, "5" é preço (R$ 5,00), não opção do menu.
-    const choice = text.trim().match(/^([1-9])\s*$/)
-    const pricing = choice ? Boolean(await activePriceQuestion(phone).catch(() => null)) : false
-    const menu = choice && !pricing ? (await lastOutboundWasTextMenu(phone)) || RAFA_MAIN_MENU : null
-    const picked = menu?.[Number(choice?.[1]) - 1]
-    out = picked
-      ? { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: picked.id, title: picked.title } } }
-      : { ...base, type: 'text', text: { body: text } }
+    const pending = await getPendingRafaAction(phone).catch(() => null)
+    const pendingValid = Boolean(pending?.expires_at && new Date(pending.expires_at).getTime() > Date.now())
+    const confirmationId = pendingValid ? confirmationTextId(text) : null
+    if (confirmationId) {
+      out = { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: confirmationId, title: text.trim() } } }
+    } else {
+      const choice = text.trim().match(/^([1-9])\s*$/)
+      const pricing = choice ? Boolean(await activePriceQuestion(phone).catch(() => null)) : false
+      const menu = choice && !pricing ? await lastOutboundWasTextMenu(phone) : null
+      const picked = menu?.[Number(choice?.[1]) - 1]
+      out = picked
+        ? { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: picked.id, title: picked.title } } }
+        : { ...base, type: 'text', text: { body: text } }
+    }
   } else if (message.imageMessage) {
     out = { ...base, type: 'image', image: { id: `${EVOLUTION_MEDIA_PREFIX}${id}`, mime_type: message.imageMessage.mimetype, caption: message.imageMessage.caption } }
   } else if (message.audioMessage) {
