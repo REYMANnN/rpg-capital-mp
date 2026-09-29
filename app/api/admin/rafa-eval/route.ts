@@ -46,6 +46,8 @@ async function reset(storeId: string, waId: string) {
     admin.from('rafa_memory').delete().eq('store_id', storeId),
     admin.from('whatsapp_sessions').delete().eq('wa_id', waId),
     admin.from('rafa_daily_tips').delete().eq('wa_id', waId),
+    // Custo de IA dos testes não conta no limite diário da loja de teste.
+    admin.from('ai_usage').delete().eq('store_id', storeId),
   ])
   await admin.from('rafa_operations').delete().eq('store_id', storeId)
   // Volta a loja de teste ao catálogo-base (cópia da loja modelo, sem vendas nem movimentos).
