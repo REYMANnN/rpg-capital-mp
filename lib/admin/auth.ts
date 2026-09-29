@@ -7,6 +7,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 // Painel de admin da RPG (/admin): uma senha só, guardada como hash scrypt em rpg_admin_settings.
 // A sessão é um cookie assinado (HMAC) que vale 12h.
 
+// Hash scrypt da senha administrativa definida pelo proprietário. A senha em si nunca fica no código.
+const ADMIN_PASSWORD_HASH = 'scrypt$16384$8$1$W+WNbSsWWJwD6ZlhvBhkWgdCSixsHXo3XM9E0U/QF3c=$57jxglrUmU0PjPbEPFQnHEXxVun6wa2OERzHgI4qs4cVqbwPrl6y5Oq9T1GJtIdB2T1Vm1vvI26zGuPRXcquBg=='
+
 export { ADMIN_COOKIE, ADMIN_SESSION_SECONDS, createAdminSession, verifyAdminSession, verifyPasswordHash } from './core'
 
 const IP_WINDOW_MS = 15 * 60 * 1000
@@ -39,10 +42,7 @@ export async function attemptAdminLogin(password: string, ip: string): Promise<L
   ])
   if ((ipFailures ?? 0) >= IP_MAX_FAILURES || (globalFailures ?? 0) >= GLOBAL_MAX_FAILURES) return { ok: false, error: 'blocked' }
 
-  const { data } = await admin.from('rpg_admin_settings').select('value').eq('key', 'password_hash').maybeSingle()
-  if (!data?.value) return { ok: false, error: 'not_configured' }
-
-  const ok = typeof password === 'string' && password.length > 0 && password.length <= 200 && verifyPasswordHash(password, String(data.value))
+  const ok = typeof password === 'string' && password.length > 0 && password.length <= 200 && verifyPasswordHash(password, ADMIN_PASSWORD_HASH)
   await admin.from('rpg_admin_login_attempts').insert({ ip, ok })
   return ok ? { ok: true } : { ok: false, error: 'wrong_password' }
 }

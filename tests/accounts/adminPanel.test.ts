@@ -28,7 +28,8 @@ test('admin session is signed and expires', () => {
   const [payload, signature] = token.split('.')
   const forged = Buffer.from(JSON.stringify({ exp: now + 10 ** 12 })).toString('base64url')
   assert.equal(verifyAdminSession(`${forged}.${signature}`, now), false)
-  assert.equal(verifyAdminSession(`${payload}.x${signature.slice(1)}`, now), false)
+  const tamperedSignature = `${signature[0] === 'x' ? 'y' : 'x'}${signature.slice(1)}`
+  assert.equal(verifyAdminSession(`${payload}.${tamperedSignature}`, now), false)
   assert.equal(verifyAdminSession(undefined, now), false)
 })
 
@@ -37,7 +38,7 @@ test('coupon codes are well formed and normalized', () => {
   assert.equal(normalizeCouponCode(' rpg-ab12cd '), 'RPG-AB12CD')
   assert.equal(normalizeCouponCode('RPG-123'), null)
   assert.equal(normalizeCouponCode("RPG-ABCDEF'; drop"), null)
-  assert.equal(couponLink('RPG-AB12CD'), 'https://www.rpgcapital.com.br/c/RPG-AB12CD')
+  assert.equal(couponLink('RPG-AB12CD'), 'https://www.rpgcapital.com.br/convite/RPG-AB12CD')
 })
 
 test('coupon migration: single use, courtesy unlocks bank and onboarding', () => {
