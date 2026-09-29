@@ -110,8 +110,9 @@ export function plausibleStoreMatch(description: string, productName: string) {
   return a === null || b === null || a === b
 }
 
+// Nome + tamanho: "Ketchup Heinz 397g" ≠ "Ketchup Heinz 1,033kg".
 function normalizedName(value: string) {
-  return tokens(value).join(' ')
+  return `${tokens(value).join(' ')}|${sizeOf(value) ?? ''}`
 }
 
 export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[], options?: { lenient?: boolean }): InvoicePlan {
@@ -323,10 +324,12 @@ function buildLenientInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
     // 1) Já é da loja: pelo produto resolvido, pelo EAN ou pelo mesmo nome de uma nota anterior.
     const resolvedId = resolution?.status === 'resolved' && resolution.candidate.id && byId.has(resolution.candidate.id) ? resolution.candidate.id : null
     const resolvedProduct = resolvedId ? byId.get(resolvedId) : undefined
-    const storeMatch = (resolvedProduct && plausibleStoreMatch(description, resolvedProduct.name) ? resolvedProduct : undefined)
-      || (isValidGtin(ean) ? byBarcode.get(ean) : undefined)
-      || byName.get(normalizedName(niceName(description)))
-      || byBarcode.get(internalBarcodeFor(description))
+    const storeMatch = [
+      resolvedProduct,
+      isValidGtin(ean) ? byBarcode.get(ean) : undefined,
+      byName.get(normalizedName(niceName(description))),
+      byBarcode.get(internalBarcodeFor(description)),
+    ].find((product) => product && plausibleStoreMatch(description, product.name))
     if (storeMatch) {
       const cost = costCents || Math.round(storeMatch.averageCostCents || 0)
       if (quantityMilli > 0 && cost > 0) addEntrada(storeMatch.id, quantityMilli, cost)
