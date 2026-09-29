@@ -1,0 +1,35 @@
+name: Verify exact invite patch
+
+on:
+  push:
+    branches:
+      - verify-convite-um-clique-exact
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply exact patch
+        run: git apply convite-um-clique.patch
+      - name: Invite onboarding test
+        run: node --experimental-strip-types --test tests/invite-onboarding.test.ts
+      - name: TypeScript
+        shell: bash
+        run: |
+          set +e
+          npx tsc --noEmit -p . 2>&1 | tee /tmp/tsc.log
+          code=${PIPESTATUS[0]}
+          if grep -E '^(lib|app)/.*error TS' /tmp/tsc.log; then
+            echo "Found TypeScript errors in lib/ or app/"
+            exit 1
+          fi
+          echo "No TypeScript errors in lib/ or app/. Raw tsc exit code: $code"
+      - name: Patch diff check
+        run: git diff --check
