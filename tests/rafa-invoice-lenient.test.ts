@@ -68,3 +68,9 @@ test('não confunde feijão com arroz nem ketchup 397g com 1,033kg', async () =>
   assert.equal(plausibleStoreMatch('OLEO SOJA LIZA PET 900ML', 'Óleo de Soja Liza 900ml'), true)
   assert.equal(plausibleStoreMatch('LEITE COND MOCA TP 395G', 'Leite Condensado Moça 395g'), true)
 })
+
+test('mesmo nome com tamanho diferente não vira entrada no produto da loja', () => {
+  const plan = buildInvoicePlan(state, [line('KETCHUP HEINZ TRAD 397G')], { lenient: true })
+  assert.equal(plan.entradas.length, 0)
+  assert.equal(plan.novos.length, 1)
+})
