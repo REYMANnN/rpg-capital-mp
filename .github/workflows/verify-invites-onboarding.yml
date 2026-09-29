@@ -1,0 +1,43 @@
+name: Verify invites onboarding
+
+on:
+  push:
+    branches:
+      - verify-invites-onboarding
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: TypeScript
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npx tsc --noEmit -p . 2>&1 | tee /tmp/tsc.log
+          exit ${PIPESTATUS[0]}
+      - name: Reject new lib/app TypeScript errors
+        shell: bash
+        run: |
+          if grep -E '^(lib|app)/.*error TS' /tmp/tsc.log; then
+            echo "Found TypeScript errors in lib/ or app/"
+            exit 1
+          fi
+          echo "No TypeScript errors in lib/ or app/"
+      - name: Router tests
+        run: node --experimental-strip-types --test tests/whatsapp-router.test.ts
+      - name: AI parse tests
+        run: node --experimental-strip-types --test tests/rafa-ai-parse.test.ts
+      - name: C1 tests
+        run: node --experimental-strip-types --test tests/admin-invites.test.ts
+      - name: C2 tests
+        run: node --experimental-strip-types --test tests/invite-onboarding.test.ts
+      - name: C3 tests
+        run: node --experimental-strip-types --test tests/rafa-welcome.test.ts
