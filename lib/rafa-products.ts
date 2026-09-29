@@ -23,7 +23,7 @@ export type RafaProductCandidate = {
   name: string
   brand?: string
   priceCents?: number
-  source: 'store_ean' | 'supplier_map' | 'store_similarity' | 'catalog'
+  source: 'store_ean' | 'supplier_map' | 'store_similarity' | 'catalog' | 'name_ean'
 }
 
 export type RafaProductResolution =

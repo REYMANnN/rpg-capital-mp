@@ -231,10 +231,12 @@ export async function processApprovedInvoiceMedia(input: {
       if (status === 'ambiguous' && line.resolution.candidates.some((candidate: any) => candidate.id)) return false
       return Boolean(String(line.description || '').trim())
     })
+  const nameEanDebug: unknown[] = []
   if (byName.length) {
     const found = await resolveNamesToEan({
       storeId: input.storeId,
       waId: input.waId,
+      debug: nameEanDebug as never,
       items: byName.map(({ line, index }) => ({
         index,
         description: String(line.description),
@@ -248,7 +250,7 @@ export async function processApprovedInvoiceMedia(input: {
       const inStore = state.products.find((product) => product.barcode === hit.barcode && !product.deletedAt)
       line.resolution = inStore
         ? { status: 'resolved', candidate: { id: inStore.id, barcode: inStore.barcode, name: inStore.name, source: 'catalog' } }
-        : { status: 'new', candidate: { barcode: hit.barcode, name: hit.name, source: 'catalog' } }
+        : { status: 'new', candidate: { barcode: hit.barcode, name: hit.name, source: 'name_ean' } }
     }
   }
 
@@ -266,7 +268,7 @@ export async function processApprovedInvoiceMedia(input: {
   const { error: updateError } = await admin.from('rafa_invoice_imports').update({
     supplier_cnpj: resolved.supplier_cnpj,
     supplier_name: resolved.supplier_name,
-    extraction: resolved,
+    extraction: { ...resolved, name_ean_debug: nameEanDebug },
     status: plan.duvidas.length ? 'pending_review' : 'ready',
     item_count: lines.length,
     unit_count: unitCount,

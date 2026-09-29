@@ -315,7 +315,8 @@ function buildLenientInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
       continue
     }
     // 2) Produto novo: EAN do catálogo (se o nome bater), EAN da nota ou código interno.
-    const candidate = resolution?.status === 'new' && isValidGtin(resolution.candidate.barcode) && sameProductName(description, String(resolution.candidate.name || ''))
+    const candidate = resolution?.status === 'new' && isValidGtin(resolution.candidate.barcode)
+      && ((resolution.candidate as { source?: string }).source === 'name_ean' || sameProductName(description, String(resolution.candidate.name || '')))
       ? resolution.candidate : null
     if (candidate) {
       addNovo(candidate.barcode, String(candidate.name || niceName(description)), String(candidate.brand || ''), quantityMilli, costCents, line)

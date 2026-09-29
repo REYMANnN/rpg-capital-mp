@@ -117,41 +117,61 @@ function sizeMatches(description: string, name: string) {
   return want.some((item) => flat.includes(item))
 }
 
-function namesOverlap(description: string, name: string) {
-  const want = searchTerms(description).split(' ').filter((word) => word.length >= 3)
-  if (!want.length) return false
-  const have = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  const hits = want.filter((word) => have.includes(word.slice(0, Math.min(5, word.length))))
-  return hits.length / want.length >= 0.5
+function plain(value: string) {
+  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 }
 
-// Palpites de EAN da IA conferidos numa base real de produtos: só entra o código cujo produto
-// cadastrado tem o mesmo nome e tamanho da nota.
-async function verifiedGuesses(input: { storeId: string; waId: string; items: Array<{ index: number; description: string }> }) {
+// O produto achado na base (pelo código) é o da nota? Marca (ou uma palavra forte) tem que aparecer,
+// e se a base disser o tamanho, o tamanho tem que bater.
+function lookupConfirms(description: string, lookupText: string, guessName: string) {
+  const text = plain(lookupText)
+  if (!text.trim()) return false
+  const brand = detectBrand(description) || detectBrand(guessName)
+  const words = searchTerms(description).split(' ').filter((word) => word.length >= 4)
+  const brandHit = brand ? plain(brand).split(' ').some((word) => word.length >= 3 && text.includes(word)) : false
+  const wordHit = words.some((word) => text.includes(word.slice(0, 5)))
+  if (!brandHit && !wordHit) return false
+  const hasSize = /\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|litros?)\b/.test(text)
+  return !hasSize || sizeMatches(description, lookupText)
+}
+
+export type NameEanDebug = { descricao: string; palpites: string[]; confirmados: string[] }
+
+// Palpites de EAN da IA conferidos numa base real de produtos: só vale o código que existe
+// e cujo produto tem a marca/nome e o tamanho da nota.
+async function verifiedGuesses(input: { storeId: string; waId: string; items: Array<{ index: number; description: string }>; debug?: NameEanDebug[] }) {
   const out = new Map<number, NameCandidate[]>()
   const guesses = await guessEansByName({ storeId: input.storeId, waId: input.waId, items: input.items.map((item) => ({ n: item.index, descricao: item.description })) }).catch(() => [])
-  const jobs: Array<{ index: number; description: string; ean: string }> = []
+  const jobs: Array<{ index: number; description: string; ean: string; nome: string }> = []
   for (const guess of guesses) {
     const item = input.items.find((row) => row.index === Number(guess.n))
     if (!item) continue
-    for (const raw of (guess.eans || []).slice(0, 3)) {
-      const ean = String(raw || '').replace(/\D/g, '')
-      if (isValidGtin(ean)) jobs.push({ index: item.index, description: item.description, ean })
+    const options = [...(guess.opcoes || []), ...(guess.eans || []).map((ean) => ({ ean, nome: '' }))]
+    for (const option of options.slice(0, 3)) {
+      const ean = String(option?.ean || '').replace(/\D/g, '')
+      if (isValidGtin(ean)) jobs.push({ index: item.index, description: item.description, ean, nome: String(option?.nome || '') })
     }
   }
+  const debugBy = new Map<number, NameEanDebug>()
+  for (const item of input.items) debugBy.set(item.index, { descricao: item.description, palpites: jobs.filter((job) => job.index === item.index).map((job) => job.ean), confirmados: [] })
   let next = 0
   const worker = async () => {
     while (next < jobs.length) {
       const job = jobs[next++]
-      const found = await resolveUniversalProduct(job.ean, { totalDeadlineMs: 4000 }).catch(() => null)
-      const name = found?.found ? String(found.product?.name || '') : ''
-      if (!name || !namesOverlap(job.description, name) || !sizeMatches(job.description, name)) continue
+      const found = await resolveUniversalProduct(job.ean, { totalDeadlineMs: 5000 }).catch(() => null)
+      if (!found?.found) continue
+      const product = found.product as { name?: string; brand?: string; description?: string } | undefined
+      const lookupText = [product?.name, product?.brand, product?.description].filter(Boolean).join(' ')
+      if (!lookupConfirms(job.description, lookupText, job.nome)) continue
+      const name = job.nome && job.nome.length >= String(product?.name || '').length ? job.nome : String(product?.name || job.nome)
       const list = out.get(job.index) || []
-      list.push({ ean: job.ean, nome: name, marca: found?.product?.brand ? String(found.product.brand) : undefined })
+      list.push({ ean: job.ean, nome: name, marca: product?.brand ? String(product.brand) : undefined })
       out.set(job.index, list)
+      debugBy.get(job.index)?.confirmados.push(`${job.ean} ${String(product?.name || '')}`)
     }
   }
   await Promise.all(Array.from({ length: Math.min(8, jobs.length) }, worker))
+  input.debug?.push(...debugBy.values())
   return out
 }
 
@@ -161,17 +181,18 @@ export async function resolveNamesToEan(input: {
   waId: string
   items: Array<{ index: number; description: string; lineValueCents?: number }>
   maxExternalSearches?: number
+  debug?: NameEanDebug[]
 }): Promise<Map<number, NameResolution>> {
   const out = new Map<number, NameResolution>()
   if (!input.items.length) return out
   let external = input.maxExternalSearches ?? 10
   const prepared: Array<{ n: number; descricao: string; marca_detectada: string | null; candidatos: NameCandidate[] }> = []
   const ordered = [...input.items].sort((a, b) => Number(b.lineValueCents || 0) - Number(a.lineValueCents || 0)).slice(0, 40)
-  const verified = await verifiedGuesses({ storeId: input.storeId, waId: input.waId, items: ordered }).catch(() => new Map<number, NameCandidate[]>())
+  const verified = await verifiedGuesses({ storeId: input.storeId, waId: input.waId, items: ordered, debug: input.debug }).catch(() => new Map<number, NameCandidate[]>())
   for (const item of ordered) {
     const sure = verified.get(item.index) || []
     // Palpite conferido na base com nome e tamanho batendo: é esse o produto.
-    if (sure.length === 1 || (sure.length > 1 && new Set(sure.map((candidate) => candidate.nome.toLowerCase())).size === 1)) {
+    if (sure.length >= 1) {
       out.set(item.index, { barcode: sure[0].ean, name: sure[0].nome.slice(0, 120) })
       continue
     }
