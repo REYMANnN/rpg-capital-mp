@@ -101,6 +101,21 @@ type StoreContext = {
   displayName: string
 }
 
+// Versão do estado lida junto com cada carga (a versão é lida ANTES do estado: se o estado já vier
+// mais novo, a gravação falha por conflito e é refeita, nunca sobrescreve mudança mais nova).
+const stateVersions = new WeakMap<RafaStoreState, number>()
+
+export function rafaStateVersion(state: RafaStoreState) {
+  return stateVersions.get(state)
+}
+
+export class RafaStateConflictError extends Error {
+  constructor() {
+    super('state_version_conflict')
+    this.name = 'RafaStateConflictError'
+  }
+}
+
 function isState(value: unknown): value is RafaStoreState {
   if (!value || typeof value !== 'object') return false
   const state = value as RafaStoreState
@@ -111,12 +126,13 @@ export async function loadRafaStore(storeId: string): Promise<{ store: StoreCont
   const admin = createAdminClient()
   const { data: store, error: storeError } = await admin
     .from('inventory_v1_stores')
-    .select('id,business_id,installation_id,display_name,active')
+    .select('id,business_id,installation_id,display_name,active,state_version')
     .eq('id', storeId)
     .eq('active', true)
     .maybeSingle()
   if (storeError) throw storeError
   if (!store?.installation_id) throw new Error('rafa_store_not_found')
+  const version = Number(store.state_version ?? NaN)
 
   const { data, error } = await admin.rpc('inventory_v1_get_state', { p_installation_id: store.installation_id })
   if (error) throw error
@@ -124,6 +140,7 @@ export async function loadRafaStore(storeId: string): Promise<{ store: StoreCont
   const state = result.found && isState(result.state)
     ? result.state
     : { products: [], sales: [], movements: [] }
+  if (Number.isFinite(version)) stateVersions.set(state, version)
 
   return {
     store: {
@@ -425,12 +442,31 @@ export async function persistRafaState(input: {
   if (storeError) throw storeError
   if (!store?.installation_id) throw new Error('rafa_store_not_found')
 
-  const { error } = await admin.rpc('inventory_v1_sync_state', {
-    p_installation_id: store.installation_id,
-    p_state: input.after,
-    p_app_version: INVENTORY_APP_VERSION,
-  })
-  if (error) throw error
+  // Com a versão lida no loadRafaStore, grava com checagem (nunca sobrescreve mudança mais nova).
+  // Sem versão conhecida (estado montado à mão), cai no caminho antigo.
+  const expectedVersion = stateVersions.get(input.before)
+  let versionAfter: number | null = null
+  if (expectedVersion !== undefined) {
+    const { data, error } = await admin.rpc('rafa_sync_state_checked', {
+      p_store_id: input.storeId,
+      p_state: input.after,
+      p_app_version: INVENTORY_APP_VERSION,
+      p_expected_version: expectedVersion,
+    })
+    if (error) {
+      if (String(error.message || '').includes('state_version_conflict')) throw new RafaStateConflictError()
+      throw error
+    }
+    versionAfter = Number(data)
+    if (Number.isFinite(versionAfter)) stateVersions.set(input.after, versionAfter)
+  } else {
+    const { error } = await admin.rpc('inventory_v1_sync_state', {
+      p_installation_id: store.installation_id,
+      p_state: input.after,
+      p_app_version: INVENTORY_APP_VERSION,
+    })
+    if (error) throw error
+  }
 
   if (store.business_id) {
     const events = deriveInventoryStateEvents(input.before as any, input.after as any)
@@ -457,4 +493,5 @@ export async function persistRafaState(input: {
       changed_at: new Date().toISOString(),
     },
   })))
+  return { versionAfter }
 }
