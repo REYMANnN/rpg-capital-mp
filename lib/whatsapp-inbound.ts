@@ -121,7 +121,8 @@ function rafaAgentEnabled() {
 // (ex.: "5511999998888,5511...") liga só para eles (canário); vazio/v2 = comportamento antigo.
 export function rafaBrainEnabled(waId: string) {
   if (currentRafaSink()?.forceBrain) return true
-  const flag = String(process.env.RAFA_BRAIN || '').trim().toLowerCase()
+  // Sem variável na Vercel: canário no número do fundador. Para todos: RAFA_BRAIN=v3. Para desligar: RAFA_BRAIN=v2.
+  const flag = String(process.env.RAFA_BRAIN || '5512997672260').trim().toLowerCase()
   if (!flag || flag === 'v2' || flag === 'off') return false
   if (flag === 'v3' || flag === 'on') return true
   const digits = String(waId || '').replace(/\D/g, '')
