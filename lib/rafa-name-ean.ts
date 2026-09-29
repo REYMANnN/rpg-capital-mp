@@ -1,4 +1,5 @@
 import { chooseEanByName } from '@/lib/rafa-ai'
+import { detectBrand } from '@/lib/rafa-brands'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isValidGtin } from '@/lib/whatsapp-router'
 
@@ -28,16 +29,44 @@ export function searchTerms(description: string) {
     .join(' ')
 }
 
-async function cacheCandidates(terms: string): Promise<NameCandidate[]> {
-  const words = terms.split(' ').filter((word) => word.length >= 4)
-  if (!words.length) return []
-  const longest = [...words].sort((a, b) => b.length - a.length)[0]
-  const { data } = await createAdminClient().from('inventory_v1_product_catalog_cache')
-    .select('barcode,name,brand')
-    .ilike('name', `%${longest}%`)
-    .eq('cache_status', 'hit')
-    .limit(15)
-  return (data || []).map((row) => ({ ean: String(row.barcode), nome: String(row.name), marca: row.brand ? String(row.brand) : undefined }))
+function sizeTerm(description: string) {
+  const normalized = description.toLowerCase().replace(',', '.')
+  const match = normalized.match(/\b\d+(?:\.\d+)?\s*(?:kg|g|ml|l|un)\b/) || normalized.match(/\bc\/?\s*\d+\b/)
+  return match ? match[0].replace(/\s+/g, '') : ''
+}
+
+function productType(terms: string, brand: string | null) {
+  const brandWords = new Set(String(brand || '').split(' ').filter(Boolean))
+  return terms.split(' ').find((word) => word.length >= 3 && !brandWords.has(word)) || ''
+}
+
+function rowsToCandidates(rows: any[] | null | undefined): NameCandidate[] {
+  return (rows || []).map((row) => ({ ean: String(row.barcode), nome: String(row.name), marca: row.brand ? String(row.brand) : undefined }))
+}
+
+async function cacheCandidates(terms: string, brand: string | null, type: string): Promise<NameCandidate[]> {
+  const admin = createAdminClient()
+  const all: NameCandidate[] = []
+  if (brand && type) {
+    const { data } = await admin.from('inventory_v1_product_catalog_cache')
+      .select('barcode,name,brand').ilike('name', `%${brand}%`).ilike('name', `%${type}%`).eq('cache_status', 'hit').limit(25)
+    all.push(...rowsToCandidates(data))
+  }
+  if (brand && all.length < 25) {
+    const { data } = await admin.from('inventory_v1_product_catalog_cache')
+      .select('barcode,name,brand').ilike('name', `%${brand}%`).eq('cache_status', 'hit').limit(25)
+    all.push(...rowsToCandidates(data))
+  }
+  if (all.length < 25) {
+    const words = terms.split(' ').filter((word) => word.length >= 4)
+    const longest = [...words].sort((a, b) => b.length - a.length)[0]
+    if (longest) {
+      const { data } = await admin.from('inventory_v1_product_catalog_cache')
+        .select('barcode,name,brand').ilike('name', `%${longest}%`).eq('cache_status', 'hit').limit(25)
+      all.push(...rowsToCandidates(data))
+    }
+  }
+  return [...new Map(all.map((candidate) => [candidate.ean, candidate])).values()].slice(0, 25)
 }
 
 async function fetchJson(url: string) {
@@ -79,23 +108,27 @@ async function openFoodFactsCandidates(terms: string): Promise<NameCandidate[]> 
 export async function resolveNamesToEan(input: {
   storeId: string
   waId: string
-  items: Array<{ index: number; description: string }>
+  items: Array<{ index: number; description: string; lineValueCents?: number }>
   maxExternalSearches?: number
 }): Promise<Map<number, NameResolution>> {
   const out = new Map<number, NameResolution>()
   if (!input.items.length) return out
-  let external = input.maxExternalSearches ?? 8
-  const prepared: Array<{ n: number; descricao: string; candidatos: NameCandidate[] }> = []
-  for (const item of input.items.slice(0, 25)) {
+  let external = input.maxExternalSearches ?? 10
+  const prepared: Array<{ n: number; descricao: string; marca_detectada: string | null; candidatos: NameCandidate[] }> = []
+  const ordered = [...input.items].sort((a, b) => Number(b.lineValueCents || 0) - Number(a.lineValueCents || 0)).slice(0, 25)
+  for (const item of ordered) {
     const terms = searchTerms(item.description)
-    let candidates = await cacheCandidates(terms).catch(() => [])
+    const brand = detectBrand(item.description)
+    const type = productType(terms, brand)
+    let candidates = await cacheCandidates(terms, brand, type).catch(() => [])
     if (candidates.length < 3 && external > 0) {
       external -= 1
-      candidates = [...candidates, ...(await openFoodFactsCandidates(terms))]
+      const query = [brand, type, sizeTerm(item.description)].filter(Boolean).join(' ') || terms
+      candidates = [...candidates, ...(await openFoodFactsCandidates(query))]
     }
-    const unique = [...new Map(candidates.filter((candidate) => isValidGtin(candidate.ean)).map((candidate) => [candidate.ean, candidate])).values()].slice(0, 10)
-    if (!unique.length) { out.set(item.index, { missing: 'não encontrado' }); continue }
-    prepared.push({ n: item.index, descricao: item.description, candidatos: unique })
+    const unique = [...new Map(candidates.filter((candidate) => isValidGtin(candidate.ean)).map((candidate) => [candidate.ean, candidate])).values()].slice(0, 25)
+    if (!unique.length) { out.set(item.index, { missing: brand ? 'nao_encontrado' : 'sem_marca' }); continue }
+    prepared.push({ n: item.index, descricao: item.description, marca_detectada: brand, candidatos: unique })
   }
   if (!prepared.length) return out
 
@@ -107,7 +140,11 @@ export async function resolveNamesToEan(input: {
     if (choice && candidate && isValidGtin(ean)) {
       out.set(item.n, { barcode: ean, name: String(choice.nome || candidate.nome).slice(0, 120) })
     } else {
-      out.set(item.n, { missing: String(choice?.falta || 'marca e tamanho') })
+      const allowed = new Set(['tamanho', 'nao_encontrado', 'sem_marca'])
+      let missing = String(choice?.falta || (item.marca_detectada ? 'nao_encontrado' : 'sem_marca'))
+      if (!allowed.has(missing)) missing = item.marca_detectada ? 'nao_encontrado' : 'sem_marca'
+      if (item.marca_detectada && missing === 'sem_marca') missing = 'nao_encontrado'
+      out.set(item.n, { missing })
     }
   }
   return out

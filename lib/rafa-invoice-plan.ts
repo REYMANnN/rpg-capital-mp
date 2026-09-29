@@ -15,6 +15,7 @@ export type InvoicePlanLine = {
   supplier_code?: string | null
   // o que falta no nome para achar o produto (preenchido pela busca por nome)
   missing?: string | null
+  check_reasons?: string[] | null
   confidence?: { product?: number; quantity?: number; cost?: number } | null
   resolution?: RafaProductResolution | null
 }
@@ -56,6 +57,15 @@ export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
   for (const line of lines) {
     const description = String(line.description || line.ean || 'item sem nome').trim().slice(0, 120)
     const confidence = line.confidence || {}
+    const checkReasons = Array.isArray(line.check_reasons) ? line.check_reasons : []
+    if (checkReasons.length) {
+      const reason = checkReasons.includes('valor_nao_confere') || checkReasons.includes('valor_incompleto') ? 'valor não confere'
+        : checkReasons.includes('ean_invalido') ? 'código da nota não confere'
+          : checkReasons.includes('descricao_curta') ? 'descrição ilegível'
+            : 'linha da nota precisa de conferência'
+      plan.duvidas.push({ description, reason })
+      continue
+    }
     const quantityMilli = Math.round(Number(line.quantity || 0) * 1000)
     const costCents = Math.round(Number(line.unit_cost_cents || 0))
     if (!(quantityMilli > 0) || Number(confidence.quantity ?? 1) < MIN_CONFIDENCE) {
@@ -115,9 +125,11 @@ export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
 
     plan.duvidas.push({
       description,
-      reason: line.missing && line.missing !== 'não encontrado' ? `falta ${line.missing} no nome`
-        : resolution?.status === 'ambiguous' ? 'mais de um produto parecido'
-          : ean ? 'código não reconhecido' : 'não achei o produto',
+      reason: line.missing === 'nao_encontrado' ? 'não achei no catálogo'
+        : line.missing === 'sem_marca' ? 'nota sem marca'
+          : line.missing === 'tamanho' ? 'falta tamanho'
+            : resolution?.status === 'ambiguous' ? 'mais de um produto parecido'
+              : ean ? 'código não reconhecido' : 'não achei no catálogo',
     })
   }
 
@@ -148,8 +160,17 @@ export function invoicePlanMessage(plan: InvoicePlan, supplier: string | null, r
   if (plan.entradas.length) lines.push(`• ${plan.entradas.length} já são da loja: dou entrada no estoque com o custo da nota`)
   if (plan.novos.length) lines.push(`• ${plan.novos.length} novo(s): já te pergunto o preço de venda de cada um`)
   if (plan.duvidas.length) {
-    const examples = plan.duvidas.slice(0, 3).map((doubt) => `${doubt.description} (${doubt.reason})`).join('; ')
-    lines.push(`• ${plan.duvidas.length} com dúvida: ${examples}${plan.duvidas.length > 3 ? '…' : ''}${reviewLink ? `\n  Confere aqui: ${reviewLink}` : ''}`)
+    const groups = new Map<string, string[]>()
+    for (const doubt of plan.duvidas) {
+      const list = groups.get(doubt.reason) || []
+      list.push(doubt.description)
+      groups.set(doubt.reason, list)
+    }
+    for (const [reason, descriptions] of groups) {
+      const shown = descriptions.slice(0, 3).join(', ')
+      lines.push(`• ${reason}: ${shown}${descriptions.length > 3 ? '…' : ''}`)
+    }
+    if (reviewLink) lines.push(`  Confere aqui: ${reviewLink}`)
   }
   if (plan.entradas.length) lines.push('', `Confirma a entrada dos ${plan.entradas.length}?`)
   return lines.join('\n')

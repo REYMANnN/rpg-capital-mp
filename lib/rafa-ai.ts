@@ -390,12 +390,13 @@ export type RafaInvoiceExtraction = InvoiceExtraction
 
 // Molde compacto (chaves curtas) = menos tokens de saída = nota mais barata e mais rápida.
 // normalizeInvoiceExtraction aceita também chaves longas, "itens", "lines" etc.
-const INVOICE_JSON_SHAPE = '{"f":"nome do emitente","cnpj":"CNPJ do emitente só dígitos","i":[{"d":"descrição como está na nota","sc":"código do item","e":"código de barras ou null","q":1,"u":"UN","vu":2990,"vt":2990,"cp":0.95,"cq":0.95,"cc":0.95}]}'
+const INVOICE_JSON_SHAPE = '{"f":"nome do emitente","cnpj":"CNPJ do emitente só dígitos","tot":52036,"n":28,"i":[{"d":"descrição como está na nota","sc":"código do item","e":"código de barras ou null","q":1,"u":"UN","vu":2990,"vt":2990,"cp":0.95,"cq":0.95,"cc":0.95}]}'
 
 const INVOICE_IMAGE_RULES = [
   'Você lê fotos de nota fiscal brasileira (NF-e, NFC-e, DANFE, cupom) e retorna SOMENTE JSON, sem texto fora do JSON.',
   `Formato exato: ${INVOICE_JSON_SHAPE}`,
   'f e cnpj: dados do EMITENTE (quem vendeu), no topo da nota. Confira cada dígito do CNPJ.',
+  'tot: valor TOTAL impresso no rodapé, em centavos inteiros. n: quantidade total de itens/linhas impressa, se houver; senão null.',
   'i: UMA entrada para CADA linha de produto da nota, na ordem, sem pular nenhuma. Se a nota informa a quantidade total de itens, a lista deve ter esse número de entradas.',
   'd: descrição exatamente como impressa. sc: código do item. e: só se o código tiver 8, 12, 13 ou 14 dígitos (código de barras); senão null.',
   'q: quantidade (número; use ponto decimal, ex.: 0.528). u: unidade (UN, KG, CX, DZ...).',
@@ -404,21 +405,29 @@ const INVOICE_IMAGE_RULES = [
   'Campo ilegível: null. Nunca invente.',
 ].join('\n')
 
-async function extractInvoiceBatch(input: { storeId: string; waId: string; dataUris: string[]; retry: boolean }) {
+async function extractInvoiceBatch(input: {
+  storeId: string
+  waId: string
+  dataUris: string[]
+  operation?: string
+  tiled?: boolean
+  recheckMessage?: string
+}) {
   const images = input.dataUris.map((url) => ({ type: 'image_url', image_url: { url } }))
-  const rules = input.retry
-    ? `${INVOICE_IMAGE_RULES}\nATENÇÃO: a leitura anterior voltou sem nenhum item. A foto tem linhas de produtos com descrição, quantidade e valores: liste todas elas em "i".`
-    : INVOICE_IMAGE_RULES
+  const notes = [
+    input.tiled ? 'As imagens são faixas da MESMA nota, em ordem de cima para baixo, com sobreposição. Linhas repetidas na sobreposição aparecem UMA vez só.' : '',
+    input.recheckMessage || '',
+  ].filter(Boolean).join('\n')
   const raw = await groqJson<unknown>({
     storeId: input.storeId,
     waId: input.waId,
-    operation: input.retry ? 'invoice_extraction_retry' : 'invoice_extraction',
+    operation: input.operation || 'invoice_extraction',
     model: RAFA_VISION_MODEL,
     maxTokens: 12000,
     messages: [{
       role: 'user',
       content: [
-        { type: 'text', text: `${rules}\nLeia todas as fotos recebidas como uma única nota quando forem continuação.` },
+        { type: 'text', text: `${INVOICE_IMAGE_RULES}\n${notes}\nLeia todas as imagens recebidas como uma única nota quando forem continuação.` },
         ...images,
       ],
     }],
@@ -430,14 +439,22 @@ export async function extractRafaInvoiceImages(input: {
   storeId: string
   waId: string
   dataUris: string[]
+  operation?: string
+  tiled?: boolean
+  recheckMessage?: string
 }): Promise<RafaInvoiceExtraction> {
-  // Modelo aceita no máximo 3 imagens por chamada: nota com mais fotos vai em lotes e é juntada.
   const parts: InvoiceExtraction[] = []
   for (const batch of chunk(input.dataUris.slice(0, 9), VISION_MAX_IMAGES)) {
-    let part = await extractInvoiceBatch({ storeId: input.storeId, waId: input.waId, dataUris: batch, retry: false })
+    const part = await extractInvoiceBatch({
+      storeId: input.storeId,
+      waId: input.waId,
+      dataUris: batch,
+      operation: input.operation,
+      tiled: input.tiled,
+      recheckMessage: input.recheckMessage,
+    })
     if (!part.items.length) {
-      await recordAiError({ storeId: input.storeId, waId: input.waId, operation: 'invoice_extraction', model: RAFA_VISION_MODEL, stage: 'empty', message: 'extração sem itens; tentando de novo' })
-      part = await extractInvoiceBatch({ storeId: input.storeId, waId: input.waId, dataUris: batch, retry: true })
+      await recordAiError({ storeId: input.storeId, waId: input.waId, operation: input.operation || 'invoice_extraction', model: RAFA_VISION_MODEL, stage: 'empty', message: 'extração sem itens' })
     }
     parts.push(part)
   }
@@ -450,7 +467,7 @@ export type NameEanChoice = { n: number; ean: string | null; nome?: string | nul
 export async function chooseEanByName(input: {
   storeId: string
   waId: string
-  items: Array<{ n: number; descricao: string; candidatos: Array<{ ean: string; nome: string; marca?: string; tamanho?: string }> }>
+  items: Array<{ n: number; descricao: string; marca_detectada?: string | null; candidatos: Array<{ ean: string; nome: string; marca?: string; tamanho?: string }> }>
 }) {
   if (!input.items.length) return [] as NameEanChoice[]
   const result = await groqJson<{ itens?: NameEanChoice[] }>({
@@ -465,9 +482,10 @@ export async function chooseEanByName(input: {
         'Você identifica produtos de mercado brasileiro a partir da descrição abreviada de uma nota fiscal.',
         'Para cada item, escolha o código de barras (ean) SOMENTE entre os candidatos listados, e só quando a descrição deixa claro qual é: a marca bate E o tamanho/variante bate (ex.: "REFRIG COCA PET 2L" = Coca-Cola PET 2L; "COCA LT 350" = lata 350ml).',
         'Abreviações comuns: REFRIG=refrigerante, LT=lata, PET=garrafa, CX=caixa, FD=fardo, PCT=pacote, UN=unidade, TP1=tipo 1, INTEG=integral, DESN=desnatado, ZERO/DIET, C/12=com 12.',
-        'Se a descrição não tem marca ("ARROZ TIPO 1 5KG") ou falta tamanho ("COCA COLA"), ou nenhum candidato bate, devolva ean null e diga em "falta" o que falta ("marca", "tamanho", "marca e tamanho" ou "não encontrado").',
+        'Cada item traz marca_detectada quando a marca já foi reconhecida na descrição. Se marca_detectada não for null, é PROIBIDO responder falta "marca" ou "sem_marca".',
+        'Quando não der para escolher, falta só pode ser "tamanho", "nao_encontrado" ou "sem_marca"; "sem_marca" somente quando marca_detectada é null.',
         'Nunca invente código. nome = nome completo do produto escolhido (marca, tipo, tamanho).',
-        'Responda só JSON: {"itens":[{"n":0,"ean":"7894900018448","nome":"Refrigerante Coca-Cola PET 2L"},{"n":1,"ean":null,"falta":"marca"}]}',
+        'Responda só JSON: {"itens":[{"n":0,"ean":"7894900018448","nome":"Refrigerante Coca-Cola PET 2L"},{"n":1,"ean":null,"falta":"nao_encontrado"}]}',
         '',
         JSON.stringify(input.items),
       ].join('\n'),
@@ -492,7 +510,7 @@ export async function extractRafaInvoiceText(input: {
       role: 'user',
       content: [
         'Extraia a nota fiscal abaixo (texto de DANFE ou XML de NF-e) e retorne somente JSON no formato:',
-        '{"supplier_name":..., "supplier_cnpj":..., "items":[{"description","supplier_code","ean","quantity","unit_cost_cents","total_cents","unit_package","confidence":{"product","quantity","cost"}}]}.',
+        '{"supplier_name":..., "supplier_cnpj":..., "printed_total_cents":..., "printed_item_count":..., "items":[{"description","supplier_code","ean","quantity","unit_cost_cents","total_cents","unit_package","confidence":{"product","quantity","cost"}}]}.',
         'No XML: emit/xNome e emit/CNPJ; cada det/prod: xProd, cProd, cEAN (ignore "SEM GTIN"), qCom, vUnCom, vProd, uCom.',
         'Não invente campos ausentes; use null. Valores monetários em centavos inteiros. confidence entre 0 e 1.',
         '',

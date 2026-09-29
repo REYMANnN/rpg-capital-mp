@@ -83,11 +83,15 @@ export type InvoiceItem = {
   total_cents?: number | null
   unit_package?: string | null
   confidence: { product: number; quantity: number; cost: number }
+  check_reasons?: string[]
 }
 
 export type InvoiceExtraction = {
   supplier_name?: string | null
   supplier_cnpj?: string | null
+  printed_total_cents?: number | null
+  printed_item_count?: number | null
+  supplier_cnpj_valid?: boolean | null
   items: InvoiceItem[]
 }
 
@@ -185,17 +189,38 @@ export function normalizeInvoiceExtraction(raw: unknown): InvoiceExtraction {
   return {
     supplier_name: str(pick(obj, ['supplier_name', 'fornecedor_nome', 'f', 'nome_fornecedor']) ?? pick(h, ['nome', 'xNome', 'name'])),
     supplier_cnpj: cnpjRaw ? cnpjRaw.replace(/\D/g, '') || null : null,
+    printed_total_cents: cents(pick(obj, ['printed_total_cents', 'tot']), pick(obj, ['printed_total', 'total_impresso'])),
+    printed_item_count: toNumber(pick(obj, ['printed_item_count', 'n', 'quantidade_itens', 'item_count'])),
+    supplier_cnpj_valid: typeof obj.supplier_cnpj_valid === 'boolean' ? obj.supplier_cnpj_valid : null,
     items: list.map(normalizeItem).filter((item): item is InvoiceItem => item !== null),
   }
 }
 
-// Junta extrações de lotes de fotos (modelo aceita no máximo 3 imagens por chamada).
+function invoiceLineKey(item: InvoiceItem) {
+  const description = String(item.description || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+  return `${description}|${Number(item.total_cents ?? -1)}|${Number(item.quantity ?? -1)}`
+}
+
+export function dedupeAdjacentInvoiceItems(items: InvoiceItem[]) {
+  const out: InvoiceItem[] = []
+  for (const item of items) {
+    const previous = out[out.length - 1]
+    if (previous && invoiceLineKey(previous) === invoiceLineKey(item)) continue
+    out.push(item)
+  }
+  return out
+}
+
+// Junta extrações de lotes de fotos/faixas e remove repetição vizinha causada pela sobreposição.
 export function mergeInvoiceExtractions(parts: InvoiceExtraction[]): InvoiceExtraction {
   const first = parts.find((p) => p.supplier_name || p.supplier_cnpj) || parts[0] || { items: [] }
   return {
     supplier_name: first.supplier_name ?? null,
     supplier_cnpj: first.supplier_cnpj ?? null,
-    items: parts.flatMap((p) => p.items),
+    printed_total_cents: parts.find((p) => p.printed_total_cents != null)?.printed_total_cents ?? null,
+    printed_item_count: parts.find((p) => p.printed_item_count != null)?.printed_item_count ?? null,
+    supplier_cnpj_valid: first.supplier_cnpj_valid ?? null,
+    items: dedupeAdjacentInvoiceItems(parts.flatMap((p) => p.items)),
   }
 }
 

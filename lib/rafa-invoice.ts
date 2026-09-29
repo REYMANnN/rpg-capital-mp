@@ -1,7 +1,10 @@
 import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { extractRafaInvoiceImages, extractRafaInvoiceText, type RafaInvoiceExtraction, type RafaMediaClass } from '@/lib/rafa-ai'
 import { loadRafaStore } from '@/lib/inventory/rafa-store'
+import { mergeInvoiceExtractions } from '@/lib/rafa-ai-parse'
 import { askRafaConfirmation } from '@/lib/rafa-confirm'
+import { checkInvoice } from '@/lib/rafa-invoice-check'
+import { prepareInvoiceImages } from '@/lib/rafa-invoice-image'
 import { parseNfeXml } from '@/lib/inventory/nfe'
 import { isNfeXml, readPdfText } from '@/lib/rafa-files'
 import { buildInvoicePlan, invoicePlanMessage, type InvoicePlanLine } from '@/lib/rafa-invoice-plan'
@@ -71,6 +74,69 @@ export async function appendInvoiceMedia(input: {
   return { importId: String(data.id), pageCount: 1 }
 }
 
+async function extractInvoicePhotos(input: {
+  waId: string
+  storeId: string
+  imagePaths: string[]
+  operation?: string
+  recheckMessage?: string
+}): Promise<RafaInvoiceExtraction> {
+  const tileMode = process.env.RAFA_INVOICE_TILES !== 'off'
+  const groups: string[][] = []
+  for (const path of input.imagePaths.slice(0, 5)) {
+    if (tileMode) groups.push(await prepareInvoiceImages(await loadInvoiceProofBytes(path)))
+    else groups.push([await loadInvoiceProofDataUri(path)])
+  }
+  const totalImages = groups.reduce((sum, group) => sum + group.length, 0)
+  const parts: RafaInvoiceExtraction[] = []
+  const call = (dataUris: string[], tiled: boolean) => extractRafaInvoiceImages({
+    storeId: input.storeId,
+    waId: input.waId,
+    dataUris,
+    operation: input.operation,
+    tiled,
+    recheckMessage: input.recheckMessage,
+  })
+
+  if (totalImages <= 3 && (groups.length === 1 || groups.every((group) => group.length === 1))) {
+    parts.push(await call(groups.flat(), groups.length === 1 && groups[0].length > 1))
+  } else {
+    // Se as faixas ultrapassarem o limite do qwen3.8, cada foto vira uma chamada de até 3 imagens.
+    for (const group of groups) parts.push(await call(group.slice(0, 3), group.length > 1))
+  }
+  return mergeInvoiceExtractions(parts)
+}
+
+function recheckMessage(extraction: RafaInvoiceExtraction, check: ReturnType<typeof checkInvoice>) {
+  const notes: string[] = []
+  if (check.sumDiffPct > 1 && check.printedTotalCents != null) {
+    notes.push(`Na leitura anterior a soma das linhas deu ${(check.sumCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} e o total impresso é ${(check.printedTotalCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`)
+  }
+  if (check.countMismatch) notes.push(`A leitura anterior trouxe ${extraction.items.length} linhas, mas a nota indica ${extraction.printed_item_count}.`)
+  if (check.cnpjValid === false) notes.push(`O CNPJ lido ${extraction.supplier_cnpj || ''} não fecha o dígito verificador.`)
+  return `${notes.join(' ')} Releia com atenção cada linha e o CNPJ.`.trim()
+}
+
+function applyInvoiceChecks(extraction: RafaInvoiceExtraction) {
+  const checked = checkInvoice(extraction)
+  return {
+    extraction: {
+      ...extraction,
+      supplier_cnpj_valid: checked.cnpjValid,
+      items: extraction.items.map((item, index) => {
+        const result = checked.lineResults[index]
+        if (!result || result.ok) return { ...item, check_reasons: [] }
+        return {
+          ...item,
+          check_reasons: result.reasons,
+          confidence: { ...item.confidence, quantity: 0.5, cost: 0.5 },
+        }
+      }),
+    } satisfies RafaInvoiceExtraction,
+    checked,
+  }
+}
+
 export async function processApprovedInvoiceMedia(input: {
   waId: string
   storeId: string
@@ -122,15 +188,27 @@ export async function processApprovedInvoiceMedia(input: {
     if (text.length >= 30) extraction = await extractRafaInvoiceText({ storeId: input.storeId, waId: input.waId, text })
   }
   if (!extraction && imagePaths.length) {
-    const dataUris = []
-    for (const path of imagePaths.slice(0, 5)) dataUris.push(await loadInvoiceProofDataUri(path))
-    extraction = await extractRafaInvoiceImages({ storeId: input.storeId, waId: input.waId, dataUris })
+    extraction = await extractInvoicePhotos({ storeId: input.storeId, waId: input.waId, imagePaths })
+    const firstCheck = checkInvoice(extraction)
+    if (!extraction.items.length || firstCheck.sumDiffPct > 1 || firstCheck.countMismatch || firstCheck.cnpjValid === false) {
+      const reread = await extractInvoicePhotos({
+        storeId: input.storeId,
+        waId: input.waId,
+        imagePaths,
+        operation: 'invoice_extraction_recheck',
+        recheckMessage: recheckMessage(extraction, firstCheck),
+      })
+      const secondCheck = checkInvoice(reread)
+      if (secondCheck.score > firstCheck.score) extraction = reread
+    }
   }
   if (!extraction) {
     await admin.from('rafa_invoice_imports').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', invoice.id)
     await sendText(input.waId, 'Não consegui ler essa nota. Me manda uma foto de frente e com boa luz, o PDF ou o XML da nota.\n— Rafa')
     return { ok: false as const, reason: 'unreadable' }
   }
+
+  extraction = applyInvoiceChecks(extraction).extraction
 
   const { state } = await loadRafaStore(input.storeId)
   const resolved = await resolveInvoiceExtraction(state, extraction)
@@ -150,7 +228,11 @@ export async function processApprovedInvoiceMedia(input: {
     const found = await resolveNamesToEan({
       storeId: input.storeId,
       waId: input.waId,
-      items: byName.map(({ line, index }) => ({ index, description: String(line.description) })),
+      items: byName.map(({ line, index }) => ({
+        index,
+        description: String(line.description),
+        lineValueCents: Math.round(Number(line.total_cents || 0)),
+      })),
     }).catch(() => new Map())
     for (const { line, index } of byName) {
       const hit = found.get(index)
@@ -186,7 +268,13 @@ export async function processApprovedInvoiceMedia(input: {
   }).eq('id', invoice.id)
   if (updateError) throw updateError
 
-  await savePendingProducts({ storeId: input.storeId, waId: input.waId, invoiceImportId: String(invoice.id), supplierCnpj: resolved.supplier_cnpj, items: plan.novos })
+  await savePendingProducts({
+    storeId: input.storeId,
+    waId: input.waId,
+    invoiceImportId: String(invoice.id),
+    supplierCnpj: resolved.supplier_cnpj_valid === false ? null : resolved.supplier_cnpj,
+    items: plan.novos,
+  })
 
   // Só as dúvidas precisam de tela: o link abre a conferência dessa nota.
   let reviewLink: string | undefined

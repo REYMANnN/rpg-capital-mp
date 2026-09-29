@@ -188,6 +188,7 @@ export async function rememberSupplierProduct(input: {
 export async function resolveInvoiceExtraction(state: RafaStoreState, extraction: RafaInvoiceExtraction) {
   // Até 6 itens em paralelo: nota de atacado com 30+ linhas não pode estourar o tempo.
   const items = extraction.items || []
+  const supplierCnpjForLearning = extraction.supplier_cnpj_valid === false ? null : extraction.supplier_cnpj
   const lines: Array<(typeof items)[number] & { resolution: RafaProductResolution }> = new Array(items.length)
   let next = 0
   const worker = async () => {
@@ -196,7 +197,7 @@ export async function resolveInvoiceExtraction(state: RafaStoreState, extraction
       const item = items[index]
       const resolution = await resolveRafaInvoiceProduct({
         state,
-        supplierCnpj: extraction.supplier_cnpj,
+        supplierCnpj: supplierCnpjForLearning,
         supplierCode: item.supplier_code,
         description: item.description,
         ean: item.ean,
@@ -208,6 +209,9 @@ export async function resolveInvoiceExtraction(state: RafaStoreState, extraction
   return {
     supplier_name: extraction.supplier_name || null,
     supplier_cnpj: String(extraction.supplier_cnpj || '').replace(/\D/g, '') || null,
+    supplier_cnpj_valid: extraction.supplier_cnpj_valid ?? null,
+    printed_total_cents: extraction.printed_total_cents ?? null,
+    printed_item_count: extraction.printed_item_count ?? null,
     lines,
   }
 }

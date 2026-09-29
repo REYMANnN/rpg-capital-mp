@@ -138,3 +138,15 @@ test('lotes de 3 fotos são juntados numa nota só', () => {
   assert.equal(merged.items.length, 2)
   assert.equal(merged.supplier_name, 'A')
 })
+
+
+test('normaliza total/contagem impressos e deduplica sobreposição', () => {
+  const out = normalizeInvoiceExtraction({ f: 'X', tot: 52036, n: 2, i: [
+    { d: 'LEITE', q: 1, vu: 479, vt: 479 },
+    { d: 'LEITE', q: 1, vu: 479, vt: 479 },
+  ] })
+  assert.equal(out.printed_total_cents, 52036)
+  assert.equal(out.printed_item_count, 2)
+  const merged = mergeInvoiceExtractions([out])
+  assert.equal(merged.items.length, 1)
+})
