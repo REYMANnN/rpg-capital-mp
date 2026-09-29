@@ -151,13 +151,15 @@ export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
 const money = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const units = (milli: number) => (milli / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 })
 
-export function invoicePlanMessage(plan: InvoicePlan, supplier: string | null, reviewLink?: string) {
+export function invoicePlanMessage(plan: InvoicePlan, supplier: string | null, reviewLink?: string, applied = false) {
   const total = plan.entradas.length + plan.novos.length + plan.duvidas.length
   if (!total) {
     return `Reconheci a nota${supplier ? ` de ${supplier}` : ''}, mas não consegui ler os itens. Me manda uma foto mais de perto, reta e com boa luz (pode ser em 2 partes), ou o PDF/XML da nota.`
   }
   const lines = [`Li a nota${supplier ? ` de ${supplier}` : ''}: ${total} produto(s).`]
-  if (plan.entradas.length) lines.push(`• ${plan.entradas.length} já são da loja: dou entrada no estoque com o custo da nota`)
+  if (plan.entradas.length) lines.push(applied
+    ? `• ${plan.entradas.length} já são da loja: já dei entrada no estoque com o custo da nota`
+    : `• ${plan.entradas.length} já são da loja: dou entrada no estoque com o custo da nota`)
   if (plan.novos.length) lines.push(`• ${plan.novos.length} novo(s): já te pergunto o preço de venda de cada um`)
   if (plan.duvidas.length) {
     const groups = new Map<string, string[]>()
@@ -172,7 +174,8 @@ export function invoicePlanMessage(plan: InvoicePlan, supplier: string | null, r
     }
     if (reviewLink) lines.push(`  Confere aqui: ${reviewLink}`)
   }
-  if (plan.entradas.length) lines.push('', `Confirma a entrada dos ${plan.entradas.length}?`)
+  if (plan.entradas.length && !applied) lines.push('', `Confirma a entrada dos ${plan.entradas.length}?`)
+  if (plan.entradas.length && applied) lines.push('', 'Se algo não bater, é só falar "desfaz".')
   return lines.join('\n')
 }
 

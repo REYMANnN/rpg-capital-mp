@@ -141,11 +141,11 @@ export async function askStorePick(waId: string, stores: Array<{ id: string; nam
 
 // ---------- Ferramentas (leitura) ----------
 
-function activeProducts(state: RafaStoreState) {
+export function activeProducts(state: RafaStoreState) {
   return state.products.filter((product) => !product.deletedAt)
 }
 
-function productView(product: RafaInventoryProduct) {
+export function productView(product: RafaInventoryProduct) {
   return {
     id: product.id,
     nome: product.name,
@@ -212,7 +212,7 @@ function periodRange(periodo: string, de?: string, ate?: string) {
   }
 }
 
-function salesSummary(state: RafaStoreState, args: any) {
+export function salesSummary(state: RafaStoreState, args: any) {
   const range = periodRange(String(args?.periodo || 'hoje'), args?.de, args?.ate)
   const sales = state.sales.filter((sale) => {
     const at = new Date(sale.createdAt).getTime()
@@ -246,7 +246,7 @@ function salesSummary(state: RafaStoreState, args: any) {
   }
 }
 
-function stockSummary(state: RafaStoreState) {
+export function stockSummary(state: RafaStoreState) {
   const products = activeProducts(state)
   const atCost = products.reduce((sum, product) => sum + Math.max(0, product.stockMilli) * Math.round(product.averageCostCents || 0) / 1000, 0)
   const atPrice = products.reduce((sum, product) => sum + Math.max(0, product.stockMilli) * product.priceCents / 1000, 0)
@@ -307,7 +307,7 @@ async function refreshFinanceLive(storeId: string, businessId: string | null) {
   }
 }
 
-async function bankBalance(storeId: string) {
+export async function bankBalance(storeId: string) {
   const { admin, businessId } = await financeScope(storeId)
   const live = await refreshFinanceLive(storeId, businessId)
   let query = admin.from('balcao_finance_accounts').select('institution_name,account_name,account_type,balance_cents,status,last_synced_at')
@@ -331,7 +331,7 @@ async function bankBalance(storeId: string) {
   }
 }
 
-async function bankStatement(storeId: string, args: any) {
+export async function bankStatement(storeId: string, args: any) {
   const { admin, businessId } = await financeScope(storeId)
   const live = await refreshFinanceLive(storeId, businessId)
   const range = periodRange(String(args?.periodo || '30dias'), args?.de, args?.ate)
@@ -384,7 +384,7 @@ async function bankStatement(storeId: string, args: any) {
 }
 
 // "De onde veio / pra onde foi": contrapartes, grupos, recorrentes e cruzamento com vendas e notas.
-async function moneyFlow(storeId: string, state: RafaStoreState, args: any) {
+export async function moneyFlow(storeId: string, state: RafaStoreState, args: any) {
   const { admin, businessId } = await financeScope(storeId)
   const live = await refreshFinanceLive(storeId, businessId)
   const range = periodRange(String(args?.periodo || '30dias'), args?.de, args?.ate)
@@ -706,7 +706,7 @@ function systemPrompt(storeName: string, otherStores: number) {
 // sem chamar ferramenta (uma ida ao modelo em vez de duas ou três).
 const CATALOG_LIMIT = 300
 
-function catalogBlock(state: RafaStoreState) {
+export function catalogBlock(state: RafaStoreState) {
   const products = activeProducts(state)
   if (!products.length) return 'CATÁLOGO DA LOJA: nenhum produto cadastrado.'
   if (products.length > CATALOG_LIMIT) return `CATÁLOGO DA LOJA: ${products.length} produtos (grande demais para listar aqui; use buscar_produtos).`
@@ -794,7 +794,7 @@ export function cleanReply(text: string) {
   return out.replace(/\n{3,}/g, '\n\n').trim()
 }
 
-async function claimDailyTip(waId: string, storeId: string, state: RafaStoreState, pendingPrices: number) {
+export async function claimDailyTip(waId: string, storeId: string, state: RafaStoreState, pendingPrices: number) {
   const tip = pickDailyTip(inventoryFacts(state, pendingPrices))
   if (!tip) return null
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
@@ -805,7 +805,7 @@ async function claimDailyTip(waId: string, storeId: string, state: RafaStoreStat
   return error ? null : tip.message
 }
 
-async function claimPriceReminder(waId: string, pending: PendingProductRow[]) {
+export async function claimPriceReminder(waId: string, pending: PendingProductRow[]) {
   if (!pending.length) return null
   const admin = createAdminClient()
   const phone = normalizePhone(waId)

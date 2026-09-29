@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { confirmationTextId } from '@/lib/rafa-conversation'
-import { applyRafaChanges, loadRafaStore, persistRafaState, refreshRafaSnapshots, revalidateRafaChanges, type RafaChange, type RafaStoreState } from '@/lib/inventory/rafa-store'
+import { loadRafaStore, refreshRafaSnapshots, revalidateRafaChanges, type RafaChange, type RafaStoreState } from '@/lib/inventory/rafa-store'
+import { commitRafaChanges } from '@/lib/rafa-ops'
 import { sendActionButtons, sendText } from '@/lib/whatsapp'
 
 export const RAFA_CONFIRM_TTL_MS = 15 * 60 * 1000
@@ -76,6 +77,7 @@ export async function askRafaConfirmation(input: {
   inReplyTo?: string
   // Resumo próprio (ex.: importação de planilha com muitos itens) no lugar da lista item a item.
   message?: string
+  invoiceImportId?: string
 }) {
   const message = input.message || confirmationMessage(input.state, input.changes)
   const kinds = [...new Set(input.changes.map((change) => change.kind))]
@@ -86,7 +88,7 @@ export async function askRafaConfirmation(input: {
     waId: input.waId,
     storeId: input.storeId,
     tipo,
-    payload: { kind: 'changes', changes: input.changes },
+    payload: { kind: 'changes', changes: input.changes, ...(input.invoiceImportId ? { invoice_import_id: input.invoiceImportId } : {}) },
     message,
   })
   return sendActionButtons(
@@ -162,9 +164,18 @@ export async function confirmRafaPending(waId: string): Promise<ConfirmRafaResul
     return { kind: 'expired' }
   }
 
+  // Só quem "ganhar" a troca pendente → confirmada executa (clique duplo, sim + botão, retry do webhook).
+  const claim = async () => {
+    const { data } = await admin.from('rafa_pending_actions')
+      .update({ status: 'confirmada', confirmed_at: new Date().toISOString() })
+      .eq('id', pending.id).eq('status', 'pendente')
+      .select('id').maybeSingle()
+    return Boolean(data)
+  }
+
   const payload = pending.payload as any
   if (payload?.kind === 'invoice_media') {
-    await admin.from('rafa_pending_actions').update({ status: 'confirmada', confirmed_at: new Date().toISOString() }).eq('id', pending.id)
+    if (!await claim()) return { kind: 'none' }
     return { kind: 'media', importId: String(payload.import_id), storeId: String(pending.store_id) }
   }
 
@@ -196,13 +207,28 @@ export async function confirmRafaPending(waId: string): Promise<ConfirmRafaResul
     return { kind: 'invalidated', message }
   }
 
-  const { state: after, audit } = applyRafaChanges(state, changes, { waId })
-  await persistRafaState({ storeId: String(pending.store_id), waId, before: state, after, audit })
-  await admin.from('rafa_pending_actions').update({
-    status: 'confirmada',
-    confirmed_at: new Date().toISOString(),
-  }).eq('id', pending.id)
-  return { kind: 'applied', changes, after, storeId: String(pending.store_id) }
+  if (!await claim()) return { kind: 'none' }
+  const committed = await commitRafaChanges({
+    storeId: String(pending.store_id),
+    waId,
+    operationId: `pending:${pending.id}`,
+    tool: 'confirmacao',
+    summary: String(pending.mensagem_confirmacao || 'alteração confirmada').split('\n').slice(0, 3).join(' ').slice(0, 300),
+    args: { pending_action_id: pending.id },
+    sideEffects: payload?.invoice_import_id ? { invoice_import_id: String(payload.invoice_import_id) } : undefined,
+    invoiceImportId: payload?.invoice_import_id ? String(payload.invoice_import_id) : undefined,
+    // Estado mais novo: se algo mudou desde a pergunta, não grava por cima.
+    build: (fresh) => revalidateRafaChanges(fresh, changes).length ? { error: 'O estoque mudou enquanto você confirmava. Me pede de novo que eu refaço com os valores de agora.' } : changes,
+  })
+  if (committed.status === 'rejected') {
+    await sendText(waId, `${committed.message}\n— Rafa`)
+    return { kind: 'invalidated', message: committed.message }
+  }
+  if (committed.status === 'duplicate') return { kind: 'none' }
+  if (payload?.invoice_import_id) {
+    await admin.from('rafa_invoice_imports').update({ status: 'applied', applied_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', String(payload.invoice_import_id))
+  }
+  return { kind: 'applied', changes, after: committed.after, storeId: String(pending.store_id) }
 }
 
 // Mensagem de resultado depois do Sim: diz exatamente o que ficou valendo.

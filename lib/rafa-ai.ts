@@ -1,6 +1,7 @@
 import 'server-only'
 
-import { createAdminClient } from '@/lib/supabase/admin'
+import { claudeEnabled, claudeMessages, claudeModel, claudeText, imageBlockFromDataUri, type ClaudeContentBlock } from '@/lib/llm/claude'
+import { rafaAiBudgetAvailable, recordAiError, recordAiUsage } from '@/lib/rafa-ai-usage'
 import {
   chunk,
   groqAudioFilename,
@@ -32,57 +33,7 @@ function groqKey() {
   return key
 }
 
-function budgetUsd() {
-  const value = Number(process.env.RAFA_AI_DAILY_BUDGET_USD || '0.10')
-  return Number.isFinite(value) && value > 0 ? value : 0.10
-}
-
-function saoPauloDayStartUtc(now = new Date()) {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  const parts = Object.fromEntries(formatter.formatToParts(now).map((part) => [part.type, part.value]))
-  return new Date(`${parts.year}-${parts.month}-${parts.day}T03:00:00.000Z`).toISOString()
-}
-
-export async function rafaAiBudgetAvailable(storeId: string) {
-  const admin = createAdminClient()
-  const { data, error } = await admin
-    .from('ai_usage')
-    .select('estimated_cost_usd')
-    .eq('store_id', storeId)
-    .gte('created_at', saoPauloDayStartUtc())
-  if (error) throw error
-  const spent = (data || []).reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0)
-  return { allowed: spent < budgetUsd(), spent, limit: budgetUsd() }
-}
-
-export async function recordAiUsage(input: {
-  storeId: string
-  waId?: string | null
-  operation: string
-  model: string
-  inputTokens?: number
-  outputTokens?: number
-  audioSeconds?: number
-  estimatedCostUsd: number
-}) {
-  const admin = createAdminClient()
-  const { error } = await admin.from('ai_usage').insert({
-    store_id: input.storeId,
-    wa_id: input.waId || null,
-    operation: input.operation,
-    model: input.model,
-    input_tokens: Math.max(0, Math.round(input.inputTokens || 0)),
-    output_tokens: Math.max(0, Math.round(input.outputTokens || 0)),
-    audio_seconds: Math.max(0, Number(input.audioSeconds || 0)),
-    estimated_cost_usd: Math.max(0, input.estimatedCostUsd),
-  })
-  if (error) throw error
-}
+export { rafaAiBudgetAvailable, recordAiError, recordAiUsage } from '@/lib/rafa-ai-usage'
 
 // Preços Groq em US$ por 1M tokens (entrada / saída).
 function tokenCost(model: string, usage: Usage) {
@@ -91,35 +42,6 @@ function tokenCost(model: string, usage: Usage) {
   if (model.includes('qwen3.8')) return (input * 0.80 + output * 4.00) / 1_000_000
   if (model.includes('qwen')) return (input * 0.60 + output * 3.00) / 1_000_000
   return (input * 0.075 + output * 0.30) / 1_000_000
-}
-
-// Toda falha de IA vira uma linha em rafa_ai_errors (a Vercel Hobby só guarda 1h de log).
-// Nunca lança: registrar erro não pode derrubar o atendimento.
-export async function recordAiError(input: {
-  storeId?: string | null
-  waId?: string | null
-  operation: string
-  model: string
-  stage: 'http' | 'truncated' | 'parse' | 'empty' | 'exception'
-  httpStatus?: number | null
-  message?: string | null
-  raw?: string | null
-}) {
-  try {
-    const admin = createAdminClient()
-    await admin.from('rafa_ai_errors').insert({
-      store_id: input.storeId || null,
-      wa_id: input.waId || null,
-      operation: input.operation,
-      model: input.model,
-      stage: input.stage,
-      http_status: input.httpStatus ?? null,
-      error_message: input.message ? String(input.message).slice(0, 2000) : null,
-      raw_response: input.raw ? String(input.raw).slice(0, 20_000) : null,
-    })
-  } catch (error) {
-    console.error('rafa_ai_errors insert failed', error instanceof Error ? error.message : error)
-  }
 }
 
 type GroqChatResponse = {
@@ -132,6 +54,71 @@ function groqErrorMessage(json: GroqChatResponse, status: number) {
   return String(json?.error?.message || `Groq HTTP ${status}`)
 }
 
+type OpenAiStyleMessage = { role: string; content: unknown }
+
+// Converte mensagens no formato OpenAI/Groq (texto + image_url com data URI) para a Anthropic.
+export function toClaudeRequest(messages: unknown[]) {
+  const system: string[] = []
+  const out: Array<{ role: 'user' | 'assistant'; content: ClaudeContentBlock[] }> = []
+  for (const raw of messages as OpenAiStyleMessage[]) {
+    const role = raw?.role
+    const parts: ClaudeContentBlock[] = []
+    if (typeof raw?.content === 'string') {
+      if (raw.content.trim()) parts.push({ type: 'text', text: raw.content })
+    } else if (Array.isArray(raw?.content)) {
+      for (const part of raw.content as Array<Record<string, unknown>>) {
+        if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) parts.push({ type: 'text', text: part.text })
+        if (part?.type === 'image_url') {
+          const url = typeof part.image_url === 'object' && part.image_url ? String((part.image_url as { url?: unknown }).url || '') : ''
+          const block = imageBlockFromDataUri(url)
+          if (block) parts.push(block)
+        }
+      }
+    }
+    if (!parts.length) continue
+    if (role === 'system') {
+      system.push(parts.filter((part) => part.type === 'text').map((part) => (part as { text: string }).text).join('\n'))
+      continue
+    }
+    const claudeRole = role === 'assistant' ? 'assistant' : 'user'
+    const last = out[out.length - 1]
+    if (last && last.role === claudeRole) last.content.push(...parts)
+    else out.push({ role: claudeRole, content: parts })
+  }
+  return { system: system.join('\n\n'), messages: out }
+}
+
+async function claudeJson<T>(input: { storeId: string; waId?: string; operation: string; messages: unknown[]; maxTokens?: number }): Promise<T> {
+  const converted = toClaudeRequest(input.messages)
+  const response = await claudeMessages({
+    storeId: input.storeId,
+    waId: input.waId,
+    operation: input.operation,
+    system: [
+      { text: 'Responda SOMENTE com um objeto JSON válido, sem texto antes ou depois e sem cercas de código.' },
+      { text: converted.system },
+    ],
+    messages: converted.messages,
+    maxTokens: Math.min(Math.max(input.maxTokens || 2000, 1024), 16_000),
+    temperature: 0,
+  })
+  const text = claudeText(response)
+  const parsed = parseModelJson<T>(text)
+  if (!parsed) {
+    await recordAiError({
+      storeId: input.storeId,
+      waId: input.waId,
+      operation: input.operation,
+      model: claudeModel(),
+      stage: response.stop_reason === 'max_tokens' ? 'truncated' : 'parse',
+      message: `stop_reason=${response.stop_reason ?? 'n/a'}`,
+      raw: text,
+    })
+    throw new Error('claude_invalid_json')
+  }
+  return parsed
+}
+
 async function groqJson<T>(input: {
   storeId: string
   waId?: string
@@ -142,6 +129,16 @@ async function groqJson<T>(input: {
 }): Promise<T> {
   const budget = await rafaAiBudgetAvailable(input.storeId)
   if (!budget.allowed) throw new Error('rafa_ai_budget_exceeded')
+
+  // Com a chave da Anthropic, TODA extração em JSON (ações, imagem, nota, nome→EAN) vai para o Claude.
+  // A Groq fica como reserva se a Anthropic falhar.
+  if (claudeEnabled()) {
+    try {
+      return await claudeJson<T>(input)
+    } catch (error) {
+      console.error('Claude JSON failed, falling back to Groq', input.operation, error instanceof Error ? error.message : error)
+    }
+  }
 
   // Qwen "pensa" antes de responder e queimava o limite de tokens nisso (6.000 tokens por foto).
   // Em extração de JSON pedimos modo instrução (reasoning_effort: none).

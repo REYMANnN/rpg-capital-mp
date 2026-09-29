@@ -14,6 +14,8 @@ import { savePendingProducts } from '@/lib/rafa-pending-products'
 import { startPriceQuestions } from '@/lib/rafa-price-questions'
 import { isValidGtin } from '@/lib/whatsapp-router'
 import { resolveInvoiceExtraction } from '@/lib/rafa-products'
+import { commitRafaChanges } from '@/lib/rafa-ops'
+import { recordRafaEvent } from '@/lib/rafa-events'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendText } from '@/lib/whatsapp'
 
@@ -141,6 +143,8 @@ export async function processApprovedInvoiceMedia(input: {
   waId: string
   storeId: string
   importId: string
+  // Rafa 3.0: entradas de produtos que já são da loja entram direto (com "desfaz"), sem Sim/Não.
+  autoApply?: boolean
 }) {
   const admin = createAdminClient()
   const { data: invoice, error } = await admin.from('rafa_invoice_imports')
@@ -190,7 +194,8 @@ export async function processApprovedInvoiceMedia(input: {
   if (!extraction && imagePaths.length) {
     extraction = await extractInvoicePhotos({ storeId: input.storeId, waId: input.waId, imagePaths })
     const firstCheck = checkInvoice(extraction)
-    if (!extraction.items.length || firstCheck.sumDiffPct > 1 || firstCheck.countMismatch || firstCheck.cnpjValid === false) {
+    const strict = !input.autoApply
+    if (!extraction.items.length || firstCheck.sumDiffPct > 1 || (strict && (firstCheck.countMismatch || firstCheck.cnpjValid === false))) {
       const reread = await extractInvoicePhotos({
         storeId: input.storeId,
         waId: input.waId,
@@ -290,10 +295,40 @@ export async function processApprovedInvoiceMedia(input: {
     reviewLink = link.url
   }
 
+  if (input.autoApply && plan.entradas.length) {
+    const committed = await commitRafaChanges({
+      storeId: input.storeId,
+      waId: input.waId,
+      operationId: `invoice:${invoice.id}:entradas`,
+      tool: 'nota_entradas',
+      summary: `Entrada da nota${resolved.supplier_name ? ` de ${resolved.supplier_name}` : ''}: ${plan.entradas.length} produto(s)`,
+      args: { invoice_import_id: invoice.id },
+      sideEffects: { invoice_import_id: String(invoice.id) },
+      invoiceImportId: String(invoice.id),
+      build: () => plan.entradas,
+    })
+    const applied = committed.status !== 'rejected'
+    if (applied) {
+      await admin.from('rafa_invoice_imports').update({ status: 'applied', applied_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', invoice.id)
+    }
+    const body = applied
+      ? invoicePlanMessage(plan, resolved.supplier_name, reviewLink, true)
+      : `${invoicePlanMessage(plan, resolved.supplier_name, reviewLink, false)}\n(Não consegui dar entrada agora: ${committed.status === 'rejected' ? committed.message : ''})`
+    await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'invoice', text: `nota ${String(invoice.id).slice(0, 8)}${resolved.supplier_name ? ` de ${resolved.supplier_name}` : ''}: ${plan.entradas.length} entradas ${applied ? 'aplicadas' : 'NÃO aplicadas'}, ${plan.novos.length} novos esperando preço, ${plan.duvidas.length} dúvidas`, data: { import_id: invoice.id } })
+    const sent = await sendText(input.waId, `${body}\n— Rafa`)
+    if (!sent.ok) throw new Error(sent.error)
+    if (applied) await askPendingPrices(input.waId, input.storeId)
+    return { ok: true as const, importId: String(invoice.id), itemCount: lines.length, exceptionCount: plan.duvidas.length }
+  }
+
+  if (input.autoApply) {
+    await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'invoice', text: `nota ${String(invoice.id).slice(0, 8)}${resolved.supplier_name ? ` de ${resolved.supplier_name}` : ''}: ${plan.novos.length} novos esperando preço, ${plan.duvidas.length} dúvidas`, data: { import_id: invoice.id } })
+  }
+
   const message = `${invoicePlanMessage(plan, resolved.supplier_name, reviewLink)}\n— Rafa`
   if (plan.entradas.length) {
     // Sim/Não para as entradas; o pedido de preço dos novos vem logo depois do Sim.
-    const sent = await askRafaConfirmation({ waId: input.waId, storeId: input.storeId, changes: plan.entradas, state, message })
+    const sent = await askRafaConfirmation({ waId: input.waId, storeId: input.storeId, changes: plan.entradas, state, message, invoiceImportId: String(invoice.id) })
     if (!sent.ok) throw new Error(sent.error)
   } else {
     const sent = await sendText(input.waId, message)

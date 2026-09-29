@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 
 import { extractRafaActions } from '@/lib/rafa-ai'
 import { askRafaConfirmation } from '@/lib/rafa-confirm'
-import { applyRafaChanges, loadRafaStore, persistRafaState, type RafaChange, type RafaStoreState } from '@/lib/inventory/rafa-store'
+import { loadRafaStore, type RafaChange, type RafaStoreState } from '@/lib/inventory/rafa-store'
+import { commitRafaChanges } from '@/lib/rafa-ops'
 import { batchPriceRequestMessage, belowCostWarning, parseBatchPrices, parsePriceAnswer, priceQuestion, registeredMessage } from '@/lib/rafa-price-flow'
 import { rememberSupplierProduct } from '@/lib/rafa-products'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -23,11 +24,14 @@ type Row = {
   proposed_price_cents: number | null
   supplier_cnpj: string | null
   supplier_code: string | null
+  invoice_import_id: string | null
 }
 
-const COLUMNS = 'id,store_id,wa_id,barcode,name,unit,quantity_milli,cost_cents,proposed_price_cents,supplier_cnpj,supplier_code'
+const COLUMNS = 'id,store_id,wa_id,barcode,name,unit,quantity_milli,cost_cents,proposed_price_cents,supplier_cnpj,supplier_code,invoice_import_id'
 
-function toRow(data: Record<string, unknown>): Row {
+export type PendingPriceRow = Row
+
+export function toPendingRow(data: Record<string, unknown>): Row {
   return {
     id: String(data.id), store_id: String(data.store_id), wa_id: String(data.wa_id),
     barcode: String(data.barcode), name: String(data.name), unit: String(data.unit || 'UN'),
@@ -35,6 +39,7 @@ function toRow(data: Record<string, unknown>): Row {
     proposed_price_cents: data.proposed_price_cents == null ? null : Number(data.proposed_price_cents),
     supplier_cnpj: data.supplier_cnpj ? String(data.supplier_cnpj) : null,
     supplier_code: data.supplier_code ? String(data.supplier_code) : null,
+    invoice_import_id: data.invoice_import_id ? String(data.invoice_import_id) : null,
   }
 }
 
@@ -52,14 +57,14 @@ export async function activePriceQuestion(waId: string): Promise<Row | null> {
     .order('asked_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  return data ? toRow(data) : null
+  return data ? toPendingRow(data) : null
 }
 
-async function remaining(storeId: string) {
+export async function remaining(storeId: string) {
   const { data } = await createAdminClient().from('rafa_pending_products')
     .select(COLUMNS).eq('store_id', storeId).eq('status', 'aguardando_preco')
     .order('created_at', { ascending: true }).limit(60)
-  return (data || []).map(toRow)
+  return (data || []).map(toPendingRow)
 }
 
 async function skippedCount(storeId: string) {
@@ -106,7 +111,7 @@ export async function startPriceQuestions(waId: string, storeId: string) {
   return true
 }
 
-function changesForPrice(row: Row, priceCents: number, state: RafaStoreState): RafaChange[] {
+export function changesForPrice(row: Row, priceCents: number, state: RafaStoreState): RafaChange[] {
   const existing = state.products.find((product) => product.barcode === row.barcode && !product.deletedAt)
   const deleted = state.products.find((product) => product.barcode === row.barcode && product.deletedAt)
   return existing
@@ -128,11 +133,20 @@ function changesForPrice(row: Row, priceCents: number, state: RafaStoreState): R
       }]
 }
 
-async function register(row: Row, priceCents: number, waId: string) {
-  const { state } = await loadRafaStore(row.store_id)
-  const changes = changesForPrice(row, priceCents, state)
-  const { state: after, audit } = applyRafaChanges(state, changes, { waId })
-  await persistRafaState({ storeId: row.store_id, waId, before: state, after, audit })
+export async function registerPendingPrice(row: Row, priceCents: number, waId: string) {
+  const committed = await commitRafaChanges({
+    storeId: row.store_id,
+    waId,
+    operationId: `pending_product:${row.id}:${priceCents}`,
+    tool: 'preco_produto_novo',
+    summary: `${row.name} cadastrado a ${money(priceCents)}`,
+    args: { pending_product_id: row.id, price_cents: priceCents },
+    sideEffects: { pending_product_ids: [row.id] },
+    invoiceImportId: row.invoice_import_id || undefined,
+    build: (state) => changesForPrice(row, priceCents, state),
+  })
+  if (committed.status === 'rejected') throw new Error(committed.message)
+  if (committed.status === 'duplicate') return
   await createAdminClient().from('rafa_pending_products').update({
     status: 'cadastrado', current: false, price_cents: priceCents, updated_at: new Date().toISOString(),
   }).eq('id', row.id)
@@ -200,7 +214,7 @@ async function handleBatch(waId: string, text: string, inReplyTo?: string): Prom
     if (!row) continue
     if (entry.cents < row.cost_cents) below.push({ row, cents: entry.cents })
     else {
-      await register(row, entry.cents, waId)
+      await registerPendingPrice(row, entry.cents, waId)
       saved.push({ row, cents: entry.cents })
     }
   }
@@ -277,7 +291,7 @@ export async function handlePriceAnswer(waId: string, text: string, inReplyTo?: 
     return true
   }
 
-  await register(row, answer.cents, waId)
+  await registerPendingPrice(row, answer.cents, waId)
   const next = await nextQuestionText(waId, row.store_id, false)
   await reply(`${registeredMessage(row, answer.cents)}\n\n${next.text}`, next.asking)
   return true

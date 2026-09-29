@@ -3,6 +3,8 @@ import 'server-only'
 
 import { createHash } from 'node:crypto'
 
+import { recordRafaEvent } from '@/lib/rafa-events'
+import { currentRafaSink } from '@/lib/rafa-sink'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fallbackTextForButtons, isConfirmationButtonSet } from '@/lib/rafa-conversation'
 
@@ -277,6 +279,26 @@ export async function enqueueWhatsApp(input: {
     }
   }
 
+  // Memória da conversa: o que a Rafa mandou vira evento (menus ociosos não entram).
+  if (!idle) {
+    const body = typeof input.payload.body === 'string' ? input.payload.body : ''
+    const isMainMenu = input.kind === 'menu_fallback' && Array.isArray(input.payload.buttons)
+      && (input.payload.buttons as Array<{ id?: string }>).some((button) => button?.id === RAFA_MAIN_MENU[0]?.id)
+    await recordRafaEvent({
+      waId: to,
+      direction: 'out',
+      kind: isMainMenu ? 'menu' : input.kind === 'text' ? 'text' : 'buttons',
+      text: body,
+    })
+  }
+
+  // Bateria de testes: guarda a mensagem em vez de mandar.
+  const sink = currentRafaSink()
+  if (sink) {
+    if (!idle) sink.messages.push({ to, kind: input.kind, body: typeof input.payload.body === 'string' ? input.payload.body : '', payload: input.payload, at: Date.now() })
+    return { ok: true, data: { sink: true } }
+  }
+
   const admin = createAdminClient()
   const idempotency_key = idempotencyKeyFor({ to, kind: input.kind, payload: input.payload, inReplyTo: input.inReplyTo, key: input.idempotencyKey })
 
@@ -321,6 +343,7 @@ export async function enqueueWhatsApp(input: {
 // "Digitando..." no WhatsApp enquanto a Rafa prepara a resposta. Não espera a Evolution
 // (ela segura a requisição pelo tempo do delay); só dispara.
 export function evoTyping(phone: string, seconds = 20) {
+  if (currentRafaSink()) return
   const base = process.env.EVOLUTION_API_URL?.trim().replace(/\/+$/, '')
   const key = process.env.EVOLUTION_API_KEY?.trim()
   if (!base || !key) return
@@ -443,6 +466,7 @@ export async function runOutboxWorker(): Promise<Record<string, number | string>
 // ---------- Leitura / mídia ----------
 
 export async function evoMarkAsRead(messageId: string, phone: string): Promise<EvoResult> {
+  if (currentRafaSink()) return { ok: true }
   const result = await evoRequest('POST', `/chat/markMessageAsRead/${encodeURIComponent(evolutionInstance())}`, {
     readMessages: [{ remoteJid: `${normalizePhone(phone)}@s.whatsapp.net`, fromMe: false, id: messageId }],
   })
@@ -450,6 +474,12 @@ export async function evoMarkAsRead(messageId: string, phone: string): Promise<E
 }
 
 export async function evoDownloadMedia(messageId: string): Promise<{ bytes: Uint8Array; mime: string; fileName: string | null }> {
+  const sink = currentRafaSink()
+  if (sink) {
+    const media = sink.media[messageId]
+    if (!media) throw new Error('eval media not found')
+    return { bytes: media.bytes, mime: media.mime, fileName: media.fileName ?? null }
+  }
   const result = await evoRequest('POST', `/chat/getBase64FromMediaMessage/${encodeURIComponent(evolutionInstance())}`, {
     message: { key: { id: messageId } },
     convertToMp4: false,

@@ -19,6 +19,11 @@ import { handlePriceAnswer } from '@/lib/rafa-price-questions'
 import { downloadWhatsAppMedia, mediaDataUri, storeInvoiceProof } from '@/lib/rafa-media'
 import { actionToChange, resolveTextProduct } from '@/lib/rafa-products'
 import { loadRafaStore, type RafaChange } from '@/lib/inventory/rafa-store'
+import { runRafaBrain } from '@/lib/rafa-brain'
+import { recordRafaEvent, updateRafaEvent } from '@/lib/rafa-events'
+import { withRafaLock } from '@/lib/rafa-ops'
+import { currentRafaSink } from '@/lib/rafa-sink'
+import { createAdminClient } from '@/lib/supabase/admin'
 import {
   confirmRafaWelcomePending,
   handleRafaWelcomeNumber,
@@ -111,6 +116,33 @@ function rafaAgentEnabled() {
 }
 
 
+// Rafa 3.0 (cérebro com contexto total). RAFA_BRAIN=v3 liga para todos; uma lista de números
+// (ex.: "5511999998888,5511...") liga só para eles (canário); vazio/v2 = comportamento antigo.
+export function rafaBrainEnabled(waId: string) {
+  if (currentRafaSink()?.forceBrain) return true
+  const flag = String(process.env.RAFA_BRAIN || '').trim().toLowerCase()
+  if (!flag || flag === 'v2' || flag === 'off') return false
+  if (flag === 'v3' || flag === 'on') return true
+  const digits = String(waId || '').replace(/\D/g, '')
+  return flag.split(/[,;\s]+/).map((item) => item.replace(/\D/g, '')).filter((item) => item.length >= 8)
+    .some((item) => digits.endsWith(item.slice(-11)) || item.endsWith(digits.slice(-11)))
+}
+
+// Fotos que o lojista mandou e a Rafa ainda não respondeu (últimos 3 min): vão junto para o cérebro.
+async function unansweredImageIds(waId: string) {
+  const admin = createAdminClient()
+  const { data: lastOut } = await admin.from('rafa_events').select('created_at').eq('wa_id', waId).eq('direction', 'out')
+    .order('created_at', { ascending: false }).limit(1).maybeSingle()
+  const floor = new Date(Math.max(Date.now() - 3 * 60_000, lastOut?.created_at ? Date.parse(String(lastOut.created_at)) : 0)).toISOString()
+  const { data } = await admin.from('rafa_events').select('id').eq('wa_id', waId).eq('direction', 'in').eq('kind', 'image')
+    .not('media_path', 'is', null).gte('created_at', floor).order('created_at', { ascending: true }).limit(4)
+  return (data || []).map((row) => String(row.id))
+}
+
+function imageExtension(mime: string) {
+  return mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg'
+}
+
 const BUDGET_MESSAGE = 'O limite de respostas livres de hoje foi atingido. Os botões continuam funcionando normalmente; respostas livres voltam amanhã.'
 
 export async function processValue(value: JsonRecord) {
@@ -148,7 +180,9 @@ export async function processValue(value: JsonRecord) {
     const result = await confirmRafaPending(fromPhone)
     if (result.kind === 'media') {
       try {
-        await processApprovedInvoiceMedia({ waId: fromPhone, storeId: result.storeId, importId: result.importId })
+        const v3 = rafaBrainEnabled(fromPhone)
+        if (v3) await sendText(fromPhone, 'Lendo sua nota, uns 20 segundos ⏳', { inReplyTo: wamid, noMenu: true })
+        await processApprovedInvoiceMedia({ waId: fromPhone, storeId: result.storeId, importId: result.importId, autoApply: v3 })
       } catch (error) {
         const budgetHit = error instanceof Error && error.message === 'rafa_ai_budget_exceeded'
         const missingKey = error instanceof Error && error.message.includes('GROQ_API_KEY')
@@ -196,8 +230,9 @@ export async function processValue(value: JsonRecord) {
     wamid: string,
     text: string,
     routing: ReturnType<typeof classifyWhatsAppText>,
-    extra?: { source: RafaAgentSource; attachment?: { label: string; content: string } },
+    extra?: { source: RafaAgentSource; attachment?: { label: string; content: string }; imageEventIds?: string[] },
   ) => {
+    const v3 = rafaBrainEnabled(fromPhone)
     if (routing.intent === 'opt_out' || routing.intent === 'opt_in') {
       const result = await sendText(fromPhone, replyForIntent(routing.intent), { inReplyTo: wamid })
       if (!result.ok) throw new Error(result.error)
@@ -232,7 +267,8 @@ export async function processValue(value: JsonRecord) {
     }
 
     // Pergunta de preço dos produtos novos da nota em andamento: "11,99", "pula", "para", "continuar preços".
-    if (isEvolutionProvider()) {
+    // Na Rafa 3.0 quem entende a resposta de preço é o cérebro (com contexto), não um parser fixo.
+    if (isEvolutionProvider() && !v3) {
       let handled = false
       try {
         handled = await handlePriceAnswer(fromPhone, text, wamid)
@@ -279,6 +315,32 @@ export async function processValue(value: JsonRecord) {
         const result = await sendText(fromPhone, 'Ainda não achei uma loja ligada a este número. Confere se o telefone cadastrado no Balcão é este mesmo, ou abra o Balcão pelo menu.\n— Rafa', { inReplyTo: wamid })
         if (!result.ok) throw new Error(result.error)
         return
+      }
+      if (v3) {
+        try {
+          const brain = await runRafaBrain({
+            waId: fromPhone,
+            storeId: resolved.storeId,
+            wamid,
+            text,
+            source: extra?.source || 'text',
+            attachment: extra?.attachment,
+            imageEventIds: extra?.imageEventIds ?? await unansweredImageIds(fromPhone).catch(() => []),
+          })
+          if (brain === 'budget') {
+            const result = await sendMenu(fromPhone, BUDGET_MESSAGE, { inReplyTo: wamid })
+            if (!result.ok) throw new Error(result.error)
+          }
+          return
+        } catch (error) {
+          // Falha do cérebro (API fora, etc.): cai para a Rafa antiga para não deixar sem resposta.
+          safeLogError(error, 'rafa_brain', privateValues)
+          if (extra?.imageEventIds?.length && !extra.attachment) {
+            const result = await sendText(fromPhone, 'Não consegui olhar essa foto agora. Me manda de novo em instantes?\n— Rafa', { inReplyTo: wamid })
+            if (!result.ok) throw new Error(result.error)
+            return
+          }
+        }
       }
       let outcome: Awaited<ReturnType<typeof runRafaAgent>>
       try {
@@ -402,6 +464,23 @@ export async function processValue(value: JsonRecord) {
     const fromPhone = typeof message.from === 'string' ? message.from : ''
     if (!wamid || !fromPhone) continue
 
+    // Memória da conversa: toda mensagem do lojista vira evento ANTES da fila por número,
+    // para a mensagem anterior (ainda processando) já enxergar que chegou coisa nova.
+    const inboundButtonTitle = typeof message.interactive?.button_reply?.title === 'string' ? message.interactive.button_reply.title
+      : typeof message.button?.text === 'string' ? message.button.text : null
+    await recordRafaEvent({
+      waId: fromPhone,
+      direction: 'in',
+      kind: ['text', 'audio', 'image', 'document'].includes(String(message.type)) ? String(message.type) : inboundButtonTitle ? 'button' : String(message.type || 'outro'),
+      text: message.type === 'text' ? String(message.text?.body || '')
+        : message.type === 'image' ? String(message.image?.caption || '')
+          : message.type === 'document' ? [message.document?.filename, message.document?.caption].filter(Boolean).join(' — ')
+            : inboundButtonTitle,
+      sourceId: wamid,
+    })
+
+    // Uma mensagem por vez por número: evita duas respostas cruzadas e escrita concorrente.
+    await withRafaLock(`wa:${fromPhone}`, async () => {
     const contact = contacts.find((item) => item.wa_id === fromPhone)
     const profileName = typeof contact?.profile?.name === 'string' ? contact.profile.name : null
     const rawText = message.type === 'text' && typeof message.text?.body === 'string' ? message.text.body : null
@@ -542,6 +621,7 @@ export async function processValue(value: JsonRecord) {
         }
 
         routedText = transcript
+        await updateRafaEvent(wamid, { text: transcript })
         const routing = classifyWhatsAppText(transcript)
         intentValue = routing.intent
         await routeOperationalText(fromPhone, wamid, transcript, routing, { source: 'audio' })
@@ -581,6 +661,41 @@ export async function processValue(value: JsonRecord) {
           return false
         }
 
+        const v3 = rafaBrainEnabled(fromPhone)
+
+        // Rafa 3.0: a foto vai direto para o cérebro (ele vê a imagem e decide: nota, produto, lista...).
+        if (v3 && kind === 'image') {
+          if (tooBig(media.bytes)) {
+            await reply('Essa foto é grande demais pra mim (máximo 8 MB). Me manda um print ou uma foto menor.\n— Rafa')
+            return
+          }
+          const stored = { ...media, filename: `foto-${wamid.replace(/[^a-zA-Z0-9]/g, '').slice(-16)}.${imageExtension(media.mime)}` }
+          const mediaPath = await storeInvoiceProof({ storeId, waId: fromPhone, media: stored })
+          await updateRafaEvent(wamid, { mediaPath, storeId })
+          // Várias fotos seguidas (ex.: nota em 2 partes): espera um pouco; se chegou foto mais nova,
+          // quem responde é a última, olhando todas juntas.
+          await new Promise((resolve) => setTimeout(resolve, Number(process.env.RAFA_PHOTO_DEBOUNCE_MS || 5000)))
+          const admin = createAdminClient()
+          const { data: mine } = await admin.from('rafa_events').select('id,created_at').eq('source_id', wamid).maybeSingle()
+          const { data: newer } = await admin.from('rafa_events').select('id').eq('wa_id', fromPhone).eq('direction', 'in')
+            .gt('created_at', String(mine?.created_at || new Date().toISOString())).limit(1)
+          if (newer?.length) {
+            intentValue = 'media_image_batched'
+            return
+          }
+          const { data: lastOut } = await admin.from('rafa_events').select('created_at').eq('wa_id', fromPhone).eq('direction', 'out')
+            .order('created_at', { ascending: false }).limit(1).maybeSingle()
+          const floor = new Date(Math.max(Date.now() - 3 * 60_000, lastOut?.created_at ? Date.parse(String(lastOut.created_at)) : 0)).toISOString()
+          const { data: batch } = await admin.from('rafa_events').select('id,text').eq('wa_id', fromPhone).eq('direction', 'in').eq('kind', 'image')
+            .not('media_path', 'is', null).gte('created_at', floor).order('created_at', { ascending: true }).limit(4)
+          const ids = [...new Set([...(batch || []).map((row) => String(row.id)), ...(mine?.id ? [String(mine.id)] : [])])]
+          const captions = (batch || []).map((row) => String(row.text || '').trim()).filter(Boolean)
+          intentValue = 'media_image_v3'
+          routedText = captions.join(' ') || caption || null
+          await routeOperationalText(fromPhone, wamid, captions.join('\n') || caption, classifyWhatsAppText(caption || 'foto'), { source: 'image', imageEventIds: ids })
+          return
+        }
+
         if (kind === 'unsupported') {
           await reply('Ainda não consigo abrir esse tipo de arquivo. Me manda em PDF, planilha (.xlsx ou .csv), foto ou print.\n— Rafa')
           return
@@ -594,6 +709,17 @@ export async function processValue(value: JsonRecord) {
         const invoiceFlow = async (classification: { classe: RafaMediaClass; descricao: string; fornecedor_nome?: string | null }) => {
           intentValue = 'media_nota_fiscal'
           const mediaPath = await storeInvoiceProof({ storeId, waId: fromPhone, media })
+          await updateRafaEvent(wamid, { mediaPath, storeId })
+          if (v3) {
+            // PDF/XML de nota é pedido claro: lê direto (dá pra desfazer), sem Sim/Não.
+            const { data: created, error } = await createAdminClient().from('rafa_invoice_imports').insert({
+              wa_id: fromPhone, store_id: storeId, media_paths: [mediaPath], classification, status: 'classified',
+            }).select('id').single()
+            if (error) throw error
+            await reply('Recebi a nota, lendo agora, uns 20 segundos ⏳')
+            await processApprovedInvoiceMedia({ waId: fromPhone, storeId, importId: String(created.id), autoApply: true })
+            return
+          }
           const appended = await appendInvoiceMedia({ waId: fromPhone, storeId, mediaPath, classification })
           const supplier = classification.fornecedor_nome ? ` da ${classification.fornecedor_nome}` : ''
           const pageText = appended.pageCount > 1 ? ` Recebi ${appended.pageCount} fotos dessa nota.` : ''
@@ -758,6 +884,7 @@ export async function processValue(value: JsonRecord) {
       }, { onConflict: 'wamid', ignoreDuplicates: true })
       if (error) throw error
     })
+    }, { waitMs: 150_000, ttlSeconds: 240 })
   }
 
   for (const status of asArray(value.statuses)) {
