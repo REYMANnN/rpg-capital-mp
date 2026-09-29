@@ -7,11 +7,11 @@ import { checkInvoice } from '@/lib/rafa-invoice-check'
 import { prepareInvoiceImages } from '@/lib/rafa-invoice-image'
 import { parseNfeXml } from '@/lib/inventory/nfe'
 import { isNfeXml, readPdfText } from '@/lib/rafa-files'
-import { buildInvoicePlan, invoicePlanMessage, type InvoicePlanLine } from '@/lib/rafa-invoice-plan'
+import { buildInvoicePlan, invoicePlanMessage, invoiceResultMessage, type InvoicePlanLine } from '@/lib/rafa-invoice-plan'
 import { loadInvoiceProofBytes, loadInvoiceProofDataUri } from '@/lib/rafa-media'
 import { resolveNamesToEan } from '@/lib/rafa-name-ean'
 import { savePendingProducts } from '@/lib/rafa-pending-products'
-import { startPriceQuestions } from '@/lib/rafa-price-questions'
+import { registerPendingPrice, startPriceQuestions, toPendingRow } from '@/lib/rafa-price-questions'
 import { isValidGtin } from '@/lib/whatsapp-router'
 import { resolveInvoiceExtraction } from '@/lib/rafa-products'
 import { commitRafaChanges } from '@/lib/rafa-ops'
@@ -145,6 +145,8 @@ export async function processApprovedInvoiceMedia(input: {
   importId: string
   // Rafa 3.0: entradas de produtos que já são da loja entram direto (com "desfaz"), sem Sim/Não.
   autoApply?: boolean
+  // Preços que o lojista já tinha dado numa leitura anterior da mesma nota (releitura).
+  knownPrices?: Array<{ barcode: string; name: string; priceCents: number }>
 }) {
   const admin = createAdminClient()
   const { data: invoice, error } = await admin.from('rafa_invoice_imports')
@@ -250,7 +252,7 @@ export async function processApprovedInvoiceMedia(input: {
     }
   }
 
-  const plan = buildInvoicePlan(state, resolved.lines as InvoicePlanLine[])
+  const plan = buildInvoicePlan(state, resolved.lines as InvoicePlanLine[], { lenient: input.autoApply })
 
   const lines = resolved.lines
   const unitCount = lines.reduce((sum: number, line: any) => sum + Math.max(0, Number(line.quantity || 0)), 0)
@@ -281,9 +283,20 @@ export async function processApprovedInvoiceMedia(input: {
     items: plan.novos,
   })
 
+  // Releitura: produto novo que já tinha preço dado pelo lojista é cadastrado de novo com esse preço.
+  if (input.knownPrices?.length) {
+    const norm = (value: string) => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+    const { data: fresh } = await admin.from('rafa_pending_products').select('*').eq('invoice_import_id', invoice.id).eq('status', 'aguardando_preco')
+    for (const row of fresh || []) {
+      const known = input.knownPrices.find((item) => item.barcode === row.barcode || norm(item.name) === norm(String(row.name)))
+      if (!known || !(Number(row.cost_cents) > 0)) continue
+      await registerPendingPrice(toPendingRow(row), known.priceCents, input.waId).catch((error) => console.error('reprice failed', error instanceof Error ? error.message : error))
+    }
+  }
+
   // Só as dúvidas precisam de tela: o link abre a conferência dessa nota.
   let reviewLink: string | undefined
-  if (plan.duvidas.length) {
+  if (plan.duvidas.length && !input.autoApply) {
     await admin.from('whatsapp_sessions').update({
       fluxo_atual: 'prateleira',
       etapa: 'conferencia_nota',
@@ -312,8 +325,8 @@ export async function processApprovedInvoiceMedia(input: {
       await admin.from('rafa_invoice_imports').update({ status: 'applied', applied_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', invoice.id)
     }
     const body = applied
-      ? invoicePlanMessage(plan, resolved.supplier_name, reviewLink, true)
-      : `${invoicePlanMessage(plan, resolved.supplier_name, reviewLink, false)}\n(Não consegui dar entrada agora: ${committed.status === 'rejected' ? committed.message : ''})`
+      ? invoiceResultMessage(state, plan, resolved.supplier_name)
+      : `${invoiceResultMessage(state, { ...plan, entradas: [] }, resolved.supplier_name)}\nNão consegui dar entrada nos que já eram da loja agora (${committed.status === 'rejected' ? committed.message : 'erro'}). Me manda a foto de novo em instantes.`
     await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'invoice', text: `nota ${String(invoice.id).slice(0, 8)}${resolved.supplier_name ? ` de ${resolved.supplier_name}` : ''}: ${plan.entradas.length} entradas ${applied ? 'aplicadas' : 'NÃO aplicadas'}, ${plan.novos.length} novos esperando preço, ${plan.duvidas.length} dúvidas`, data: { import_id: invoice.id } })
     const sent = await sendText(input.waId, `${body}\n— Rafa`)
     if (!sent.ok) throw new Error(sent.error)
@@ -322,7 +335,11 @@ export async function processApprovedInvoiceMedia(input: {
   }
 
   if (input.autoApply) {
-    await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'invoice', text: `nota ${String(invoice.id).slice(0, 8)}${resolved.supplier_name ? ` de ${resolved.supplier_name}` : ''}: ${plan.novos.length} novos esperando preço, ${plan.duvidas.length} dúvidas`, data: { import_id: invoice.id } })
+    await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'invoice', text: `nota ${String(invoice.id).slice(0, 8)}${resolved.supplier_name ? ` de ${resolved.supplier_name}` : ''}: ${plan.novos.length} novos esperando preço${plan.duvidas.length ? `; sem quantidade na foto: ${plan.duvidas.map((doubt) => doubt.description).join(", ")}` : ''}`, data: { import_id: invoice.id } })
+    const sent = await sendText(input.waId, `${invoiceResultMessage(state, plan, resolved.supplier_name)}\n— Rafa`)
+    if (!sent.ok) throw new Error(sent.error)
+    await askPendingPrices(input.waId, input.storeId)
+    return { ok: true as const, importId: String(invoice.id), itemCount: lines.length, exceptionCount: plan.duvidas.length }
   }
 
   const message = `${invoicePlanMessage(plan, resolved.supplier_name, reviewLink)}\n— Rafa`

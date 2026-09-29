@@ -1,4 +1,5 @@
-import { chooseEanByName } from '@/lib/rafa-ai'
+import { chooseEanByName, guessEansByName } from '@/lib/rafa-ai'
+import { resolveUniversalProduct } from '@/lib/inventory/catalog/resolver'
 import { detectBrand } from '@/lib/rafa-brands'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isValidGtin } from '@/lib/whatsapp-router'
@@ -104,6 +105,56 @@ async function openFoodFactsCandidates(terms: string): Promise<NameCandidate[]> 
   }
 }
 
+// Tamanho da descrição bate com o nome do produto achado? ("2L" x "2 litros"/"2000ml"; "500G" x "500 g")
+function sizeMatches(description: string, name: string) {
+  const size = sizeTerm(description)
+  if (!size) return true
+  const value = Number(size.replace(/[a-z]+$/, ''))
+  const unit = size.replace(/^[\d.]+/, '')
+  const flat = name.toLowerCase().replace(',', '.').replace(/\s+/g, '').replace(/litros?/g, 'l').replace(/gramas?/g, 'g')
+  const want = unit === 'l' ? [`${value}l`, `${value * 1000}ml`] : unit === 'kg' ? [`${value}kg`, `${value * 1000}g`]
+    : unit === 'ml' ? [`${value}ml`, `${value / 1000}l`] : unit === 'g' ? [`${value}g`, `${value / 1000}kg`] : [size]
+  return want.some((item) => flat.includes(item))
+}
+
+function namesOverlap(description: string, name: string) {
+  const want = searchTerms(description).split(' ').filter((word) => word.length >= 3)
+  if (!want.length) return false
+  const have = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const hits = want.filter((word) => have.includes(word.slice(0, Math.min(5, word.length))))
+  return hits.length / want.length >= 0.5
+}
+
+// Palpites de EAN da IA conferidos numa base real de produtos: só entra o código cujo produto
+// cadastrado tem o mesmo nome e tamanho da nota.
+async function verifiedGuesses(input: { storeId: string; waId: string; items: Array<{ index: number; description: string }> }) {
+  const out = new Map<number, NameCandidate[]>()
+  const guesses = await guessEansByName({ storeId: input.storeId, waId: input.waId, items: input.items.map((item) => ({ n: item.index, descricao: item.description })) }).catch(() => [])
+  const jobs: Array<{ index: number; description: string; ean: string }> = []
+  for (const guess of guesses) {
+    const item = input.items.find((row) => row.index === Number(guess.n))
+    if (!item) continue
+    for (const raw of (guess.eans || []).slice(0, 3)) {
+      const ean = String(raw || '').replace(/\D/g, '')
+      if (isValidGtin(ean)) jobs.push({ index: item.index, description: item.description, ean })
+    }
+  }
+  let next = 0
+  const worker = async () => {
+    while (next < jobs.length) {
+      const job = jobs[next++]
+      const found = await resolveUniversalProduct(job.ean, { totalDeadlineMs: 4000 }).catch(() => null)
+      const name = found?.found ? String(found.product?.name || '') : ''
+      if (!name || !namesOverlap(job.description, name) || !sizeMatches(job.description, name)) continue
+      const list = out.get(job.index) || []
+      list.push({ ean: job.ean, nome: name, marca: found?.product?.brand ? String(found.product.brand) : undefined })
+      out.set(job.index, list)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(8, jobs.length) }, worker))
+  return out
+}
+
 // items: índice da linha na nota + descrição. Busca externa limitada (Open Food Facts aceita ~10 buscas/min).
 export async function resolveNamesToEan(input: {
   storeId: string
@@ -115,12 +166,19 @@ export async function resolveNamesToEan(input: {
   if (!input.items.length) return out
   let external = input.maxExternalSearches ?? 10
   const prepared: Array<{ n: number; descricao: string; marca_detectada: string | null; candidatos: NameCandidate[] }> = []
-  const ordered = [...input.items].sort((a, b) => Number(b.lineValueCents || 0) - Number(a.lineValueCents || 0)).slice(0, 25)
+  const ordered = [...input.items].sort((a, b) => Number(b.lineValueCents || 0) - Number(a.lineValueCents || 0)).slice(0, 40)
+  const verified = await verifiedGuesses({ storeId: input.storeId, waId: input.waId, items: ordered }).catch(() => new Map<number, NameCandidate[]>())
   for (const item of ordered) {
+    const sure = verified.get(item.index) || []
+    // Palpite conferido na base com nome e tamanho batendo: é esse o produto.
+    if (sure.length === 1 || (sure.length > 1 && new Set(sure.map((candidate) => candidate.nome.toLowerCase())).size === 1)) {
+      out.set(item.index, { barcode: sure[0].ean, name: sure[0].nome.slice(0, 120) })
+      continue
+    }
     const terms = searchTerms(item.description)
     const brand = detectBrand(item.description)
     const type = productType(terms, brand)
-    let candidates = await cacheCandidates(terms, brand, type).catch(() => [])
+    let candidates = [...sure, ...(await cacheCandidates(terms, brand, type).catch(() => []))]
     if (candidates.length < 3 && external > 0) {
       external -= 1
       const query = [brand, type, sizeTerm(item.description)].filter(Boolean).join(' ') || terms

@@ -491,6 +491,33 @@ export async function chooseEanByName(input: {
   return Array.isArray(result?.itens) ? result.itens : []
 }
 
+// Palpite de código de barras pelo nome (conhecimento do modelo). NUNCA é usado direto:
+// cada código é conferido numa base de produtos (resolveUniversalProduct) antes de valer.
+export type EanGuess = { n: number; eans: string[] }
+export async function guessEansByName(input: { storeId: string; waId: string; items: Array<{ n: number; descricao: string }> }) {
+  if (!input.items.length) return [] as EanGuess[]
+  const result = await groqJson<{ itens?: EanGuess[] }>({
+    storeId: input.storeId,
+    waId: input.waId,
+    operation: 'invoice_name_ean_guess',
+    model: RAFA_TEXT_MODEL,
+    maxTokens: 6000,
+    messages: [{
+      role: 'user',
+      content: [
+        'Você conhece os códigos de barras (EAN-13/GTIN) de produtos vendidos em mercados do Brasil.',
+        'Para cada descrição abreviada de nota fiscal abaixo, liste até 3 códigos EAN que você acredita serem desse produto EXATO (mesma marca, tipo e tamanho). Brasil começa com 789 ou 790.',
+        'Se não souber, devolva lista vazia. Os códigos serão conferidos numa base real antes de usar, então prefira acertar a marca e o tamanho.',
+        'Abreviações: REFRIG=refrigerante, PET=garrafa, LT=lata, ACHOC=achocolatado, BISC=biscoito, CR DENTAL=creme dental, PAPEL HIG=papel higiênico, FD=fardo, T1=tipo 1, TRAD=tradicional, C/SAL=com sal.',
+        'Responda só JSON: {"itens":[{"n":0,"eans":["7894900027013"]},{"n":1,"eans":[]}]}',
+        '',
+        JSON.stringify(input.items),
+      ].join('\n'),
+    }],
+  })
+  return Array.isArray(result?.itens) ? result.itens : []
+}
+
 // Nota em PDF (DANFE com texto) ou XML: mesma extração, lendo o texto em vez da foto.
 export async function extractRafaInvoiceText(input: {
   storeId: string

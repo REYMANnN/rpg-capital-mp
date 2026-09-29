@@ -1,6 +1,15 @@
 import type { RafaChange, RafaStoreState } from '@/lib/inventory/rafa-store'
 import type { RafaProductResolution } from '@/lib/rafa-products'
-import { isValidGtin } from '@/lib/whatsapp-router'
+
+// Dígito verificador de EAN-8/12/13/14 (cópia local: módulo puro, testável sem o Next).
+function isValidGtin(value: string) {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (![8, 12, 13, 14].includes(digits.length) || digits !== String(value || '').trim()) return false
+  const nums = digits.split('').map(Number)
+  const check = nums.pop()!
+  const sum = nums.reverse().reduce((total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1), 0)
+  return (10 - (sum % 10)) % 10 === check
+}
 
 // Nota fiscal → estoque, sem tela: o que já é da loja vira entrada (Sim/Não),
 // o que é novo e tem EAN espera só o preço de venda do lojista, e o resto vai para conferência.
@@ -48,7 +57,47 @@ function niceName(value: string) {
     .replace(/(\d)(Kg|G|Ml|L|Un)\b/g, (_, digit, unit) => digit + unit.toLowerCase()).slice(0, 120)
 }
 
-export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]): InvoicePlan {
+// ---------- Rafa 3.0: toda linha da nota termina em "entrou" ou "novo esperando preço" ----------
+
+const STOP = new Set(['de', 'da', 'do', 'com', 'sem', 'tipo', 't1', 'tp', 'trad', 'tradicional', 'pet', 'un', 'und', 'cx', 'pct', 'fd'])
+function tokens(value: string) {
+  return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').split(' ').filter((token) => token.length >= 3 && !STOP.has(token) && !/^\d+(g|kg|ml|l|m)?$/.test(token))
+}
+
+// O nome achado no catálogo é mesmo o produto da nota? (evita "LEITE ITALAC" virar "Leite Condensado Moça")
+export function sameProductName(description: string, candidate: string) {
+  const wanted = tokens(description)
+  if (!wanted.length) return true
+  const have = new Set(tokens(candidate))
+  const hits = wanted.filter((token) => [...have].some((word) => word.startsWith(token.slice(0, 4)) || token.startsWith(word.slice(0, 4))))
+  return hits.length / wanted.length >= 0.6
+}
+
+function checkDigit(body: string) {
+  const sum = body.split('').reverse().reduce((total, digit, index) => total + Number(digit) * (index % 2 === 0 ? 3 : 1), 0)
+  return String((10 - (sum % 10)) % 10)
+}
+
+// Código interno (EAN-13 com prefixo 04, de uso restrito da loja) para produto sem código de barras
+// na nota. O mesmo nome gera sempre o mesmo código, então a próxima nota acha o produto.
+export function internalBarcodeFor(description: string) {
+  const key = tokens(description).join(' ') || String(description).toLowerCase()
+  let hash = 2166136261
+  for (let index = 0; index < key.length; index += 1) {
+    hash ^= key.charCodeAt(index)
+    hash = Math.imul(hash, 16777619) >>> 0
+  }
+  const body = `04${String(hash % 10_000_000_000).padStart(10, '0')}`
+  return body + checkDigit(body)
+}
+
+function normalizedName(value: string) {
+  return tokens(value).join(' ')
+}
+
+export function buildInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[], options?: { lenient?: boolean }): InvoicePlan {
+  if (options?.lenient) return buildLenientInvoicePlan(state, lines)
   const plan: InvoicePlan = { entradas: [], novos: [], duvidas: [] }
   const byId = new Map(state.products.filter((product) => !product.deletedAt).map((product) => [product.id, product]))
   const entradas = new Map<string, { quantityMilli: number; totalCostCents: number }>()
@@ -208,4 +257,102 @@ export function pendingProductsBlock(rows: PendingProductRow[]) {
     ...rows.slice(0, 40).map((row, index) => [index + 1, row.name, row.barcode, money(Number(row.cost_cents)), units(Number(row.quantity_milli))].join(' | ')),
     'Quando o lojista disser os preços (por número ou nome, texto ou áudio), chame propor_alteracoes com tipo cadastrar para cada um: ean e nome desta lista, preco_reais que ELE falou, custo_reais e estoque_inicial desta lista. Nunca sugira nem invente preço de venda; se faltar o preço de algum, pergunte só esse.',
   ].join('\n')
+}
+
+function buildLenientInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]): InvoicePlan {
+  const plan: InvoicePlan = { entradas: [], novos: [], duvidas: [] }
+  const active = state.products.filter((product) => !product.deletedAt)
+  const byId = new Map(active.map((product) => [product.id, product]))
+  const byBarcode = new Map(active.map((product) => [product.barcode, product]))
+  const byName = new Map(active.map((product) => [normalizedName(product.name), product]))
+  const entradas = new Map<string, { quantityMilli: number; totalCostCents: number }>()
+  const novos = new Map<string, PendingNewProduct>()
+
+  const addEntrada = (productId: string, quantityMilli: number, costCents: number) => {
+    const current = entradas.get(productId) || { quantityMilli: 0, totalCostCents: 0 }
+    current.quantityMilli += quantityMilli
+    current.totalCostCents += costCents * quantityMilli / 1000
+    entradas.set(productId, current)
+  }
+  const addNovo = (barcode: string, name: string, brand: string, quantityMilli: number, costCents: number, line: InvoicePlanLine) => {
+    const current = novos.get(barcode)
+    if (current) {
+      const total = current.costCents * current.quantityMilli + costCents * quantityMilli
+      current.quantityMilli += quantityMilli
+      current.costCents = current.quantityMilli ? Math.round(total / current.quantityMilli) : costCents
+      return
+    }
+    novos.set(barcode, { barcode, name: name.slice(0, 120), brand, quantityMilli, costCents, unit: isKg(line.unit_package) ? 'KG' : 'UN', supplierCode: line.supplier_code || null })
+  }
+
+  for (const line of lines) {
+    const description = String(line.description || '').trim().slice(0, 120)
+    const ean = String(line.ean || '').replace(/\D/g, '')
+    if (!description && !isValidGtin(ean)) {
+      plan.duvidas.push({ description: 'linha sem nome', reason: 'linha ilegível' })
+      continue
+    }
+    // Quantidade e custo: usa o que foi lido; se faltar um, calcula pelo total da linha.
+    let quantity = Number(line.quantity || 0)
+    let unitCost = Math.round(Number(line.unit_cost_cents || 0))
+    const total = Math.round(Number((line as { total_cents?: number }).total_cents || 0))
+    if (!(unitCost > 0) && total > 0 && quantity > 0) unitCost = Math.round(total / quantity)
+    if (!(quantity > 0) && total > 0 && unitCost > 0) quantity = Math.round((total / unitCost) * 1000) / 1000
+    const quantityMilli = Math.max(0, Math.round(quantity * 1000))
+    const costCents = Math.max(0, unitCost)
+
+    const resolution = line.resolution
+    // 1) Já é da loja: pelo produto resolvido, pelo EAN ou pelo mesmo nome de uma nota anterior.
+    const resolvedId = resolution?.status === 'resolved' && resolution.candidate.id && byId.has(resolution.candidate.id) ? resolution.candidate.id : null
+    const storeMatch = (resolvedId && byId.get(resolvedId))
+      || (isValidGtin(ean) ? byBarcode.get(ean) : undefined)
+      || byName.get(normalizedName(niceName(description)))
+      || byBarcode.get(internalBarcodeFor(description))
+    if (storeMatch) {
+      const cost = costCents || Math.round(storeMatch.averageCostCents || 0)
+      if (quantityMilli > 0 && cost > 0) addEntrada(storeMatch.id, quantityMilli, cost)
+      else plan.duvidas.push({ description: storeMatch.name, reason: 'a quantidade não aparece na foto' })
+      continue
+    }
+    // 2) Produto novo: EAN do catálogo (se o nome bater), EAN da nota ou código interno.
+    const candidate = resolution?.status === 'new' && isValidGtin(resolution.candidate.barcode) && sameProductName(description, String(resolution.candidate.name || ''))
+      ? resolution.candidate : null
+    if (candidate) {
+      addNovo(candidate.barcode, String(candidate.name || niceName(description)), String(candidate.brand || ''), quantityMilli, costCents, line)
+    } else if (isValidGtin(ean) && !byBarcode.has(ean)) {
+      addNovo(ean, niceName(description), '', quantityMilli, costCents, line)
+    } else {
+      addNovo(internalBarcodeFor(description), niceName(description), '', quantityMilli, costCents, line)
+    }
+  }
+
+  for (const [productId, entry] of entradas) {
+    const product = byId.get(productId)!
+    plan.entradas.push({
+      kind: 'entrada',
+      productId,
+      expectedStockMilli: product.stockMilli,
+      quantityMilli: entry.quantityMilli,
+      unitCostCents: Math.max(1, Math.round(entry.totalCostCents * 1000 / entry.quantityMilli)),
+      reason: 'nota fiscal',
+    })
+  }
+  plan.novos = [...novos.values()]
+  return plan
+}
+
+// Resumo da nota na Rafa 3.0: só o que foi feito e o que ficou na lista (nada de "problemas").
+export function invoiceResultMessage(state: RafaStoreState, plan: InvoicePlan, supplier: string | null) {
+  const names = new Map(state.products.map((product) => [product.id, product.name]))
+  const total = plan.entradas.length + plan.novos.length + plan.duvidas.length
+  if (!total) return `Não consegui ler os itens dessa nota${supplier ? ` de ${supplier}` : ''}. Me manda uma foto mais de perto, reta e com boa luz (pode ser em partes), ou o PDF/XML.`
+  const lines = [`Li a nota${supplier ? ` de ${supplier}` : ''}: ${total} produto(s).`]
+  if (plan.entradas.length) {
+    const shown = plan.entradas.slice(0, 6).map((entry) => `${names.get(entry.productId) || 'produto'} +${units(entry.quantityMilli)}`)
+    lines.push(`• ${plan.entradas.length} já eram da loja e entraram no estoque: ${shown.join(', ')}${plan.entradas.length > 6 ? '…' : ''}`)
+  }
+  if (plan.novos.length) lines.push(`• ${plan.novos.length} são novos e ficaram na sua lista esperando o preço de venda (te mando a lista agora).`)
+  if (plan.duvidas.length) lines.push(`• ${plan.duvidas.length} sem quantidade legível: ${plan.duvidas.slice(0, 3).map((doubt) => doubt.description).join(', ')}. Me fala a quantidade que eu lanço.`)
+  if (plan.entradas.length) lines.push('', 'Se algo não bater, é só falar "desfaz".')
+  return lines.join('\n')
 }

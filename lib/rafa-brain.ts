@@ -84,6 +84,7 @@ function systemPrompt(storeName: string, otherStores: number) {
     '• Preço de venda de produto novo SÓ o lojista define. Nunca sugira nem invente preço de venda.',
     '• Produtos esperando preço: quando o lojista disser os preços (por número, nome, texto ou áudio, até fora de ordem), use salvar_precos com os ids da lista EM ANDAMENTO.',
     '• Confirmação aberta: se ele concordar (com qualquer palavra), use confirmar_pendente; se recusar, recusar_pendente. Se ele pedir outra coisa, a confirmação continua aberta; não a repita a cada mensagem.',
+    '• "Lê de novo", "tenta de novo a nota", "sobe o resto": use ler_nota com a mesma foto (o servidor desfaz a leitura anterior antes, nada entra em dobro).',
     '• Nota fiscal / cupom de compra em foto: use ler_nota (ela lê, dá entrada no que já é da loja e pede preço dos novos). Se na conversa tem outras fotos da mesma nota recentes, passe todas em foto_ids. Foto que não é nota (produto, prateleira, lista, caderno): descreva em 1 linha o que viu e faça o que ele pediu, ou pergunte o que ele quer.',
     '• "desfaz", "volta", "errei", "não era isso" logo depois de uma alteração: use desfazer.',
     '• LISTA DE PENDÊNCIAS: o bloco EM ANDAMENTO é a sua lista de tarefas com esse lojista. Ela é dele: se ele disser "esquece", "deixa pra lá", "não precisa", "para de perguntar", "não vou cadastrar", "ignora" sobre algo da lista, use esquecer_pendencias (só o que ele citou, ou tudo se ele falou em geral) e confirme em 1 linha o que saiu da lista. Nunca mais cobre o que foi esquecido. "Esquece" sobre preços de nota NÃO desfaz as entradas já feitas: diga que as entradas continuam e que, se quiser tirar a nota inteira do estoque, é só falar. Se ele pedir para apagar/cancelar/desfazer a nota inteira, use desfazer_nota.',
@@ -157,7 +158,7 @@ function workingBlock(ctx: WorkingContext) {
   }
   if (ctx.pendingProducts.length) {
     lines.push(`• PRODUTOS NOVOS ESPERANDO PREÇO DE VENDA (${ctx.pendingProducts.length}). id | nome | EAN | custo | quantidade:`)
-    ctx.pendingProducts.slice(0, 40).forEach((row) => lines.push(`  ${short(row.id)} | ${row.name} | ${row.barcode} | ${money(row.cost_cents)} | ${units(row.quantity_milli)}`))
+    ctx.pendingProducts.slice(0, 60).forEach((row) => lines.push(`  ${short(row.id)} | ${row.name} | ${row.barcode.startsWith('04') ? 'sem EAN (código interno)' : row.barcode} | ${row.cost_cents > 0 ? money(row.cost_cents) : 'CUSTO NÃO VEIO NA NOTA'} | ${units(row.quantity_milli)}`))
   }
   if (ctx.invoices.length) {
     lines.push('• NOTAS DAS ÚLTIMAS 48 H. id | quando | status | fornecedor | itens:')
@@ -230,7 +231,7 @@ const TOOLS: ClaudeTool[] = [
     input_schema: {
       type: 'object',
       properties: {
-        precos: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, preco_reais: { type: 'number' } }, required: ['id', 'preco_reais'] } },
+        precos: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, preco_reais: { type: 'number' }, custo_reais: { type: 'number', description: 'só se o lojista disser o custo (obrigatório quando a lista diz que o custo não veio na nota)' } }, required: ['id', 'preco_reais'] } },
         pular: { type: 'array', items: { type: 'string' }, description: 'ids que o lojista quer deixar pra depois' },
       },
     },
@@ -433,6 +434,21 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
         const chosen = ids.length ? ids.map((id) => byPrefix(imageEvents, id)).filter((event): event is RafaEventRow => Boolean(event)) : currentImages
         const paths = [...new Set(chosen.map((event) => String(event.media_path || '')).filter(Boolean))]
         if (!paths.length) return { result: { erro: 'Não achei a foto da nota. Peça para o lojista mandar a foto.' } }
+        // Mesma foto já lida antes: desfaz a leitura anterior primeiro, para nada entrar em dobro.
+        const { data: previous } = await admin.from('rafa_invoice_imports').select('id,media_paths,status')
+          .eq('store_id', input.storeId).in('status', ['applied', 'ready', 'pending_review'])
+          .gte('created_at', new Date(Date.now() - 7 * 86_400_000).toISOString()).limit(20)
+        const knownPrices: Array<{ barcode: string; name: string; priceCents: number }> = []
+        for (const old of previous || []) {
+          const oldPaths = Array.isArray(old.media_paths) ? (old.media_paths as string[]) : []
+          if (!oldPaths.some((path) => paths.includes(path))) continue
+          const { data: priced } = await admin.from('rafa_pending_products').select('barcode,name,price_cents').eq('invoice_import_id', old.id).eq('status', 'cadastrado')
+          for (const row of priced || []) if (Number(row.price_cents) > 0) knownPrices.push({ barcode: String(row.barcode), name: String(row.name), priceCents: Number(row.price_cents) })
+          const undone = await undoRafaInvoice({ storeId: input.storeId, waId: input.waId, invoiceImportId: String(old.id) })
+          if (undone.status === 'blocked') return { result: { erro: `Essa nota já tinha sido lida e mexeram nos produtos depois; não releio para não duplicar. ${undone.message}` } }
+          await admin.from('rafa_invoice_imports').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', old.id)
+          await admin.from('rafa_pending_products').update({ status: 'descartado', current: false, updated_at: new Date().toISOString() }).eq('invoice_import_id', old.id).in('status', ['aguardando_preco', 'pulado'])
+        }
         const { data: created, error } = await admin.from('rafa_invoice_imports').insert({
           wa_id: input.waId,
           store_id: input.storeId,
@@ -443,7 +459,7 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
         if (error) throw error
         await reply(paths.length > 1 ? `Lendo sua nota (${paths.length} fotos), uns 30 segundos ⏳` : 'Lendo sua nota, uns 20 segundos ⏳', true)
         try {
-          await processApprovedInvoiceMedia({ waId: input.waId, storeId: input.storeId, importId: String(created.id), autoApply: true })
+          await processApprovedInvoiceMedia({ waId: input.waId, storeId: input.storeId, importId: String(created.id), autoApply: true, knownPrices })
         } catch (error) {
           console.error('rafa brain invoice failed', error instanceof Error ? error.message : error)
           await admin.from('rafa_invoice_imports').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', created.id)
@@ -463,6 +479,12 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
           const cents = Math.round(Number(entry?.preco_reais) * 100)
           if (!row) { errors.push(`id ${entry?.id} não está esperando preço`); continue }
           if (!(cents > 0)) { errors.push(`preço inválido para ${row.name}`); continue }
+          const informedCost = Math.round(Number(entry?.custo_reais) * 100)
+          if (informedCost > 0) {
+            row.cost_cents = informedCost
+            await admin.from('rafa_pending_products').update({ cost_cents: informedCost, updated_at: new Date().toISOString() }).eq('id', row.id)
+          }
+          if (!(row.cost_cents > 0)) { errors.push(`falta o custo de ${row.name} (não veio na nota): pergunte o custo`); continue }
           if (cents < row.cost_cents) { below.push({ row, cents }); continue }
           try {
             await registerPendingPrice(row, cents, input.waId)

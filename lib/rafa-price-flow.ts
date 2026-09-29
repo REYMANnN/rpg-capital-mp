@@ -150,7 +150,7 @@ export function parseBatchPrices(raw: string, items: BatchPriceItem[]): BatchPri
 }
 
 export function batchPriceRequestMessage(rows: QuestionRow[]) {
-  const list = rows.map((row, index) => `${index + 1}. ${row.name} (custo ${money(row.cost_cents)}${row.unit === 'KG' ? '/kg' : ''})`)
+  const list = rows.map((row, index) => `${index + 1}. ${row.name} (${row.cost_cents > 0 ? `custo ${money(row.cost_cents)}${row.unit === 'KG' ? '/kg' : ''}` : 'custo não aparece na nota: me diz o custo também'})`)
   return [
     `Faltam os preços de venda de ${rows.length} produto${rows.length === 1 ? '' : 's'} da nota:`,
     ...list,
