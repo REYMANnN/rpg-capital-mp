@@ -1,0 +1,173 @@
+diff --git a/app/admin/AdminDashboard.tsx b/app/admin/AdminDashboard.tsx
+index 97e1b70..15ce1c0 100644
+--- a/app/admin/AdminDashboard.tsx
++++ b/app/admin/AdminDashboard.tsx
+@@ -57,26 +57,22 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
+   const [tab, setTab] = useState<Tab>('convites')
+   const [busy, setBusy] = useState(false)
+   const [notice, setNotice] = useState('')
+-  const [inviteeName, setInviteeName] = useState('')
+-  const [inviteePhone, setInviteePhone] = useState('')
+-  const [storeNameHint, setStoreNameHint] = useState('')
+-  const [created, setCreated] = useState<{ name: string; phone: string | null; link: string } | null>(null)
++  const [created, setCreated] = useState<{ link: string } | null>(null)
+   const [pixKey, setPixKey] = useState(data.settings.pixKey)
+   const [planPrice, setPlanPrice] = useState((data.settings.planPriceCents / 100).toFixed(2).replace('.', ','))
+ 
+   async function createInvite() {
+-    if (busy || !inviteeName.trim()) return
++    if (busy) return
+     setBusy(true); setNotice('')
+     const response = await fetch('/api/admin/coupons', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+-      body: JSON.stringify({ inviteeName, inviteePhone, storeNameHint }),
++      body: JSON.stringify({}),
+     })
+-    const body = await response.json().catch(() => ({})) as { link?: string; inviteeName?: string; inviteePhone?: string | null }
++    const body = await response.json().catch(() => ({})) as { link?: string }
+     setBusy(false)
+-    if (!response.ok || !body.link) { setNotice('Não consegui criar o convite.'); return }
+-    setCreated({ name: body.inviteeName || inviteeName.trim(), phone: body.inviteePhone || null, link: body.link })
+-    setInviteeName(''); setInviteePhone(''); setStoreNameHint('')
++    if (!response.ok || !body.link) { setNotice('Não consegui gerar o link.'); return }
++    setCreated({ link: body.link })
+     router.refresh()
+   }
+ 
+@@ -147,27 +143,15 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
+       {tab === 'convites' && <>
+         <Section title="Novo convite">
+           <div className="rounded-2xl border border-slate-200 bg-white p-5">
+-            <div className="grid gap-3 md:grid-cols-3">
+-              <label className="text-sm font-semibold">Nome da pessoa *
+-                <input value={inviteeName} onChange={(e) => setInviteeName(e.target.value)} placeholder="Teste" className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 font-normal outline-none focus:border-slate-900" />
+-              </label>
+-              <label className="text-sm font-semibold">WhatsApp
+-                <input value={inviteePhone} onChange={(e) => setInviteePhone(e.target.value)} placeholder="(12) 99999-9999" className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 font-normal outline-none focus:border-slate-900" />
+-              </label>
+-              <label className="text-sm font-semibold">Nome da loja
+-                <input value={storeNameHint} onChange={(e) => setStoreNameHint(e.target.value)} placeholder="Mercadinho do João" className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 font-normal outline-none focus:border-slate-900" />
+-              </label>
+-            </div>
+-            <button onClick={createInvite} disabled={busy || !inviteeName.trim()} className="mt-4 min-h-12 rounded-xl bg-slate-950 px-6 font-bold text-white disabled:opacity-50">Gerar convite</button>
++            <p className="text-sm text-slate-600">Cada link cria <b>uma conta só</b>, sem cartão. Gera, copia e manda pra pessoa.</p>
++            <button onClick={createInvite} disabled={busy} className="mt-4 min-h-12 rounded-xl bg-slate-950 px-6 font-bold text-white disabled:opacity-50">{busy ? 'Gerando…' : 'Gerar link'}</button>
+             {created && (() => {
+-              const message = inviteMessage(created.name, created.link)
+-              const wa = created.phone ? inviteWhatsAppUrl(created.phone, message) : ''
++              const message = inviteMessage('', created.link)
+               return <div className="mt-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-950">
+                 <p className="break-all font-semibold">{created.link}</p>
+                 <div className="mt-3 flex flex-wrap gap-2">
+                   <button onClick={() => copy(created.link)} className="rounded-full bg-emerald-700 px-4 py-2 font-semibold text-white">Copiar link</button>
+                   <button onClick={() => copy(message)} className="rounded-full border border-emerald-700 px-4 py-2 font-semibold text-emerald-800">Copiar mensagem</button>
+-                  {wa && <a href={wa} target="_blank" rel="noreferrer" className="rounded-full border border-emerald-700 px-4 py-2 font-semibold text-emerald-800">Abrir no WhatsApp</a>}
+                 </div>
+               </div>
+             })()}
+@@ -184,7 +168,7 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
+                   const wa = invite.inviteePhone ? inviteWhatsAppUrl(invite.inviteePhone, message) : ''
+                   const revoked = Boolean(invite.revokedAt) || invite.status === 'cancelled'
+                   return <tr key={invite.code} className="border-t border-slate-100 align-top">
+-                    <td className="p-3"><div className="font-semibold">{invite.inviteeName}</div><div className="text-xs text-slate-500">{invite.storeNameHint || invite.businessName || 'loja não informada'}{invite.inviteePhone ? ` · ${invite.inviteePhone}` : ''}</div><div className="mt-1 text-xs text-slate-400">Criado {date(invite.createdAt)}</div></td>
++                    <td className="p-3"><div className="font-semibold">{invite.businessName || invite.inviteeName || 'Ainda não usado'}</div><div className="font-mono text-xs text-slate-500">{invite.code}{invite.inviteePhone ? ` · ${invite.inviteePhone}` : ''}</div><div className="mt-1 text-xs text-slate-400">Criado {date(invite.createdAt)}</div></td>
+                     <td className="max-w-[290px] p-3"><span className="break-all text-xs">{invite.link}</span></td>
+                     <td className="p-3">{revoked ? <span className="font-bold text-rose-700">Revogado</span> : <Timeline invite={invite} />}</td>
+                     <td className="p-3"><div className="flex min-w-[150px] flex-wrap gap-2">
+diff --git a/app/api/admin/coupons/route.ts b/app/api/admin/coupons/route.ts
+index bfb10cd..5297790 100644
+--- a/app/api/admin/coupons/route.ts
++++ b/app/api/admin/coupons/route.ts
+@@ -12,7 +12,6 @@ export async function POST(request: NextRequest) {
+   if (!isAdminRequest(request)) return denied()
+   const body = await request.json().catch(() => null) as { inviteeName?: unknown; inviteePhone?: unknown; storeNameHint?: unknown } | null
+   const inviteeName = typeof body?.inviteeName === 'string' ? body.inviteeName.trim() : ''
+-  if (!inviteeName) return NextResponse.json({ ok: false, error: 'invitee_name_required' }, { status: 400 })
+   try {
+     const invite = await createInvite({
+       inviteeName,
+diff --git a/app/convite/[code]/page.tsx b/app/convite/[code]/page.tsx
+index 4ff2c27..effaa8a 100644
+--- a/app/convite/[code]/page.tsx
++++ b/app/convite/[code]/page.tsx
+@@ -19,7 +19,7 @@ export default async function InvitePage({ params }: { params: Promise<{ code: s
+       <p className="text-sm font-bold tracking-[0.18em] text-blue-700">BALCÃO · RPG CAPITAL</p>
+       <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+         {valid && code ? <>
+-          <h1 className="text-3xl font-bold tracking-tight">Oi, {String(data?.invitee_name || 'tudo bem')}! Seu acesso ao Balcão está pronto.</h1>
++          <h1 className="text-3xl font-bold tracking-tight">Oi{data?.invitee_name ? `, ${String(data.invitee_name)}` : ''}! Seu acesso ao Balcão está pronto.</h1>
+           <p className="mt-3 text-base leading-7 text-slate-600">Leva poucos minutos. Você entra com Google, cadastra a loja e conecta o banco. Não precisa de cartão.</p>
+           <div className="mt-7"><InviteGoogleStart code={code} /></div>
+         </> : <>
+diff --git a/lib/admin/invite-core.ts b/lib/admin/invite-core.ts
+index fffac8f..014e334 100644
+--- a/lib/admin/invite-core.ts
++++ b/lib/admin/invite-core.ts
+@@ -12,8 +12,9 @@ export function inviteLink(code: string) {
+   return `${INVITE_SITE_URL}/convite/${String(code || '').trim().toUpperCase()}`
+ }
+ 
+-export function inviteMessage(name: string, link: string) {
+-  return `Oi, ${name.trim()}! Criei um acesso pra você testar o Balcão da RPG, de graça. Leva 3 minutos: ${link}`
++export function inviteMessage(name: string | null | undefined, link: string) {
++  const who = String(name || '').trim()
++  return `Oi${who ? `, ${who}` : ''}! Criei um acesso pra você testar o Balcão da RPG, de graça. Leva 3 minutos: ${link}`
+ }
+ 
+ export function billingMessage(name: string, priceCents: number, pixKey: string) {
+diff --git a/lib/admin/invites.ts b/lib/admin/invites.ts
+index af44411..39363d3 100644
+--- a/lib/admin/invites.ts
++++ b/lib/admin/invites.ts
+@@ -4,9 +4,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
+ import { newCouponCode, normalizeCouponCode } from '@/lib/admin/core'
+ import { inviteLink, normalizeInvitePhone, paidUntilDate } from '@/lib/admin/invite-core'
+ 
+-export async function createInvite(input: { inviteeName: string; inviteePhone?: string; storeNameHint?: string }) {
+-  const inviteeName = input.inviteeName.trim().slice(0, 120)
+-  if (!inviteeName) throw new Error('invitee_name_required')
++// Convite = link de uso único para criar UMA conta. Nenhum dado é obrigatório: o admin só gera e manda.
++export async function createInvite(input: { inviteeName?: string; inviteePhone?: string; storeNameHint?: string } = {}) {
++  const inviteeName = String(input.inviteeName || '').trim().slice(0, 120)
+   const inviteePhone = normalizeInvitePhone(input.inviteePhone || '')
+   const storeNameHint = String(input.storeNameHint || '').trim().slice(0, 160)
+   const admin = createAdminClient()
+@@ -14,8 +14,8 @@ export async function createInvite(input: { inviteeName: string; inviteePhone?:
+     const code = newCouponCode()
+     const { error } = await admin.from('balcao_coupons').insert({
+       code,
+-      note: inviteeName,
+-      invitee_name: inviteeName,
++      note: inviteeName || 'Convite',
++      invitee_name: inviteeName || null,
+       invitee_phone: inviteePhone || null,
+       store_name_hint: storeNameHint || null,
+     })
+diff --git a/lib/admin/metrics.ts b/lib/admin/metrics.ts
+index b205cf9..823c20b 100644
+--- a/lib/admin/metrics.ts
++++ b/lib/admin/metrics.ts
+@@ -256,7 +256,7 @@ export async function loadAdminMetrics() {
+       note: String(row.note || ''),
+       status: String(row.status),
+       link: couponLink(String(row.code)),
+-      inviteeName: String(row.invitee_name || row.note || 'Convidado'),
++      inviteeName: String(row.invitee_name || ''),
+       inviteePhone: row.invitee_phone ? String(row.invitee_phone) : null,
+       storeNameHint: row.store_name_hint ? String(row.store_name_hint) : null,
+       createdAt: String(row.created_at),
+diff --git a/tests/invite-onboarding.test.ts b/tests/invite-onboarding.test.ts
+index 21323c2..f6be3a7 100644
+--- a/tests/invite-onboarding.test.ts
++++ b/tests/invite-onboarding.test.ts
+@@ -27,3 +27,9 @@ test('mensagens de convite e cobrança têm os campos certos', () => {
+ test('paid_until é data do pagamento mais 30 dias', () => {
+   assert.equal(paidUntilDate('2026-10-01T09:30:00.000Z'), '2026-10-31')
+ })
++
++test('convite sem nome: mensagem sai sem nome e continua com o link', () => {
++  const link = 'https://www.rpgcapital.com.br/convite/RPG-ABC123'
++  assert.equal(inviteMessage('', link), `Oi! Criei um acesso pra você testar o Balcão da RPG, de graça. Leva 3 minutos: ${link}`)
++  assert.equal(inviteMessage(null, link).startsWith('Oi! '), true)
++})
