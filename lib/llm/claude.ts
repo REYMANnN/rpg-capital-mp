@@ -9,8 +9,33 @@ import { recordAiError, recordAiUsage } from '@/lib/rafa-ai-usage'
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_VERSION = '2023-06-01'
 
+const PREFERRED_MODEL = 'claude-sonnet-5-5'
+let resolvedModel: string | null = null
+
 export function claudeModel() {
-  return process.env.RAFA_AGENT_MODEL?.trim() || 'claude-sonnet-5-5'
+  return process.env.RAFA_AGENT_MODEL?.trim() || resolvedModel || PREFERRED_MODEL
+}
+
+// Descobre na própria API quais modelos a chave pode usar (uma vez por instância) e escolhe
+// o Sonnet mais novo, caso o nome preferido não exista para esta conta.
+async function ensureModel() {
+  if (process.env.RAFA_AGENT_MODEL?.trim() || resolvedModel) return claudeModel()
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/models?limit=100', {
+      headers: { 'x-api-key': key(), 'anthropic-version': ANTHROPIC_VERSION },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8_000),
+    })
+    const json = await response.json().catch(() => null) as { data?: Array<{ id?: string }> } | null
+    const ids = (json?.data || []).map((row) => String(row.id || '')).filter(Boolean)
+    if (ids.length) {
+      resolvedModel = ids.includes(PREFERRED_MODEL) ? PREFERRED_MODEL
+        : ids.find((id) => id.includes('sonnet')) || ids.find((id) => id.includes('opus')) || ids[0]
+    }
+  } catch (error) {
+    console.error('anthropic models lookup failed', error instanceof Error ? error.message : error)
+  }
+  return claudeModel()
 }
 
 // Liga a Anthropic em todas as chamadas de IA quando a chave existe.
@@ -81,6 +106,21 @@ export function imageBlockFromDataUri(dataUri: string): ClaudeContentBlock | nul
   return { type: 'image', source: { type: 'base64', media_type: mediaType, data: match[2] } }
 }
 
+function safeJson(text: string) {
+  try { return JSON.parse(text) } catch { return null }
+}
+
+// Diagnóstico (bateria de testes): lista modelos e faz uma chamada mínima, devolvendo status e corpo.
+export async function claudePing() {
+  const headers = { 'x-api-key': key(), 'anthropic-version': ANTHROPIC_VERSION, 'content-type': 'application/json' }
+  const models = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers, cache: 'no-store', signal: AbortSignal.timeout(10_000) })
+  const modelsText = await models.text().catch(() => '')
+  const model = await ensureModel()
+  const msg = await fetch(ANTHROPIC_URL, { method: 'POST', headers, cache: 'no-store', signal: AbortSignal.timeout(30_000), body: JSON.stringify({ model, max_tokens: 20, messages: [{ role: 'user', content: 'diga oi' }] }) })
+  const msgText = await msg.text().catch(() => '')
+  return { keyPrefix: key().slice(0, 10), models: { status: models.status, body: modelsText.slice(0, 1500) }, model, message: { status: msg.status, body: msgText.slice(0, 1500) } }
+}
+
 export async function claudeMessages(input: {
   storeId: string
   waId?: string | null
@@ -92,7 +132,7 @@ export async function claudeMessages(input: {
   temperature?: number
   timeoutMs?: number
 }): Promise<ClaudeResponse> {
-  const model = claudeModel()
+  const model = await ensureModel()
   const system = input.system
     .filter((block) => block.text.trim())
     .map((block) => ({ type: 'text' as const, text: block.text, ...(block.cache ? { cache_control: { type: 'ephemeral' as const } } : {}) }))
@@ -123,14 +163,17 @@ export async function claudeMessages(input: {
   const errorContext = { storeId: input.storeId, waId: input.waId, operation: input.operation, model }
   let response: Response
   let json: any
+  let rawText = ''
   try {
     response = await call()
-    json = await response.json().catch(() => null)
+    rawText = await response.text().catch(() => '')
+    json = safeJson(rawText)
     // Sobrecarga/limite: uma nova tentativa depois de 1,5 s.
     if ([429, 500, 502, 503, 529].includes(response.status)) {
       await new Promise((resolve) => setTimeout(resolve, 1500))
       response = await call()
-      json = await response.json().catch(() => null)
+      rawText = await response.text().catch(() => '')
+      json = safeJson(rawText)
     }
   } catch (error) {
     await recordAiError({ ...errorContext, stage: 'exception', message: error instanceof Error ? error.message : String(error) })
@@ -139,7 +182,7 @@ export async function claudeMessages(input: {
 
   if (!response.ok) {
     const message = String(json?.error?.message || `Anthropic HTTP ${response.status}`)
-    await recordAiError({ ...errorContext, stage: 'http', httpStatus: response.status, message, raw: json ? JSON.stringify(json).slice(0, 20_000) : null })
+    await recordAiError({ ...errorContext, stage: 'http', httpStatus: response.status, message, raw: `${response.headers.get('content-type') || ''} ${rawText}`.slice(0, 20_000) })
     throw new Error(message)
   }
 
