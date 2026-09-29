@@ -93,7 +93,8 @@ create table if not exists public.rafa_events (
   source_id text,
   created_at timestamptz not null default now()
 );
-create unique index if not exists rafa_events_source_idx on public.rafa_events (source_id) where source_id is not null;
+-- Índice único COMPLETO (não parcial): o upsert on conflict (source_id) do supabase-js exige isso.
+create unique index if not exists rafa_events_source_uidx on public.rafa_events (source_id);
 create index if not exists rafa_events_wa_created_idx on public.rafa_events (wa_id, created_at desc);
 alter table public.rafa_events enable row level security;
 
