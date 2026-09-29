@@ -92,6 +92,24 @@ export function internalBarcodeFor(description: string) {
   return body + checkDigit(body)
 }
 
+// Tamanho em g/ml ("2L" → 2000, "397G" → 397, "1,033kg" → 1033). null se não disser.
+function sizeOf(value: string) {
+  const match = String(value || '').toLowerCase().replace(',', '.').match(/(\d+(?:\.\d+)?)\s*(kg|g|ml|l)\b/)
+  if (!match) return null
+  const amount = Number(match[1])
+  return match[2] === 'kg' || match[2] === 'l' ? Math.round(amount * 1000) : Math.round(amount)
+}
+
+// Produto da loja achado para a linha da nota é plausível? Mesmo tipo (1ª palavra) e mesmo tamanho.
+export function plausibleStoreMatch(description: string, productName: string) {
+  const first = tokens(description)[0]
+  const name = tokens(productName).join(' ')
+  if (first && !name.includes(first.slice(0, Math.min(4, first.length)))) return false
+  const a = sizeOf(description)
+  const b = sizeOf(productName)
+  return a === null || b === null || a === b
+}
+
 function normalizedName(value: string) {
   return tokens(value).join(' ')
 }
@@ -304,7 +322,8 @@ function buildLenientInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
     const resolution = line.resolution
     // 1) Já é da loja: pelo produto resolvido, pelo EAN ou pelo mesmo nome de uma nota anterior.
     const resolvedId = resolution?.status === 'resolved' && resolution.candidate.id && byId.has(resolution.candidate.id) ? resolution.candidate.id : null
-    const storeMatch = (resolvedId && byId.get(resolvedId))
+    const resolvedProduct = resolvedId ? byId.get(resolvedId) : undefined
+    const storeMatch = (resolvedProduct && plausibleStoreMatch(description, resolvedProduct.name) ? resolvedProduct : undefined)
       || (isValidGtin(ean) ? byBarcode.get(ean) : undefined)
       || byName.get(normalizedName(niceName(description)))
       || byBarcode.get(internalBarcodeFor(description))

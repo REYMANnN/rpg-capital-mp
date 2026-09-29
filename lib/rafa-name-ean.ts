@@ -121,18 +121,23 @@ function plain(value: string) {
   return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 }
 
-// O produto achado na base (pelo código) é o da nota? Marca (ou uma palavra forte) tem que aparecer,
-// e se a base disser o tamanho, o tamanho tem que bater.
-function lookupConfirms(description: string, lookupText: string, guessName: string) {
-  const text = plain(lookupText)
-  if (!text.trim()) return false
-  const brand = detectBrand(description) || detectBrand(guessName)
-  const words = searchTerms(description).split(' ').filter((word) => word.length >= 4)
-  const brandHit = brand ? plain(brand).split(' ').some((word) => word.length >= 3 && text.includes(word)) : false
-  const wordHit = words.some((word) => text.includes(word.slice(0, 5)))
-  if (!brandHit && !wordHit) return false
-  const hasSize = /\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|litros?)\b/.test(text)
-  return !hasSize || sizeMatches(description, lookupText)
+// O produto achado (pelo código) é mesmo o da nota? Precisa bater: a marca, o TIPO do produto
+// (feijão ≠ arroz, ketchup ≠ maionese) e o tamanho (397 g ≠ 1,033 kg) — em todo texto que diga tamanho.
+export function productConfirms(description: string, texts: string[]) {
+  const all = plain(texts.filter(Boolean).join(' '))
+  if (!all.trim()) return false
+  const brand = detectBrand(description)
+  const brandWords = brand ? plain(brand).split(' ').filter((word) => word.length >= 3) : []
+  if (brandWords.length && !brandWords.some((word) => all.includes(word))) return false
+  const typeWords = searchTerms(description).split(' ')
+    .filter((word) => word.length >= 4 && !brandWords.some((brandWord) => word.includes(brandWord) || brandWord.includes(word)))
+  if (typeWords.length && !typeWords.some((word) => all.includes(word.slice(0, 5)))) return false
+  for (const text of texts) {
+    if (!text) continue
+    const hasSize = /\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|litros?)\b/i.test(text)
+    if (hasSize && !sizeMatches(description, text)) return false
+  }
+  return true
 }
 
 export type NameEanDebug = { descricao: string; palpites: string[]; confirmados: string[] }
@@ -162,7 +167,7 @@ async function verifiedGuesses(input: { storeId: string; waId: string; items: Ar
       if (!found?.found) continue
       const product = found.product as { name?: string; brand?: string; description?: string } | undefined
       const lookupText = [product?.name, product?.brand, product?.description].filter(Boolean).join(' ')
-      if (!lookupConfirms(job.description, lookupText, job.nome)) continue
+      if (!productConfirms(job.description, [lookupText, job.nome])) continue
       const name = job.nome && job.nome.length >= String(product?.name || '').length ? job.nome : String(product?.name || job.nome)
       const list = out.get(job.index) || []
       list.push({ ean: job.ean, nome: name, marca: product?.brand ? String(product.brand) : undefined })

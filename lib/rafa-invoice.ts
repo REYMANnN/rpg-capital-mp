@@ -9,7 +9,7 @@ import { parseNfeXml } from '@/lib/inventory/nfe'
 import { isNfeXml, readPdfText } from '@/lib/rafa-files'
 import { buildInvoicePlan, invoicePlanMessage, invoiceResultMessage, type InvoicePlanLine } from '@/lib/rafa-invoice-plan'
 import { loadInvoiceProofBytes, loadInvoiceProofDataUri } from '@/lib/rafa-media'
-import { resolveNamesToEan } from '@/lib/rafa-name-ean'
+import { productConfirms, resolveNamesToEan } from '@/lib/rafa-name-ean'
 import { savePendingProducts } from '@/lib/rafa-pending-products'
 import { registerPendingPrice, startPriceQuestions, toPendingRow } from '@/lib/rafa-price-questions'
 import { isValidGtin } from '@/lib/whatsapp-router'
@@ -247,7 +247,10 @@ export async function processApprovedInvoiceMedia(input: {
       const hit = found.get(index)
       if (!hit) continue
       if ('missing' in hit) { line.missing = hit.missing; continue }
-      const inStore = state.products.find((product) => product.barcode === hit.barcode && !product.deletedAt)
+      const sameCode = state.products.find((product) => product.barcode === hit.barcode && !product.deletedAt)
+      // Código da loja só vale se o produto da loja for mesmo o da nota (tipo e tamanho).
+      const inStore = sameCode && productConfirms(String(line.description), [sameCode.name]) ? sameCode : undefined
+      if (sameCode && !inStore) continue
       line.resolution = inStore
         ? { status: 'resolved', candidate: { id: inStore.id, barcode: inStore.barcode, name: inStore.name, source: 'catalog' } }
         : { status: 'new', candidate: { barcode: hit.barcode, name: hit.name, source: 'name_ean' } }
