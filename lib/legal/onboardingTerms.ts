@@ -1,3 +1,5 @@
+export const ONBOARDING_TERMS_VERSION = '2026-10-01'
+
 export type OnboardingTermId = 'use' | 'commercial' | 'data' | 'ai'
 
 export type OnboardingTermSection = {

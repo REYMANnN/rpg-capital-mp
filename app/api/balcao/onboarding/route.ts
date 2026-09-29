@@ -1,6 +1,9 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { normalizeDigits, normalizePixKey, validateOnboarding } from '@/lib/accounts/validation'
+import { COUPON_COOKIE, normalizeCouponCode } from '@/lib/admin/coupons'
+import { ONBOARDING_TERMS_VERSION } from '@/lib/legal/onboardingTerms'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 
 const LEGACY_INSTALLATION_COOKIE = 'inventory_installation_id'
@@ -23,7 +26,18 @@ export async function POST(request: Request) {
     .maybeSingle()
   const wasAlreadyCompleted = existingProfile?.onboarding_completed === true
 
-  const parsed = validateOnboarding(await request.json().catch(() => null))
+  const raw = await request.json().catch(() => null) as Record<string, unknown> | null
+  const cookieStore = await cookies()
+  const inviteCode = normalizeCouponCode(cookieStore.get(COUPON_COOKIE)?.value)
+  const inviteMode = raw?.referralSource === 'convite'
+  if (inviteMode && !inviteCode) {
+    return NextResponse.json({ error: 'Esse convite não vale mais. Fala com quem te mandou.' }, { status: 409 })
+  }
+  if (inviteMode && raw?.termsAccepted !== true) {
+    return NextResponse.json({ error: 'Você precisa aceitar os termos para criar a conta.', field: 'terms' }, { status: 400 })
+  }
+  const input = inviteMode && inviteCode ? { ...raw, referralSource: 'convite', referralOther: inviteCode } : raw
+  const parsed = validateOnboarding(input)
   if (!parsed.success) {
     const issue = parsed.error.issues[0]
     return NextResponse.json({
@@ -36,7 +50,6 @@ export async function POST(request: Request) {
   const taxId = normalizeDigits(data.taxId)
   const pixKey = data.pixKey ? normalizePixKey(data.pixType, data.pixKey) : ''
 
-  const cookieStore = await cookies()
   const currentInstallationId = cookieStore.get(LEGACY_INSTALLATION_COOKIE)?.value ?? null
   const legacyInstallationId = currentInstallationId && UUID_RE.test(currentInstallationId) ? currentInstallationId : null
 
@@ -81,6 +94,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Não conseguimos concluir seu cadastro agora. Seus dados foram mantidos; tente novamente.' }, { status: 500 })
   }
 
+  if (inviteMode && inviteCode) {
+    const { error: redeemError } = await supabase.rpc('balcao_redeem_coupon', { p_store_id: result.store_id, p_code: inviteCode })
+    if (redeemError) {
+      return NextResponse.json({ error: 'Esse convite não vale mais. Fala com quem te mandou.' }, { status: 409 })
+    }
+    const acceptedAt = new Date().toISOString()
+    const { error: termsError } = await createAdminClient().from('balcao_businesses').update({
+      terms_accepted_at: acceptedAt,
+      terms_version: ONBOARDING_TERMS_VERSION,
+      updated_at: acceptedAt,
+    }).eq('id', result.business_id)
+    if (termsError) {
+      console.error('BALCAO invite terms persistence failed', { code: termsError.code })
+      return NextResponse.json({ error: 'A conta foi criada, mas não conseguimos registrar o aceite dos termos. Tente novamente.' }, { status: 500 })
+    }
+  }
+
   if (!wasAlreadyCompleted) {
     const { error: pendingError } = await supabase.rpc('balcao_require_open_finance_onboarding')
     if (pendingError) {
@@ -104,5 +134,6 @@ export async function POST(request: Request) {
     businessId: result.business_id,
     storeId: result.store_id,
     requiresBankConnection: !wasAlreadyCompleted,
+    invite: inviteMode,
   })
 }

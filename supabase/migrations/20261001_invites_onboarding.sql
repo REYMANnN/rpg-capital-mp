@@ -25,3 +25,19 @@ grant select, insert, update, delete on table public.rpg_pix_payments to service
 insert into public.rpg_admin_settings (key, value)
 values ('plan_price_cents', '999')
 on conflict (key) do nothing;
+
+
+-- C2: onboarding por convite sem cartão.
+alter table public.balcao_businesses
+  add column if not exists terms_accepted_at timestamptz,
+  add column if not exists terms_version text;
+
+alter table public.balcao_profiles drop constraint if exists balcao_profiles_referral_source_check;
+alter table public.balcao_profiles
+  add constraint balcao_profiles_referral_source_check
+  check (referral_source in ('instagram','google','referral','ai','youtube_tiktok','other','convite'));
+
+alter table public.balcao_onboarding_drafts drop constraint if exists balcao_onboarding_drafts_referral_source_check;
+alter table public.balcao_onboarding_drafts
+  add constraint balcao_onboarding_drafts_referral_source_check
+  check (referral_source in ('instagram','google','referral','ai','youtube_tiktok','other','convite'));

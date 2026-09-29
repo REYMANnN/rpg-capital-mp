@@ -18,7 +18,7 @@ export const BUSINESS_TYPES = [
   'outro',
 ] as const
 
-export const REFERRAL_SOURCES = ['instagram', 'google', 'referral', 'ai', 'youtube_tiktok', 'other'] as const
+export const REFERRAL_SOURCES = ['instagram', 'google', 'referral', 'ai', 'youtube_tiktok', 'other', 'convite'] as const
 export const PIX_KEY_TYPES = ['', 'cpf', 'cnpj', 'phone', 'email', 'evp'] as const
 export type PixKeyType = (typeof PIX_KEY_TYPES)[number]
 
