@@ -10,10 +10,11 @@ const denied = () => NextResponse.json({ ok: false, error: 'not_admin' }, { stat
 
 export async function POST(request: NextRequest) {
   if (!isAdminRequest(request)) return denied()
-  const body = await request.json().catch(() => null) as { inviteeName?: unknown; inviteePhone?: unknown; storeNameHint?: unknown } | null
+  const body = await request.json().catch(() => null) as { label?: unknown; inviteeName?: unknown; inviteePhone?: unknown; storeNameHint?: unknown } | null
   const inviteeName = typeof body?.inviteeName === 'string' ? body.inviteeName.trim() : ''
   try {
     const invite = await createInvite({
+      label: typeof body?.label === 'string' ? body.label : '',
       inviteeName,
       inviteePhone: typeof body?.inviteePhone === 'string' ? body.inviteePhone : '',
       storeNameHint: typeof body?.storeNameHint === 'string' ? body.storeNameHint : '',
