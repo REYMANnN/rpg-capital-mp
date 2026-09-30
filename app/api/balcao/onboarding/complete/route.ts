@@ -8,11 +8,12 @@ export async function POST(request: Request) {
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) return NextResponse.json({ error: 'Entre com sua Conta Google para continuar.' }, { status: 401 })
 
-  const body = await request.json().catch(() => ({})) as { storeId?: unknown }
+  const body = await request.json().catch(() => ({})) as { storeId?: unknown; skipBank?: unknown }
+  const skipBank = body.skipBank === true
   const storeId = typeof body.storeId === 'string' ? body.storeId : ''
   if (!storeId) return NextResponse.json({ error: 'Loja não identificada.' }, { status: 400 })
 
-  const { error } = await supabase.rpc('balcao_complete_open_finance_onboarding', { p_store_id: storeId })
+  const { error } = await supabase.rpc('balcao_complete_open_finance_onboarding', { p_store_id: storeId, p_skip_bank: skipBank })
   if (error) {
     if (error.message.includes('BALCAO_BILLING_REQUIRED')) {
       return NextResponse.json({ error: 'Configure a cobrança do BALCÃO antes de concluir o cadastro.' }, { status: 409 })
