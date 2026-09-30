@@ -40,7 +40,7 @@ function Timeline({ invite }: { invite: AdminMetrics['coupons'][number] }) {
     ['Criado', true],
     ['Aberto', Boolean(invite.openedAt)],
     ['Conta criada', Boolean(invite.redeemedAt)],
-    ['Banco conectado', invite.bankConnected],
+    [invite.bankSkipped && !invite.bankConnected ? 'Pulou o banco' : 'Banco conectado', invite.bankConnected],
     ['Falou com a Rafa', invite.rafaWelcomed],
     ['Pagando', invite.paying],
   ] as Array<[string, boolean]>
@@ -216,7 +216,7 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
                   <td className="p-3">{account.ownerName}</td>
                   <td className="p-3">{account.phone || '—'}</td>
                   <td className="p-3">{date(account.createdAt)}</td>
-                  <td className="p-3">{account.bankConnected ? 'Sim' : 'Não'}</td>
+                  <td className="p-3">{account.bankConnected ? 'Sim' : account.bankSkipped ? <span className="text-amber-700">Pulou</span> : 'Não'}</td>
                   <td className="p-3">{account.rafaWelcomed ? 'Sim' : 'Não'}</td>
                   <td className="p-3">{paid ? <span className="font-bold text-emerald-700">Pago até {dateOnly(account.paidUntil)}</span> : <span className="text-amber-700">Pendente</span>}</td>
                   <td className="p-3"><div className="flex min-w-[190px] flex-wrap gap-2">
