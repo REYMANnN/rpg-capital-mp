@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { storeId?: unknown; returnTo?: unknown }
   const requestedStoreId = typeof body.storeId === 'string' ? body.storeId : ''
-  const returnTo = body.returnTo === 'onboarding' ? 'onboarding' : 'finance'
+  const returnTo = body.returnTo === 'onboarding' || body.returnTo === 'conectar-banco' ? body.returnTo : 'finance'
   const supabase = await createServerClient()
   let businessId = ''
   let storeId = ''
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       businessId,
       storeId,
       webhookUrl: `${origin}/api/balcao/finance/malvo/webhook`,
-      oauthRedirectUri: returnTo === 'onboarding' ? `${origin}/onboarding?step=bank` : `${origin}/inventory-v1?finance=connections`,
+      oauthRedirectUri: returnTo === 'onboarding' ? `${origin}/onboarding?step=bank` : returnTo === 'conectar-banco' ? `${origin}/conectar-banco?loja=${encodeURIComponent(storeId)}` : `${origin}/inventory-v1?finance=connections`,
     })
     return NextResponse.json({ ok: true, accessToken, expiresIn: 1800 }, {
       headers: { 'Cache-Control': 'private, no-store, max-age=0' },
