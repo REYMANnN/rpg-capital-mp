@@ -5,21 +5,29 @@ import { newCouponCode, normalizeCouponCode } from '@/lib/admin/core'
 import { inviteLink, normalizeInvitePhone, paidUntilDate } from '@/lib/admin/invite-core'
 
 // Convite = link de uso único para criar UMA conta. Nenhum dado é obrigatório: o admin só gera e manda.
-export async function createInvite(input: { inviteeName?: string; inviteePhone?: string; storeNameHint?: string } = {}) {
+// Apelido do link: o que o admin digitou; se ficar vazio, "Link genérico N - dd/mm/aaaa".
+async function genericLabel(admin: ReturnType<typeof createAdminClient>) {
+  const { count } = await admin.from('balcao_coupons').select('code', { count: 'exact', head: true }).ilike('note', 'Link genérico %')
+  const today = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' })
+  return `Link genérico ${(count || 0) + 1} - ${today}`
+}
+
+export async function createInvite(input: { label?: string; inviteeName?: string; inviteePhone?: string; storeNameHint?: string } = {}) {
   const inviteeName = String(input.inviteeName || '').trim().slice(0, 120)
   const inviteePhone = normalizeInvitePhone(input.inviteePhone || '')
   const storeNameHint = String(input.storeNameHint || '').trim().slice(0, 160)
   const admin = createAdminClient()
+  const label = String(input.label || '').trim().slice(0, 120) || inviteeName || await genericLabel(admin)
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = newCouponCode()
     const { error } = await admin.from('balcao_coupons').insert({
       code,
-      note: inviteeName || 'Convite',
+      note: label,
       invitee_name: inviteeName || null,
       invitee_phone: inviteePhone || null,
       store_name_hint: storeNameHint || null,
     })
-    if (!error) return { code, link: inviteLink(code), inviteeName, inviteePhone: inviteePhone || null, storeNameHint: storeNameHint || null }
+    if (!error) return { code, link: inviteLink(code), label, inviteeName, inviteePhone: inviteePhone || null, storeNameHint: storeNameHint || null }
     if (error.code !== '23505') throw error
   }
   throw new Error('invite_code_collision')
