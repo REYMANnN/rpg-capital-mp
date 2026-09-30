@@ -16,6 +16,7 @@ const EXPAND: Record<string, string> = {
   refrig: 'refrigerante', refri: 'refrigerante', lt: 'lata', desn: 'desnatado', integ: 'integral', tp1: 'tipo 1',
   choc: 'chocolate', bisc: 'biscoito', sab: 'sabao', det: 'detergente', amac: 'amaciante', marg: 'margarina',
   cerv: 'cerveja', agua: 'agua', leit: 'leite', macar: 'macarrao', mac: 'macarrao', pap: 'papel', hig: 'higienico',
+  achoc: 'achocolatado', cr: 'creme', trad: 'tradicional', cond: 'condensado', refr: 'refrigerante', maion: 'maionese', sach: 'sache', ref: 'refinado',
 }
 const DROP = new Set(['un', 'und', 'cx', 'fd', 'pct', 'pc', 'kg', 'g', 'ml', 'l', 'c', 'com', 'de', 'da', 'do'])
 
@@ -180,6 +181,88 @@ async function verifiedGuesses(input: { storeId: string; waId: string; items: Ar
   return out
 }
 
+// Base certa para cada tipo de produto: comida no Open Food Facts, higiene no Open Beauty Facts,
+// limpeza/casa no Open Products Facts (Omo, Ypê, Qboa não existem na base de comida).
+const CLEANING = /(sabao|lava ?roupa|amaciante|detergente|lava ?louca|agua sanitaria|desinfetante|alvejante|esponja|papel hig|higienico|papel toalha|guardanapo|saco de lixo|limpador|multiuso|inseticida|vela|fosforo|pilha)/
+const BEAUTY = /(shampoo|xampu|condicionador|sabonete|creme dental|pasta de dente|dental|escova dental|desodorante|absorvente|fralda|protetor|hidratante|creme|cotonete|barbear|aparelho de barbear)/
+
+export function factsBasesFor(description: string) {
+  const text = plain(description).replace(/\bcr\b/g, 'creme').replace(/\bhig\b/g, 'higienico')
+  if (CLEANING.test(text)) return ['openproductsfacts', 'openbeautyfacts', 'openfoodfacts']
+  if (BEAUTY.test(text)) return ['openbeautyfacts', 'openproductsfacts', 'openfoodfacts']
+  return ['openfoodfacts', 'openproductsfacts']
+}
+
+async function factsSearch(base: string, query: string, brazilOnly: boolean): Promise<NameCandidate[]> {
+  const url = `https://world.${base}.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}${brazilOnly ? '&countries_tags_en=brazil' : ''}&json=1&page_size=10&fields=code,product_name,product_name_pt,brands,quantity`
+  // A base cai com frequência: até 3 tentativas com espera crescente.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'RPGCapital-Balcao/1.0 (rpgcapital.com.br)' },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(8000),
+      })
+      if (response.ok) {
+        const data = await response.json().catch(() => null) as { products?: Array<OffProduct & { product_name_pt?: string }> } | null
+        if (data) {
+          return (data.products || [])
+            .map((product) => ({ ...product, product_name: product.product_name_pt || product.product_name }))
+            .filter((product) => product?.code && product?.product_name)
+            .map(toCandidate)
+        }
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)))
+  }
+  return []
+}
+
+// Busca por nome nas bases abertas, da mais provável para a menos, parando quando achar o bastante.
+export async function openFactsCandidates(description: string, deadline = Date.now() + 45_000): Promise<NameCandidate[]> {
+  const terms = searchTerms(description)
+  const brand = detectBrand(description)
+  const type = productType(terms, brand)
+  const size = sizeTerm(description)
+  const queries = [...new Set([
+    [brand, type, size].filter(Boolean).join(' '),
+    [brand, type].filter(Boolean).join(' '),
+    terms,
+  ].filter((query) => query.trim().length >= 3))]
+  const found: NameCandidate[] = []
+  let searches = 0
+  // Até 5 buscas por item e dentro do tempo total da nota (a base aceita poucas buscas por minuto).
+  for (const base of factsBasesFor(description).slice(0, 2)) {
+    for (const query of queries.slice(0, 2)) {
+      if (searches >= 5 || Date.now() > deadline) return found
+      searches += 1
+      found.push(...await factsSearch(base, query, true))
+      if (found.length >= 6) return found
+    }
+    if (!found.length && searches < 5 && Date.now() <= deadline) {
+      searches += 1
+      found.push(...await factsSearch(base, queries[0] || terms, false))
+    }
+    if (found.length >= 3) return found
+  }
+  return found
+}
+
+// O que foi achado vira catálogo da RPG: a próxima nota com o mesmo produto não precisa buscar.
+async function rememberCatalog(entries: Array<{ barcode: string; name: string; brand?: string }>) {
+  if (!entries.length) return
+  const admin = createAdminClient()
+  const now = new Date().toISOString()
+  await admin.from('inventory_v1_product_catalog_cache').upsert(entries.map((entry) => ({
+    barcode: entry.barcode,
+    name: entry.name.slice(0, 200),
+    brand: entry.brand || '',
+    source: 'rafa_busca_nome',
+    cache_status: 'hit',
+    checked_at: now,
+  })), { onConflict: 'barcode', ignoreDuplicates: true })
+}
+
 // items: índice da linha na nota + descrição. Busca externa limitada (Open Food Facts aceita ~10 buscas/min).
 export async function resolveNamesToEan(input: {
   storeId: string
@@ -190,39 +273,44 @@ export async function resolveNamesToEan(input: {
 }): Promise<Map<number, NameResolution>> {
   const out = new Map<number, NameResolution>()
   if (!input.items.length) return out
-  let external = input.maxExternalSearches ?? 10
   const prepared: Array<{ n: number; descricao: string; marca_detectada: string | null; candidatos: NameCandidate[] }> = []
   const ordered = [...input.items].sort((a, b) => Number(b.lineValueCents || 0) - Number(a.lineValueCents || 0)).slice(0, 40)
+  // Palpites da IA conferidos por código entram só como candidatos (quem escolhe é a etapa final).
   const verified = await verifiedGuesses({ storeId: input.storeId, waId: input.waId, items: ordered, debug: input.debug }).catch(() => new Map<number, NameCandidate[]>())
+  const results = new Map<number, NameCandidate[]>()
+  const deadline = Date.now() + 60_000
+  let next = 0
+  const worker = async () => {
+    while (next < ordered.length) {
+      const item = ordered[next++]
+      const terms = searchTerms(item.description)
+      const brand = detectBrand(item.description)
+      const type = productType(terms, brand)
+      const fromCache = await cacheCandidates(terms, brand, type).catch(() => [] as NameCandidate[])
+      const fromFacts = fromCache.length >= 3 ? [] : await openFactsCandidates(item.description, deadline).catch(() => [] as NameCandidate[])
+      results.set(item.index, [...(verified.get(item.index) || []), ...fromCache, ...fromFacts])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, ordered.length) }, worker))
   for (const item of ordered) {
-    const sure = verified.get(item.index) || []
-    // Palpite conferido na base com nome e tamanho batendo: é esse o produto.
-    if (sure.length >= 1) {
-      out.set(item.index, { barcode: sure[0].ean, name: sure[0].nome.slice(0, 120) })
-      continue
-    }
-    const terms = searchTerms(item.description)
     const brand = detectBrand(item.description)
-    const type = productType(terms, brand)
-    let candidates = [...sure, ...(await cacheCandidates(terms, brand, type).catch(() => []))]
-    if (candidates.length < 3 && external > 0) {
-      external -= 1
-      const query = [brand, type, sizeTerm(item.description)].filter(Boolean).join(' ') || terms
-      candidates = [...candidates, ...(await openFoodFactsCandidates(query))]
-    }
-    const unique = [...new Map(candidates.filter((candidate) => isValidGtin(candidate.ean)).map((candidate) => [candidate.ean, candidate])).values()].slice(0, 25)
+    const unique = [...new Map((results.get(item.index) || []).filter((candidate) => isValidGtin(candidate.ean)).map((candidate) => [candidate.ean, candidate])).values()].slice(0, 25)
+    const debug = input.debug?.find((row) => row.descricao === item.description)
+    if (debug) debug.confirmados.push(`candidatos: ${unique.length}`)
     if (!unique.length) { out.set(item.index, { missing: brand ? 'nao_encontrado' : 'sem_marca' }); continue }
     prepared.push({ n: item.index, descricao: item.description, marca_detectada: brand, candidatos: unique })
   }
   if (!prepared.length) return out
 
   const choices = await chooseEanByName({ storeId: input.storeId, waId: input.waId, items: prepared }).catch(() => [])
+  const learned: Array<{ barcode: string; name: string; brand?: string }> = []
   for (const item of prepared) {
     const choice = choices.find((entry) => Number(entry.n) === item.n)
     const ean = String(choice?.ean || '').replace(/\D/g, '')
     const candidate = item.candidatos.find((entry) => entry.ean === ean)
-    if (choice && candidate && isValidGtin(ean)) {
+    if (choice && candidate && isValidGtin(ean) && productConfirms(item.descricao, [candidate.nome, String(choice.nome || '')])) {
       out.set(item.n, { barcode: ean, name: String(choice.nome || candidate.nome).slice(0, 120) })
+      learned.push({ barcode: ean, name: String(choice.nome || candidate.nome), brand: candidate.marca })
     } else {
       const allowed = new Set(['tamanho', 'nao_encontrado', 'sem_marca'])
       let missing = String(choice?.falta || (item.marca_detectada ? 'nao_encontrado' : 'sem_marca'))
@@ -231,5 +319,6 @@ export async function resolveNamesToEan(input: {
       out.set(item.n, { missing })
     }
   }
+  await rememberCatalog(learned).catch(() => {})
   return out
 }
