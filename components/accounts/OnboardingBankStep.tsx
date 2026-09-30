@@ -21,10 +21,11 @@ export default function OnboardingBankStep({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [activeConnectionCount, setActiveConnectionCount] = useState(0)
+  const [confirmSkip, setConfirmSkip] = useState(false)
 
-  async function finish() {
+  async function finish(skipBank = false) {
     if (busy) return
-    if (activeConnectionCount < 1) {
+    if (!skipBank && activeConnectionCount < 1) {
       setError('Conecte pelo menos uma conta bancária para concluir o cadastro.')
       return
     }
@@ -35,7 +36,7 @@ export default function OnboardingBankStep({
       const response = await fetch('/api/balcao/onboarding/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeId }),
+        body: JSON.stringify({ storeId, skipBank }),
       })
       const payload = await response.json().catch(() => ({})) as { error?: string }
       if (!response.ok) throw new Error(payload.error || 'Não foi possível concluir o cadastro.')
@@ -61,7 +62,7 @@ export default function OnboardingBankStep({
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
       <p className="text-sm font-semibold text-blue-700">Conta bancária</p>
       <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{title || (userName ? `${userName.split(' ')[0]}, conecte a conta do seu negócio.` : 'Conecte a conta do seu negócio.')}</h1>
-      <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">É obrigatório conectar pelo menos uma conta bancária. Depois da primeira, você pode adicionar quantas contas quiser. A autorização acontece diretamente no seu banco pelo Open Finance; o BALCÃO não recebe sua senha.</p>
+      <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">Conecte a conta da loja para a Rafa ver saldo e extrato. Se preferir, conecte depois. Depois da primeira, você pode adicionar quantas contas quiser. A autorização acontece diretamente no seu banco pelo Open Finance; o BALCÃO não recebe sua senha.</p>
 
       <div className="mt-7">
         <BankConnections
@@ -71,9 +72,17 @@ export default function OnboardingBankStep({
         />
       </div>
 
-      {activeConnectionCount < 1 ? <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">Conecte pelo menos uma conta bancária para liberar a conclusão do cadastro.</p> : null}
       {error ? <p role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">{error}</p> : null}
-      <div className="mt-6 flex justify-end">
+      {activeConnectionCount < 1 && confirmSkip ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <p className="text-sm font-semibold text-slate-900">Sem o banco, a Rafa não vê saldo nem extrato.</p>
+        <p className="mt-1 text-sm text-slate-600">Você conecta quando quiser: é só pedir pra Rafa no WhatsApp ou entrar em rpgcapital.com.br/conectar-banco.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button onClick={() => void finish(true)} disabled={busy} className="min-h-11 rounded-xl bg-slate-900 px-5 font-semibold text-white disabled:opacity-50">{busy ? 'Concluindo…' : 'Entendi, conectar depois'}</button>
+          <button onClick={() => setConfirmSkip(false)} disabled={busy} className="min-h-11 rounded-xl border border-slate-300 px-5 font-semibold text-slate-800">Voltar</button>
+        </div>
+      </div> : null}
+      <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+        {activeConnectionCount < 1 && !confirmSkip ? <button onClick={() => setConfirmSkip(true)} disabled={busy} className="min-h-12 rounded-xl px-5 font-semibold text-slate-600 underline-offset-4 hover:underline">Conectar depois</button> : null}
         <button onClick={() => void finish()} disabled={busy || activeConnectionCount < 1} className="min-h-12 rounded-xl bg-blue-700 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Concluindo…' : activeConnectionCount < 1 ? 'Conecte uma conta para continuar' : successHref === '/onboarding/pronto' ? 'Concluir cadastro' : 'Entrar no BALCÃO'}</button>
       </div>
     </section>
