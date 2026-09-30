@@ -57,7 +57,8 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
   const [tab, setTab] = useState<Tab>('convites')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
-  const [created, setCreated] = useState<{ link: string } | null>(null)
+  const [created, setCreated] = useState<{ link: string; label: string } | null>(null)
+  const [label, setLabel] = useState('')
   const [pixKey, setPixKey] = useState(data.settings.pixKey)
   const [planPrice, setPlanPrice] = useState((data.settings.planPriceCents / 100).toFixed(2).replace('.', ','))
 
@@ -67,12 +68,13 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
     const response = await fetch('/api/admin/coupons', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ label }),
     })
-    const body = await response.json().catch(() => ({})) as { link?: string }
+    const body = await response.json().catch(() => ({})) as { link?: string; label?: string }
     setBusy(false)
     if (!response.ok || !body.link) { setNotice('Não consegui gerar o link.'); return }
-    setCreated({ link: body.link })
+    setCreated({ link: body.link, label: body.label || '' })
+    setLabel('')
     router.refresh()
   }
 
@@ -144,10 +146,14 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
         <Section title="Novo convite">
           <div className="rounded-2xl border border-slate-200 bg-white p-5">
             <p className="text-sm text-slate-600">Cada link cria <b>uma conta só</b>, sem cartão. Gera, copia e manda pra pessoa.</p>
-            <button onClick={createInvite} disabled={busy} className="mt-4 min-h-12 rounded-xl bg-slate-950 px-6 font-bold text-white disabled:opacity-50">{busy ? 'Gerando…' : 'Gerar link'}</button>
+            <label className="mt-4 block text-sm font-semibold">Apelido do link <span className="font-normal text-slate-400">(opcional)</span>
+              <input value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createInvite() }} maxLength={120} placeholder="Ex.: Mercado do Zé, feira de sábado… Vazio = link genérico" className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 font-normal md:max-w-md" />
+            </label>
+            <button onClick={createInvite} disabled={busy} className="mt-3 min-h-12 rounded-xl bg-slate-950 px-6 font-bold text-white disabled:opacity-50">{busy ? 'Gerando…' : 'Gerar link'}</button>
             {created && (() => {
               const message = inviteMessage('', created.link)
               return <div className="mt-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-950">
+                {created.label && <p className="font-bold">{created.label}</p>}
                 <p className="break-all font-semibold">{created.link}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button onClick={() => copy(created.link)} className="rounded-full bg-emerald-700 px-4 py-2 font-semibold text-white">Copiar link</button>
@@ -168,7 +174,7 @@ export default function AdminDashboard({ data }: { data: AdminMetrics }) {
                   const wa = invite.inviteePhone ? inviteWhatsAppUrl(invite.inviteePhone, message) : ''
                   const revoked = Boolean(invite.revokedAt) || invite.status === 'cancelled'
                   return <tr key={invite.code} className="border-t border-slate-100 align-top">
-                    <td className="p-3"><div className="font-semibold">{invite.businessName || invite.inviteeName || 'Ainda não usado'}</div><div className="font-mono text-xs text-slate-500">{invite.code}{invite.inviteePhone ? ` · ${invite.inviteePhone}` : ''}</div><div className="mt-1 text-xs text-slate-400">Criado {date(invite.createdAt)}</div></td>
+                    <td className="p-3"><div className="font-semibold">{invite.note && invite.note !== 'Convite' ? invite.note : (invite.businessName || invite.inviteeName || 'Ainda não usado')}</div>{invite.note && invite.note !== 'Convite' && invite.businessName && <div className="text-xs font-semibold text-emerald-700">Virou: {invite.businessName}</div>}<div className="font-mono text-xs text-slate-500">{invite.code}{invite.inviteePhone ? ` · ${invite.inviteePhone}` : ''}</div><div className="mt-1 text-xs text-slate-400">Criado {date(invite.createdAt)}</div></td>
                     <td className="max-w-[290px] p-3"><span className="break-all text-xs">{invite.link}</span></td>
                     <td className="p-3">{revoked ? <span className="font-bold text-rose-700">Revogado</span> : <Timeline invite={invite} />}</td>
                     <td className="p-3"><div className="flex min-w-[150px] flex-wrap gap-2">
