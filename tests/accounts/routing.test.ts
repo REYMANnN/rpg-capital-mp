@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { destinationAfterLogin, safeNextPath } from '../../lib/accounts/routing'
+import { destinationAfterLogin, safeNextPath } from '../../lib/accounts/routing.ts'
 
 test('new authenticated users are sent to onboarding', () => {
   assert.equal(destinationAfterLogin({ onboarded: false, hasBusiness: false }), '/onboarding')
@@ -15,4 +15,9 @@ test('safe next accepts only local absolute paths', () => {
   assert.equal(safeNextPath('https://evil.example'), null)
   assert.equal(safeNextPath('//evil.example'), null)
   assert.equal(safeNextPath('manage'), null)
+  assert.equal(safeNextPath('/\\evil.example'), null)
+  assert.equal(safeNextPath('/\\/evil.example'), null)
+  assert.equal(safeNextPath('/%0a/evil'), '/%0a/evil')
+  assert.equal(safeNextPath('/ /evil'), null)
+  assert.equal(safeNextPath('/conectar-banco?loja=abc'), '/conectar-banco?loja=abc')
 })

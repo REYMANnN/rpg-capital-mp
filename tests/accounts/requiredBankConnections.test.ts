@@ -10,14 +10,19 @@ function source(path: string) {
   return readFileSync(full, 'utf8')
 }
 
-test('onboarding cannot finish before at least one bank connection is active', () => {
+test('onboarding finishes with a bank or with an explicit "Conectar depois"', () => {
   const step = source('components/accounts/OnboardingBankStep.tsx')
   const route = source('app/api/balcao/onboarding/complete/route.ts')
+  const migration = source('supabase/migrations/20261003_onboarding_skip_bank.sql')
 
-  assert.match(step, /activeConnectionCount/)
   assert.match(step, /activeConnectionCount\s*<\s*1/)
-  assert.match(step, /Conecte pelo menos uma conta bancária/)
+  assert.match(step, /Conectar depois/)
+  assert.match(step, /finish\(true\)/)
+  assert.match(route, /skipBank = body\.skipBank === true/)
+  assert.match(route, /p_skip_bank: skipBank/)
   assert.match(route, /BALCAO_OPEN_FINANCE_REQUIRED/)
+  assert.match(migration, /not coalesce\(p_skip_bank, false\) and not exists/)
+  assert.match(migration, /bank_skipped_at/)
 })
 
 test('bank connection UI reports only onboarding-eligible Malvo connections back to onboarding', () => {
