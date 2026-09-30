@@ -325,7 +325,15 @@ function buildLenientInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
     const resolution = line.resolution
     // 1) Já é da loja: pelo produto resolvido, pelo EAN ou pelo mesmo nome de uma nota anterior.
     const resolvedId = resolution?.status === 'resolved' && resolution.candidate.id && byId.has(resolution.candidate.id) ? resolution.candidate.id : null
-    const resolvedProduct = resolvedId ? byId.get(resolvedId) : undefined
+    // "Mais de um parecido" na loja: fica com o único que bate marca, tipo e tamanho (Pilão ≠ Melitta).
+    const ambiguousPick = resolution?.status === 'ambiguous'
+      ? (() => {
+          const fits = (resolution.candidates || []).map((candidate) => candidate.id ? byId.get(candidate.id) : undefined)
+            .filter((product): product is NonNullable<typeof product> => Boolean(product) && sameProductName(description, product!.name) && plausibleStoreMatch(description, product!.name))
+          return fits.length === 1 ? fits[0] : undefined
+        })()
+      : undefined
+    const resolvedProduct = resolvedId ? byId.get(resolvedId) : ambiguousPick
     const storeMatch = [
       resolvedProduct,
       isValidGtin(ean) ? byBarcode.get(ean) : undefined,

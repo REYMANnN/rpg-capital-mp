@@ -133,6 +133,15 @@ export function productConfirms(description: string, texts: string[]) {
   const typeWords = searchTerms(description).split(' ')
     .filter((word) => word.length >= 4 && !brandWords.some((brandWord) => word.includes(brandWord) || brandWord.includes(word)))
   if (typeWords.length && !typeWords.some((word) => all.includes(word.slice(0, 5)))) return false
+  // Variante que muda o produto tem que bater: Ypê Neutro ≠ Ypê Clear, Coca Zero ≠ Coca Original.
+  const VARIANTS = ['neutro', 'clear', 'zero', 'diet', 'light', 'integral', 'desnatado', 'semidesnatado', 'parboilizado', 'sem sal', 'com sal', 'sem gas', 'com gas', 'sem lactose', 'zero lactose', 'picante', 'limao', 'laranja', 'uva', 'morango', 'coco', 'baunilha', 'carioca', 'preto', 'branco']
+  const descText = ` ${plain(description).replace(/c\/\s*sal/g, 'com sal').replace(/s\/\s*sal/g, 'sem sal').replace(/s\/\s*gas/g, 'sem gas').replace(/c\/\s*gas/g, 'com gas')} `
+  const candidateText = ` ${all} `
+  for (const variant of VARIANTS) {
+    const inDesc = descText.includes(` ${variant} `)
+    const inCand = candidateText.includes(` ${variant} `) || candidateText.includes(variant)
+    if (inDesc !== inCand && (inDesc || ['clear', 'zero', 'diet', 'light', 'picante', 'sem lactose', 'zero lactose'].includes(variant))) return false
+  }
   for (const text of texts) {
     if (!text) continue
     const hasSize = /\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|litros?)\b/i.test(text)

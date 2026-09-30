@@ -482,6 +482,7 @@ export async function chooseEanByName(input: {
         'Abreviações comuns: REFRIG=refrigerante, LT=lata, PET=garrafa, CX=caixa, FD=fardo, PCT=pacote, UN=unidade, TP1=tipo 1, INTEG=integral, DESN=desnatado, ZERO/DIET, C/12=com 12.',
         'Cada item traz marca_detectada quando a marca já foi reconhecida na descrição. Se marca_detectada não for null, é PROIBIDO responder falta "marca" ou "sem_marca".',
         'Quando não der para escolher, falta só pode ser "tamanho", "nao_encontrado" ou "sem_marca"; "sem_marca" somente quando marca_detectada é null.',
+        'Palavras de embalagem ou marketing não mudam o produto (Pote, Pacote, Sachê, Garrafa, PET, Vita, "Leve mais"): se marca, tipo, variante (sabor, com/sem sal, integral, neutro, zero...) e tamanho batem, ESCOLHA. TRAD/tradicional = a versão padrão. Se a variante for outra (Ypê Neutro x Ypê Clear, Coca Zero x Original), NÃO escolha.',
         'Nunca invente código. nome = nome completo do produto escolhido (marca, tipo, tamanho).',
         'Responda só JSON: {"itens":[{"n":0,"ean":"7894900018448","nome":"Refrigerante Coca-Cola PET 2L"},{"n":1,"ean":null,"falta":"nao_encontrado"}]}',
         '',
