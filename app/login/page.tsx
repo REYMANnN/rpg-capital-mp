@@ -2,11 +2,12 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import GoogleAuthButton from '@/components/accounts/GoogleAuthButton'
 import { getAccountState, getCurrentUser } from '@/lib/accounts/currentUser'
-import { destinationAfterLogin } from '@/lib/accounts/routing'
+import { destinationAfterLogin, safeNextPath } from '@/lib/accounts/routing'
 
 type LoginSearchParams = {
   intent?: string
   erro?: string
+  next?: string
 }
 
 function errorMessage(error?: string) {
@@ -20,7 +21,8 @@ function errorMessage(error?: string) {
 }
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<LoginSearchParams> }) {
-  const { intent, erro } = await searchParams
+  const { intent, erro, next: rawNext } = await searchParams
+  const next = safeNextPath(rawNext) || undefined
   const choosing = intent !== 'login' && intent !== 'signup'
   const resolvedIntent = intent === 'signup' ? 'signup' : 'login'
   const user = await getCurrentUser()
@@ -29,7 +31,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
   if (user) {
     const state = await getAccountState(user.id)
-    if (state.onboarded && state.hasBusiness) redirect(destinationAfterLogin(state))
+    if (state.onboarded && state.hasBusiness) redirect(next || destinationAfterLogin(state))
   }
 
   const message = errorMessage(erro)
@@ -54,7 +56,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             </div>
           ) : (
             <>
-              <GoogleAuthButton intent={resolvedIntent} label={intent === 'signup' ? 'Criar com Google' : 'Continuar com Google'} />
+              <GoogleAuthButton intent={resolvedIntent} next={resolvedIntent === 'login' ? next : undefined} label={intent === 'signup' ? 'Criar com Google' : 'Continuar com Google'} />
               {erro === 'conta-nao-encontrada' ? (
                 <Link href="/auth/signup/reset" className="mt-4 flex min-h-11 items-center justify-center rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50">Criar conta</Link>
               ) : null}
