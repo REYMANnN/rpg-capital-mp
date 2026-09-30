@@ -76,6 +76,8 @@ export function parseModelJson<T = unknown>(raw: unknown): T | null {
 
 export type InvoiceItem = {
   description?: string | null
+  // Como estava impresso, quando a marca foi corrigida (ex.: "CODA COLA" → "COCA COLA").
+  printed_description?: string | null
   supplier_code?: string | null
   ean?: string | null
   quantity?: number | null
@@ -170,6 +172,11 @@ function normalizeItem(raw: unknown): InvoiceItem | null {
       quantity: cAll ?? conf(pick(cObj as Record<string, unknown>, ['quantity', 'quantidade', 'q']) ?? o.cq, 0.9),
       cost: cAll ?? conf(pick(cObj as Record<string, unknown>, ['cost', 'custo', 'c']) ?? o.cc, 0.9),
     },
+  }
+  const corrected = str(pick(o, ['dc', 'descricao_corrigida', 'corrected_description']))
+  if (corrected && item.description && corrected.trim().toUpperCase() !== item.description.trim().toUpperCase()) {
+    item.printed_description = item.description
+    item.description = corrected
   }
   if (item.ean) {
     const digits = item.ean.replace(/\D/g, '')

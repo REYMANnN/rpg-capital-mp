@@ -27,6 +27,8 @@ export type InvoicePlanLine = {
   check_reasons?: string[] | null
   confidence?: { product?: number; quantity?: number; cost?: number } | null
   resolution?: RafaProductResolution | null
+  // Rafa 3.0: o que aconteceu com a linha (para "e o item 12?" e "corrige o item 5").
+  outcome?: { kind: 'entrada'; productId: string; quantityMilli: number; costCents: number } | { kind: 'novo'; barcode: string } | { kind: 'duvida'; reason: string } | null
 }
 
 export type PendingNewProduct = {
@@ -332,21 +334,22 @@ function buildLenientInvoicePlan(state: RafaStoreState, lines: InvoicePlanLine[]
     ].find((product) => product && plausibleStoreMatch(description, product.name))
     if (storeMatch) {
       const cost = costCents || Math.round(storeMatch.averageCostCents || 0)
-      if (quantityMilli > 0 && cost > 0) addEntrada(storeMatch.id, quantityMilli, cost)
-      else plan.duvidas.push({ description: storeMatch.name, reason: 'a quantidade não aparece na foto' })
+      if (quantityMilli > 0 && cost > 0) {
+        addEntrada(storeMatch.id, quantityMilli, cost)
+        line.outcome = { kind: 'entrada', productId: storeMatch.id, quantityMilli, costCents: cost }
+      } else {
+        plan.duvidas.push({ description: storeMatch.name, reason: 'a quantidade não aparece na foto' })
+        line.outcome = { kind: 'duvida', reason: 'a quantidade não aparece na foto' }
+      }
       continue
     }
     // 2) Produto novo: EAN do catálogo (se o nome bater), EAN da nota ou código interno.
     const candidate = resolution?.status === 'new' && isValidGtin(resolution.candidate.barcode)
       && ((resolution.candidate as { source?: string }).source === 'name_ean' || sameProductName(description, String(resolution.candidate.name || '')))
       ? resolution.candidate : null
-    if (candidate) {
-      addNovo(candidate.barcode, String(candidate.name || niceName(description)), String(candidate.brand || ''), quantityMilli, costCents, line)
-    } else if (isValidGtin(ean) && !byBarcode.has(ean)) {
-      addNovo(ean, niceName(description), '', quantityMilli, costCents, line)
-    } else {
-      addNovo(internalBarcodeFor(description), niceName(description), '', quantityMilli, costCents, line)
-    }
+    const barcode = candidate ? candidate.barcode : isValidGtin(ean) && !byBarcode.has(ean) ? ean : internalBarcodeFor(description)
+    addNovo(barcode, candidate ? String(candidate.name || niceName(description)) : niceName(description), candidate ? String(candidate.brand || '') : '', quantityMilli, costCents, line)
+    line.outcome = { kind: 'novo', barcode }
   }
 
   for (const [productId, entry] of entradas) {

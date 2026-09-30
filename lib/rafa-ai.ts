@@ -396,6 +396,7 @@ const INVOICE_IMAGE_RULES = [
   'tot: valor TOTAL impresso no rodapé, em centavos inteiros. n: quantidade total de itens/linhas impressa, se houver; senão null.',
   'i: UMA entrada para CADA linha de produto da nota, na ordem, sem pular nenhuma. Se a nota informa a quantidade total de itens, a lista deve ter esse número de entradas.',
   'd: descrição exatamente como impressa. sc: código do item. e: só se o código tiver 8, 12, 13 ou 14 dígitos (código de barras); senão null.',
+  'dc: só quando a descrição tem erro óbvio de digitação ou leitura numa MARCA conhecida (ex.: "CODA COLA" → "COCA COLA", "TICO JAGU" → "TIO JOAO", "NESCAL" → "NESCAU"), escreva a descrição com a marca corrigida; senão não mande dc.',
   'q: quantidade (número; use ponto decimal, ex.: 0.528). u: unidade (UN, KG, CX, DZ...).',
   'vu: valor unitário em CENTAVOS inteiros (R$ 29,90 = 2990). vt: valor total da linha em CENTAVOS inteiros.',
   'cp, cq, cc: confiança de 0 a 1 em produto, quantidade e custo, avaliadas separadamente.',

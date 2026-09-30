@@ -87,6 +87,7 @@ function systemPrompt(storeName: string, otherStores: number) {
     '• "Lê de novo", "tenta de novo a nota", "sobe o resto": use ler_nota com a mesma foto (o servidor desfaz a leitura anterior antes, nada entra em dobro).',
     '• Nota fiscal / cupom de compra em foto: use ler_nota (ela lê, dá entrada no que já é da loja e pede preço dos novos). Se na conversa tem outras fotos da mesma nota recentes, passe todas em foto_ids. Foto que não é nota (produto, prateleira, lista, caderno): descreva em 1 linha o que viu e faça o que ele pediu, ou pergunte o que ele quer.',
     '• "desfaz", "volta", "errei", "não era isso" logo depois de uma alteração: use desfazer.',
+    '• Perguntas sobre itens da nota ("e o item 12?", "o que entrou?"): use ver_nota (linhas numeradas, com o resultado de cada uma). Correção de uma linha ("o arroz na nota é 5 kg", "o item 3 são 24", "isso é a Coca lata, não a 2L"): use corrigir_item_nota com a linha certa.',
     '• LISTA DE PENDÊNCIAS: o bloco EM ANDAMENTO é a sua lista de tarefas com esse lojista. Ela é dele: se ele disser "esquece", "deixa pra lá", "não precisa", "para de perguntar", "não vou cadastrar", "ignora" sobre algo da lista, use esquecer_pendencias (só o que ele citou, ou tudo se ele falou em geral) e confirme em 1 linha o que saiu da lista. Nunca mais cobre o que foi esquecido. "Esquece" sobre preços de nota NÃO desfaz as entradas já feitas: diga que as entradas continuam e que, se quiser tirar a nota inteira do estoque, é só falar. Se ele pedir para apagar/cancelar/desfazer a nota inteira, use desfazer_nota.',
     '• Memória: quando o lojista contar algo sobre a loja que vale para o futuro (fornecedor, dia de entrega, apelido de produto, como prefere ser atendido) ou pedir para lembrar, use lembrar com a frase dele. Só guarde o que ELE disse, nunca suposições suas. Se ele pedir para esquecer, esquecer_fato.',
     '• Links do Balcão (vender, ler-codigo, prateleira, entrada): use gerar_link quando pedirem para abrir ou quando for claramente mais fácil pela tela.',
@@ -236,6 +237,21 @@ const TOOLS: ClaudeTool[] = [
       },
     },
   },
+  {
+    name: 'corrigir_item_nota',
+    description: 'Corrige uma linha de uma nota já lida: quantidade, custo ou o produto certo da loja. Ajusta o estoque (dá para desfazer). Use o número da linha de ver_nota.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        nota_id: { type: 'string', description: 'id da nota (vazio = a mais recente)' },
+        linha: { type: 'number', description: 'número da linha na nota (1, 2, 3...)' },
+        quantidade: { type: 'number' },
+        custo_reais: { type: 'number' },
+        produto_id: { type: 'string', description: 'id do produto certo da loja, se a linha foi para o produto errado' },
+      },
+      required: ['linha'],
+    },
+  },
   { name: 'cancelar_nota', description: 'Cancela uma nota ainda não aplicada (se já foi aplicada, use desfazer).', input_schema: { type: 'object', properties: { nota_id: { type: 'string' } }, required: ['nota_id'] } },
   { name: 'esquecer_pendencias', description: 'Tira itens da lista de pendências: produtos esperando preço (todos; só os ids dados; ou só os de uma nota) e, sem ids/nota, também fecha a confirmação aberta. Use quando o lojista disser esquece, deixa pra lá, não quero mais, para de perguntar. NÃO mexe no estoque.', input_schema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, nota_id: { type: 'string' } } } },
   { name: 'desfazer_nota', description: 'Apaga do estoque tudo que uma nota fez (entradas e produtos novos cadastrados dela) e tira a nota das pendências. Use quando ele pedir para cancelar/apagar/desfazer a nota que já entrou.', input_schema: { type: 'object', properties: { nota_id: { type: 'string' } } } },
@@ -341,8 +357,13 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
           result: {
             status: data?.status,
             fornecedor: data?.supplier_name,
-            itens: lines.slice(0, 80).map((line: any) => ({
+            itens: lines.slice(0, 80).map((line: any, index: number) => ({
+              linha: index + 1,
               descricao: line.description,
+              ...(line.printed_description ? { impresso_na_nota: line.printed_description } : {}),
+              resultado: line.outcome?.kind === 'entrada' ? `entrou no estoque de ${state.products.find((product) => product.id === line.outcome.productId)?.name || 'produto da loja'}`
+                : line.outcome?.kind === 'novo' ? (ctx.pendingProducts.some((row) => row.barcode === line.outcome.barcode) ? 'produto novo esperando preço' : 'produto novo (já cadastrado ou fora da lista)')
+                  : line.outcome?.kind === 'duvida' ? line.outcome.reason : null,
               ean: line.ean,
               quantidade: line.quantity,
               custo_unitario: line.unit_cost_cents != null ? money(Number(line.unit_cost_cents)) : null,
@@ -350,6 +371,78 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
             })),
           },
         }
+      }
+
+      case 'corrigir_item_nota': {
+        const invoice = byPrefix(ctx.invoices, args.nota_id) || ctx.invoices[0]
+        if (!invoice) return { result: { erro: 'Não achei nota recente.' } }
+        const { data } = await admin.from('rafa_invoice_imports').select('extraction').eq('id', invoice.id).eq('store_id', input.storeId).maybeSingle()
+        const extraction = (data?.extraction || {}) as any
+        const lines: any[] = Array.isArray(extraction.lines) ? extraction.lines : []
+        const index = Math.round(Number(args.linha)) - 1
+        const line = lines[index]
+        if (!line) return { result: { erro: `A nota tem ${lines.length} linhas; linha ${args.linha} não existe.` } }
+        const newQtyMilli = args.quantidade != null ? Math.round(Number(args.quantidade) * 1000) : null
+        const newCost = args.custo_reais != null ? Math.round(Number(args.custo_reais) * 100) : null
+        const target = args.produto_id ? state.products.find((product) => product.id === String(args.produto_id) && !product.deletedAt) : undefined
+        if (args.produto_id && !target) return { result: { erro: 'Produto não encontrado na loja (use o id do catálogo).' } }
+        if (newQtyMilli != null && !(newQtyMilli >= 0)) return { result: { erro: 'quantidade inválida' } }
+        const outcome = line.outcome as any
+        let pending = outcome?.kind === 'novo' ? await admin.from('rafa_pending_products').select('*').eq('store_id', input.storeId).eq('invoice_import_id', invoice.id).eq('barcode', outcome.barcode).eq('status', 'aguardando_preco').maybeSingle().then((result) => result.data) : null
+        // Produto novo ainda esperando preço: corrige direto na lista (ou troca por um da loja).
+        if (pending && !target) {
+          const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+          if (newQtyMilli != null) patch.quantity_milli = newQtyMilli
+          if (newCost != null) patch.cost_cents = newCost
+          await admin.from('rafa_pending_products').update(patch).eq('id', pending.id)
+        } else {
+          // Linha que já mexeu no estoque (ou produto novo trocado por um da loja): ajusta com operação desfazível.
+          const fromProductId = outcome?.kind === 'entrada' ? String(outcome.productId)
+            : outcome?.kind === 'novo' && !pending ? state.products.find((product) => product.barcode === outcome.barcode && !product.deletedAt)?.id : undefined
+          const oldQty = Number(outcome?.quantityMilli ?? Math.round(Number(line.quantity || 0) * 1000))
+          const qty = newQtyMilli ?? oldQty
+          const cost = newCost ?? Number(outcome?.costCents ?? line.unit_cost_cents ?? 0)
+          const toProductId = target?.id || fromProductId
+          if (!toProductId) return { result: { erro: 'Não sei em que produto essa linha entrou; diga o produto certo.' } }
+          const committed = await commitRafaChanges({
+            storeId: input.storeId,
+            waId: input.waId,
+            operationId: `${input.wamid}:corrigir:${invoice.id}:${index}:${toProductId}:${qty}:${cost}`,
+            tool: 'corrigir_item_nota',
+            summary: `Correção da linha ${index + 1} da nota (${String(line.description).slice(0, 60)})`,
+            args,
+            invoiceImportId: invoice.id,
+            build: (fresh) => {
+              const changes: any[] = []
+              const from = fromProductId ? fresh.products.find((product) => product.id === fromProductId) : undefined
+              if (from && fromProductId !== toProductId) {
+                changes.push({ kind: 'estoque', productId: from.id, expectedStockMilli: from.stockMilli, newStockMilli: Math.max(0, from.stockMilli - oldQty) })
+                const to = fresh.products.find((product) => product.id === toProductId)!
+                if (qty > 0) changes.push({ kind: 'entrada', productId: to.id, expectedStockMilli: to.stockMilli, quantityMilli: qty, unitCostCents: Math.max(1, cost || Math.round(to.averageCostCents || 1)), reason: 'correção de nota' })
+              } else {
+                const product = fresh.products.find((item) => item.id === toProductId)!
+                const delta = qty - (fromProductId ? oldQty : 0)
+                if (delta > 0) changes.push({ kind: 'entrada', productId: product.id, expectedStockMilli: product.stockMilli, quantityMilli: delta, unitCostCents: Math.max(1, cost || Math.round(product.averageCostCents || 1)), reason: 'correção de nota' })
+                if (delta < 0) changes.push({ kind: 'estoque', productId: product.id, expectedStockMilli: product.stockMilli, newStockMilli: Math.max(0, product.stockMilli + delta) })
+              }
+              return changes.length ? changes : { error: 'Nada mudou nessa linha.' }
+            },
+          })
+          if (committed.status === 'rejected') return { result: { erro: committed.message } }
+          if (committed.status === 'applied') state = committed.after
+          if (pending && target) {
+            await admin.from('rafa_pending_products').update({ status: 'descartado', current: false, updated_at: new Date().toISOString() }).eq('id', pending.id)
+            pending = null
+          }
+          line.outcome = { kind: 'entrada', productId: toProductId, quantityMilli: qty, costCents: cost }
+        }
+        if (newQtyMilli != null) line.quantity = newQtyMilli / 1000
+        if (newCost != null) line.unit_cost_cents = newCost
+        if (target) line.corrected_product = target.name
+        await admin.from('rafa_invoice_imports').update({ extraction: { ...extraction, lines }, updated_at: new Date().toISOString() }).eq('id', invoice.id)
+        const summary = `linha ${index + 1} (${line.description}) corrigida${target ? ` para ${target.name}` : ''}${newQtyMilli != null ? `, quantidade ${newQtyMilli / 1000}` : ''}${newCost != null ? `, custo ${money(newCost)}` : ''}`
+        await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'action', text: summary })
+        return { result: { feito: summary } }
       }
 
       case 'rever_imagem': {
