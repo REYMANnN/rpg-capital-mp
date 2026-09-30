@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import 'server-only'
+import { bankMissingResult, bankStatusFrom, connectBankUrl, type BankStatus } from '@/lib/rafa-bank-link'
 
 import { createHash } from 'node:crypto'
 
@@ -91,6 +92,7 @@ function systemPrompt(storeName: string, otherStores: number) {
     '• LISTA DE PENDÊNCIAS: o bloco EM ANDAMENTO é a sua lista de tarefas com esse lojista. Ela é dele: se ele disser "esquece", "deixa pra lá", "não precisa", "para de perguntar", "não vou cadastrar", "ignora" sobre algo da lista, use esquecer_pendencias (só o que ele citou, ou tudo se ele falou em geral) e confirme em 1 linha o que saiu da lista. Nunca mais cobre o que foi esquecido. "Esquece" sobre preços de nota NÃO desfaz as entradas já feitas: diga que as entradas continuam e que, se quiser tirar a nota inteira do estoque, é só falar. Se ele pedir para apagar/cancelar/desfazer a nota inteira, use desfazer_nota.',
     '• Memória: quando o lojista contar algo sobre a loja que vale para o futuro (fornecedor, dia de entrega, apelido de produto, como prefere ser atendido) ou pedir para lembrar, use lembrar com a frase dele. Só guarde o que ELE disse, nunca suposições suas. Se ele pedir para esquecer, esquecer_fato.',
     '• Links do Balcão (vender, ler-codigo, prateleira, entrada): use gerar_link quando pedirem para abrir ou quando for claramente mais fácil pela tela.',
+    '• BANCO NÃO CONECTADO (veja BANCO DA LOJA em EM ANDAMENTO): se perguntarem saldo, extrato, quanto entrou/saiu, Pix, pagamentos ou pedirem para conectar/trocar o banco, use gerar_link com fluxo banco: 1 linha dizendo que sem o banco você não vê isso + o link (entra com o mesmo Google do cadastro). Só mande quando o assunto for banco; não cobre do nada e não repita se já mandou o link na última hora. Se disserem "conectei", consulte saldo_banco antes de confirmar.',
     '• Número sozinho de 1 a 4 sem contexto é o menu: 1 vender, 2 ler código, 3 prateleira, 4 entrada (gerar_link).',
     '',
     'COMO RESPONDER',
@@ -129,7 +131,7 @@ type OpenInvoice = { id: string; status: string; supplier_name: string | null; i
 async function loadWorkingContext(input: { waId: string; storeId: string }) {
   const admin = createAdminClient()
   const since = new Date(Date.now() - 48 * 3600_000).toISOString()
-  const [pendingAction, pendingProducts, invoices, operations, memory, events] = await Promise.all([
+  const [pendingAction, pendingProducts, invoices, operations, memory, events, bank] = await Promise.all([
     getPendingRafaAction(input.waId).catch(() => null),
     listPendingProducts(input.storeId).catch(() => []),
     admin.from('rafa_invoice_imports').select('id,status,supplier_name,item_count,created_at,media_paths')
@@ -140,9 +142,11 @@ async function loadWorkingContext(input: { waId: string; storeId: string }) {
       .order('created_at', { ascending: true }).limit(80)
       .then(({ data }) => data || [], () => []),
     recentRafaEvents(input.waId, { hours: 48, limit: 80 }).catch(() => [] as RafaEventRow[]),
+    admin.from('balcao_finance_connections').select('status').eq('store_id', input.storeId).eq('provider', 'malvo')
+      .then(({ data }) => bankStatusFrom(data || []), () => 'conectado' as BankStatus),
   ])
   const pendingValid = pendingAction && new Date(pendingAction.expires_at).getTime() > Date.now() ? pendingAction : null
-  return { pendingAction: pendingValid, pendingProducts, invoices, operations, memory, events }
+  return { pendingAction: pendingValid, pendingProducts, invoices, operations, memory, events, bank }
 }
 
 type WorkingContext = Awaited<ReturnType<typeof loadWorkingContext>>
@@ -169,6 +173,11 @@ function workingBlock(ctx: WorkingContext) {
     lines.push('• ÚLTIMAS ALTERAÇÕES DA RAFA (a mais nova primeiro; "desfaz" desfaz a mais nova aplicada):')
     ctx.operations.forEach((row: any) => lines.push(`  ${clock(row.created_at)} | ${row.status === 'undone' ? 'DESFEITA' : 'aplicada'} | ${String(row.summary || row.tool).slice(0, 160)}`))
   }
+  lines.push(ctx.bank === 'conectado'
+    ? '• BANCO DA LOJA: conectado.'
+    : ctx.bank === 'precisa_reconectar'
+      ? '• BANCO DA LOJA: a conexão caiu, precisa reconectar (gerar_link fluxo banco).'
+      : '• BANCO DA LOJA: NÃO conectado (ele pulou no cadastro). Sem saldo/extrato até conectar (gerar_link fluxo banco).')
   return lines.join('\n')
 }
 
@@ -258,7 +267,7 @@ const TOOLS: ClaudeTool[] = [
   { name: 'desfazer', description: 'Desfaz a última alteração aplicada pela Rafa (até 48 h), se nada mudou nesses produtos depois.', input_schema: { type: 'object', properties: {} } },
   { name: 'lembrar', description: 'Guarda na memória um fato que o lojista contou (na voz dele, curto).', input_schema: { type: 'object', properties: { fato: { type: 'string' } }, required: ['fato'] } },
   { name: 'esquecer_fato', description: 'Apaga um fato da memória (id da MEMÓRIA).', input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
-  { name: 'gerar_link', description: 'Manda o link do Balcão: vender (caixa), ler-codigo, prateleira (lista de produtos) ou entrada (subir estoque). Encerra a resposta.', input_schema: { type: 'object', properties: { fluxo: { type: 'string', enum: ['vender', 'ler-codigo', 'prateleira', 'entrada'] }, texto: { type: 'string', description: 'uma linha antes do link (opcional)' } }, required: ['fluxo'] } },
+  { name: 'gerar_link', description: 'Manda o link do Balcão: vender (caixa), ler-codigo, prateleira (lista de produtos), entrada (subir estoque) ou banco (conectar/reconectar a conta bancária da loja). Encerra a resposta.', input_schema: { type: 'object', properties: { fluxo: { type: 'string', enum: ['vender', 'ler-codigo', 'prateleira', 'entrada', 'banco'] }, texto: { type: 'string', description: 'uma linha antes do link (opcional)' } }, required: ['fluxo'] } },
   { name: 'trocar_loja', description: 'Mostra as lojas deste número para o lojista escolher. Encerra a resposta.', input_schema: { type: 'object', properties: {} } },
 ]
 
@@ -336,6 +345,13 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
     if (!sent.ok) throw new Error(sent.error)
   }
 
+  // Banco não conectado: devolve o link de conectar em vez de números vazios. Conexão caída: dados antigos + link.
+  const bankOrLink = async (read: () => Promise<unknown>) => {
+    if (ctx.bank === 'nao_conectado') return bankMissingResult(input.storeId, ctx.bank)
+    const data = await read().catch(() => null)
+    return { ...bankMissingResult(input.storeId, ctx.bank), dados_da_ultima_leitura: data }
+  }
+
   const execute = async (name: string, args: any): Promise<ToolOutcome> => {
     switch (name) {
       case 'buscar_produtos': {
@@ -344,9 +360,9 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
       }
       case 'resumo_estoque': return { result: stockSummary(state) }
       case 'vendas': return { result: salesSummary(state, args) }
-      case 'saldo_banco': return { result: await bankBalance(input.storeId) }
-      case 'extrato': return { result: await bankStatement(input.storeId, args) }
-      case 'fluxo_dinheiro': return { result: await moneyFlow(input.storeId, state, args) }
+      case 'saldo_banco': return { result: ctx.bank === 'conectado' ? await bankBalance(input.storeId) : await bankOrLink(() => bankBalance(input.storeId)) }
+      case 'extrato': return { result: ctx.bank === 'conectado' ? await bankStatement(input.storeId, args) : await bankOrLink(() => bankStatement(input.storeId, args)) }
+      case 'fluxo_dinheiro': return { result: ctx.bank === 'conectado' ? await moneyFlow(input.storeId, state, args) : await bankOrLink(() => moneyFlow(input.storeId, state, args)) }
 
       case 'ver_nota': {
         const invoice = byPrefix(ctx.invoices, args.nota_id)
@@ -691,6 +707,13 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
 
       case 'gerar_link': {
         const fluxo = String(args.fluxo || '')
+        if (fluxo === 'banco') {
+          const intro = String(args.texto || '').trim() ? cleanReply(String(args.texto)) : ctx.bank === 'conectado'
+            ? 'Pra conectar outra conta ou ver as conexões, entra aqui com o mesmo Google do cadastro:'
+            : 'Pra eu ver saldo e extrato, conecta o banco da loja aqui. Leva 2 minutos, é só entrar com o mesmo Google do cadastro:'
+          await reply(`${[...appliedSummaries.length ? [`Feito: ${appliedSummaries.join('\n')}`] : [], intro].join('\n\n')}\n${connectBankUrl(input.storeId)}`)
+          return { result: { ok: 'link do banco enviado' }, terminal: true }
+        }
         if (!isBalcaoFlow(fluxo)) return { result: { erro: 'fluxo inválido' } }
         const link = await createBalcaoDeepLink({ waId: input.waId, storeId: input.storeId, fluxo })
         const intro = String(args.texto || '').trim() ? cleanReply(String(args.texto)) : FLOW_HINT[fluxo]
