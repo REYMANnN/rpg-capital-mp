@@ -56,6 +56,7 @@ export type AdminCoupon = {
   redeemedAt: string | null
   businessName: string | null
   bankConnected: boolean
+  bankSkipped: boolean
   rafaWelcomed: boolean
   paying: boolean
 }
@@ -71,6 +72,7 @@ export type AdminAccount = {
   courtesyEndsAt: string | null
   bank: string | null
   bankConnected: boolean
+  bankSkipped: boolean
   rafaNumbers: number
   rafaWelcomed: boolean
   paidUntil: string | null
@@ -241,6 +243,7 @@ export async function loadAdminMetrics() {
       courtesyEndsAt: bill?.courtesy_ends_at ? String(bill.courtesy_ends_at) : null,
       bank: bankByBusiness.get(id) || null,
       bankConnected: bankConnectedByBusiness.has(id),
+      bankSkipped: row.bank_skipped_at != null,
       rafaNumbers: rafaByBusiness.get(id) || 0,
       rafaWelcomed: Boolean(row.rafa_welcomed_at),
       paidUntil: latestPaymentByBusiness.get(id)?.paid_until ? String(latestPaymentByBusiness.get(id)?.paid_until) : null,
@@ -265,6 +268,7 @@ export async function loadAdminMetrics() {
       redeemedAt: row.redeemed_at ? String(row.redeemed_at) : null,
       businessName: businessId ? businessName.get(businessId) || 'Loja' : null,
       bankConnected: businessId ? bankConnectedByBusiness.has(businessId) : false,
+      bankSkipped: businessId ? activeBusinesses.find((business) => String(business.id) === businessId)?.bank_skipped_at != null : false,
       rafaWelcomed: businessId ? activeBusinesses.find((business) => String(business.id) === businessId)?.rafa_welcomed_at != null : false,
       paying: Boolean(paidUntil && String(paidUntil) >= new Date().toISOString().slice(0, 10)),
     }
