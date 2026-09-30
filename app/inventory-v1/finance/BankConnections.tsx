@@ -92,7 +92,7 @@ export default function BankConnections({
   onFinanceChanged?: () => void
   onConnectionCountChange?: (count: number) => void
   storeId?: string
-  returnTo?: 'finance' | 'onboarding'
+  returnTo?: 'finance' | 'onboarding' | 'conectar-banco'
 }) {
   const [connections, setConnections] = useState<Connection[]>([])
   const [configured, setConfigured] = useState(false)
