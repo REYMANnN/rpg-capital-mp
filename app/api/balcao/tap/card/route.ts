@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null) as { items?: unknown } | null
-  if (!validLines(body?.items)) {
+  const lines = body?.items
+  if (!validLines(lines)) {
     return NextResponse.json({ ok: false, error: 'Carrinho inválido.' }, { status: 400 })
   }
 
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
   const products = Array.isArray(snapshot.state.products) ? snapshot.state.products as Array<Record<string, unknown>> : []
   const byId = new Map(products.map((product) => [String(product.id), product]))
   let amountCents = 0
-  for (const line of body.items) {
+  for (const line of lines) {
     const product = byId.get(line.productId)
     const price = Math.round(Number(product?.priceCents ?? 0))
     const stock = Math.round(Number(product?.stockMilli ?? 0))
@@ -107,8 +108,8 @@ export async function POST(request: NextRequest) {
   const saleId = randomUUID()
   const salePayload = {
     saleId,
-    movementIds: body.items.map(() => randomUUID()),
-    items: body.items,
+    movementIds: lines.map(() => randomUUID()),
+    items: lines,
     jti: claims.jti,
   }
 
