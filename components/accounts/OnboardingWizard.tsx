@@ -237,9 +237,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
         return
       }
 
-      const storeId = typeof payload.storeId === 'string' ? payload.storeId : ''
-      const requiresBankConnection = payload.requiresBankConnection === true
-      router.replace(requiresBankConnection && storeId ? `/conectar-banco?loja=${encodeURIComponent(storeId)}` : '/manage')
+      router.replace('/manage')
       router.refresh()
     } catch {
       setServerError('Não conseguimos concluir seu cadastro agora. Seus dados foram mantidos; tente novamente.')

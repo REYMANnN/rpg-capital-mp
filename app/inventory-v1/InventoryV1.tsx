@@ -1012,33 +1012,6 @@ export default function InventoryV1() {
     }
   }
 
-  async function startCardPayment() {
-    if (!cart.length) return false
-    try {
-      const response = await fetch('/api/balcao/tap/card', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: cart.map((line) => ({ productId: line.productId, quantityMilli: line.quantityMilli })),
-        }),
-      })
-      const result = await response.json().catch(() => null)
-      if (!response.ok || !result?.ok || !result?.link) {
-        if (result?.setupUrl && (result?.code === 'tap_not_connected' || result?.code === 'tap_device_missing')) {
-          fail(`${result.error || 'O cartão ainda não está configurado.'} Configure em ${window.location.origin}${result.setupUrl}`)
-        } else {
-          fail(result?.error || 'Não foi possível abrir a cobrança no cartão.')
-        }
-        return false
-      }
-      window.location.assign(result.link)
-      return true
-    } catch {
-      fail('Não foi possível abrir a cobrança no cartão.')
-      return false
-    }
-  }
-
   function exportBackup() {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const anchor = document.createElement('a')
@@ -1127,7 +1100,6 @@ export default function InventoryV1() {
             change={(id, delta) => setCart((current) => current.map((line) => line.productId === id ? { ...line, quantityMilli: Math.max(0, line.quantityMilli + delta) } : line).filter((line) => line.quantityMilli > 0))}
             remove={(id) => setCart((current) => current.filter((line) => line.productId !== id))}
             checkout={checkout}
-            startCardPayment={startCardPayment}
           />
         )}
 
@@ -1411,7 +1383,7 @@ function ProductSearch({ query, setQuery, resultCount }: { query: string; setQue
   )
 }
 
-function Checkout({ products, cart, total, scan, manual, add, view, change, remove, checkout, startCardPayment }: { products: AppProduct[]; cart: CartLine[]; total: number; scan: () => void; manual: (value: string) => void | Promise<void>; add: (product: AppProduct) => void; view: (product: AppProduct) => void; change: (id: string, delta: number) => void; remove: (id: string) => void; checkout: (method: PaymentMethod) => boolean; startCardPayment: () => Promise<boolean> }) {
+function Checkout({ products, cart, total, scan, manual, add, view, change, remove, checkout }: { products: AppProduct[]; cart: CartLine[]; total: number; scan: () => void; manual: (value: string) => void | Promise<void>; add: (product: AppProduct) => void; view: (product: AppProduct) => void; change: (id: string, delta: number) => void; remove: (id: string) => void; checkout: (method: PaymentMethod) => boolean }) {
   const [code, setCode] = useState('')
   const [productQuery, setProductQuery] = useState('')
   const searchResults = useMemo(() => searchProducts(products, productQuery), [products, productQuery])
@@ -1420,7 +1392,7 @@ function Checkout({ products, cart, total, scan, manual, add, view, change, remo
   const [pixError, setPixError] = useState('')
   const [copied, setCopied] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
-  const [paymentConfirm, setPaymentConfirm] = useState<'cash' | null>(null)
+  const [paymentConfirm, setPaymentConfirm] = useState<'card' | 'cash' | null>(null)
   const [saleBusy, setSaleBusy] = useState(false)
 
   async function chargePix() {
@@ -1476,29 +1448,14 @@ function Checkout({ products, cart, total, scan, manual, add, view, change, remo
     setCopied(false)
   }
 
-  async function beginCardPayment() {
-    if (saleBusy) return
-    setSaleBusy(true)
-    setPaymentOpen(false)
-    try {
-      await startCardPayment()
-    } finally {
-      setSaleBusy(false)
-    }
-  }
-
   function choosePayment(method: PaymentMethod) {
     if (method === 'pix') {
       setPaymentOpen(false)
       void chargePix()
       return
     }
-    if (method === 'card') {
-      void beginCardPayment()
-      return
-    }
     setPaymentOpen(false)
-    setPaymentConfirm('cash')
+    setPaymentConfirm(method)
   }
 
   return (
@@ -1530,7 +1487,7 @@ function Checkout({ products, cart, total, scan, manual, add, view, change, remo
             <p>Total da compra: <b>{money(total)}</b></p>
             <div className={styles.paymentChoices}>
               <button className={styles.paymentChoice} disabled={pixBusy || saleBusy} onClick={() => choosePayment('pix')}><strong>Pix</strong><span>Gerar QR Code</span></button>
-              <button className={styles.paymentChoice} disabled={pixBusy || saleBusy} onClick={() => choosePayment('card')}><strong>Cartão</strong><span>Tap to Pay no aplicativo RPG</span></button>
+              <button className={styles.paymentChoice} disabled={pixBusy || saleBusy} onClick={() => choosePayment('card')}><strong>Cartão</strong><span>Pagamento na maquininha</span></button>
               <button className={styles.paymentChoice} disabled={pixBusy || saleBusy} onClick={() => choosePayment('cash')}><strong>Dinheiro</strong><span>Recebimento em espécie</span></button>
             </div>
             <div className={styles.actions}><button className={styles.secondary} onClick={() => setPaymentOpen(false)}>Cancelar</button></div>
@@ -1541,12 +1498,12 @@ function Checkout({ products, cart, total, scan, manual, add, view, change, remo
       {paymentConfirm && (
         <div className={styles.deleteOverlay} role="presentation" onClick={() => !saleBusy && setPaymentConfirm(null)}>
           <div className={styles.deleteDialog} role="dialog" aria-modal="true" aria-labelledby="payment-confirm-title" onClick={(event) => event.stopPropagation()}>
-            <span className={styles.eyebrow}>Dinheiro</span>
-            <h2 id="payment-confirm-title">{`Recebeu ${money(total)} em dinheiro?`}</h2>
-            <p>Ao confirmar, a venda será registrada e os produtos serão baixados do estoque.</p>
+            <span className={styles.eyebrow}>{paymentConfirm === 'card' ? 'Cartão' : 'Dinheiro'}</span>
+            <h2 id="payment-confirm-title">{paymentConfirm === 'card' ? 'Pagamento aprovado na maquininha?' : `Recebeu ${money(total)} em dinheiro?`}</h2>
+            <p>{paymentConfirm === 'card' ? 'Confirme somente depois que a maquininha mostrar que o pagamento foi aprovado.' : 'Ao confirmar, a venda será registrada e os produtos serão baixados do estoque.'}</p>
             <div className={styles.actions}>
               <button className={styles.secondary} disabled={saleBusy} onClick={() => setPaymentConfirm(null)}>Voltar</button>
-              <button className={styles.primary} disabled={saleBusy} onClick={() => finishSale('cash')}><Check />{saleBusy ? 'REGISTRANDO…' : 'CONFIRMAR RECEBIMENTO'}</button>
+              <button className={styles.primary} disabled={saleBusy} onClick={() => finishSale(paymentConfirm)}><Check />{saleBusy ? 'REGISTRANDO…' : paymentConfirm === 'card' ? 'PAGAMENTO APROVADO' : 'CONFIRMAR RECEBIMENTO'}</button>
             </div>
           </div>
         </div>
