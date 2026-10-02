@@ -184,4 +184,4 @@ end;
 $$;
 
 revoke all on function public.rpg_developer_api_authenticate(text,text,uuid,text,integer) from public;
-grant execute on function public.rpg_developer_api_authenticate(text,text,uuid,text,integer) to anon,authenticated,service_role;
+grant execute on function public.rpg_developer_api_authenticate(text,text,uuid,text,integer) to service_role;
