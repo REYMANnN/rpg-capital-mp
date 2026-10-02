@@ -122,7 +122,7 @@ export default function Home() {
           <nav className={styles.nav} aria-label="Navegação principal">
             <a href="#produto">Produto</a>
             <a href="#rafa">Rafa</a>
-            <a href="#como-funciona">Como funciona</a>
+            <a href="#como-funciona">Como funciona</a>\n            <a href="/integracoes">Integrações</a>
             <a href="#preco">Preço</a>
             <a href={demoHref}>Conta de teste</a>
             <a className={styles.loginLink} href="/login?intent=login">Entrar</a>
@@ -399,7 +399,7 @@ export default function Home() {
         <div className={styles.container + ' ' + styles.footerGrid}>
           <div><a className={styles.brand} href="#topo"><span className={styles.brandMark}>RPG</span><span className={styles.brandCopy}><strong>RPG para Balcões</strong><small>por RPG Capital</small></span></a><p>Gestão simples para quem tem uma loja para tocar.</p></div>
           <div><strong>Produto</strong><a href="#produto">Funcionalidades</a><a href="#rafa">Rafa no WhatsApp</a><a href="#credito">Crédito</a><a href="#preco">Preço</a><a href="#como-funciona">Como funciona</a></div>
-          <div><strong>Acesso</strong><a href={demoHref}>Conta de teste</a><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a></div>
+          <div><strong>Acesso</strong><a href={demoHref}>Conta de teste</a><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a><a href="/integracoes">Integrações</a><a href="/developers/docs">RPG for Developers</a></div>
           <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">WhatsApp: +55 11 93620-1445</a><a href="https://www.instagram.com/rpg_capital_credito/" target="_blank" rel="noreferrer">Instagram</a><a href="https://www.linkedin.com/company/rpgcapital/" target="_blank" rel="noreferrer">LinkedIn</a></div>
         </div>
         <div className={styles.container + ' ' + styles.footerBottom}><span>© 2026 RPG Capital.</span><span>Feito para o varejo brasileiro.</span></div>
