@@ -1,4 +1,5 @@
-import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'\nimport { createAdminClient } from '@/lib/supabase/admin'
+import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { hashApiSecret, parseApiKey, type ApiScope } from './apiKeys'
 import { parseDeveloperSecret } from './developerKeys'
 
