@@ -1,4 +1,4 @@
-import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'
+import { createInventoryCloudClient } from '@/lib/supabase/inventoryCloud'\nimport { createAdminClient } from '@/lib/supabase/admin'
 import { hashApiSecret, parseApiKey, type ApiScope } from './apiKeys'
 import { parseDeveloperSecret } from './developerKeys'
 
@@ -61,7 +61,7 @@ export async function requirePublicApi(request: Request, requiredScope: ApiScope
     const connectionId = requestedConnection(request)
     if (!connectionId) throw new PublicApiError(400, 'connection_required', 'Informe X-RPG-Connection-Id para uma chave Developer.')
 
-    const { data, error } = await createInventoryCloudClient().rpc('rpg_developer_api_authenticate', {
+    const { data, error } = await createAdminClient().rpc('rpg_developer_api_authenticate', {
       p_prefix: developer.prefix,
       p_secret_hash: hashApiSecret(developer.secret),
       p_connection_id: connectionId,
