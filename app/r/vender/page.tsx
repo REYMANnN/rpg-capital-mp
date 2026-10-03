@@ -27,6 +27,10 @@ export default function VenderPage() {
   const [unknownCode, setUnknownCode] = useState<string | null>(null)
   const [paying, setPaying] = useState(false)
   const [method, setMethod] = useState<PaymentMethod>('pix')
+  const [pixCharge, setPixCharge] = useState<{ amountCents: number; payload: string; qrDataUrl: string } | null>(null)
+  const [pixBusy, setPixBusy] = useState(false)
+  const [pixError, setPixError] = useState('')
+  const [copied, setCopied] = useState(false)
   const [done, setDone] = useState<{ totalCents: number } | null>(null)
   const [session, setSession] = useState({ count: 0, totalCents: 0 })
   const [query, setQuery] = useState('')
@@ -68,7 +72,61 @@ export default function VenderPage() {
       .filter((line) => line.quantityMilli > 0))
   }
 
+  async function chargePix() {
+    if (!cart.length || totalCents <= 0 || pixBusy || saving) return
+    setPixBusy(true)
+    setPixError('')
+    setCopied(false)
+    try {
+      const response = await fetch('/api/balcao/checkout/pix', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ amountCents: totalCents }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result?.error || 'Não foi possível gerar a cobrança Pix.')
+      if (
+        !Number.isInteger(result?.amountCents)
+        || typeof result?.payload !== 'string'
+        || typeof result?.qrDataUrl !== 'string'
+      ) {
+        throw new Error('O servidor não retornou uma cobrança Pix válida.')
+      }
+      setPixCharge({
+        amountCents: result.amountCents,
+        payload: result.payload,
+        qrDataUrl: result.qrDataUrl,
+      })
+    } catch (cause) {
+      setPixError(cause instanceof Error ? cause.message : 'Não foi possível gerar a cobrança Pix.')
+    } finally {
+      setPixBusy(false)
+    }
+  }
+
+  async function copyPix() {
+    if (!pixCharge) return
+    try {
+      await navigator.clipboard.writeText(pixCharge.payload)
+      setCopied(true)
+    } catch {
+      setPixError('Não foi possível copiar automaticamente. Selecione o código abaixo.')
+    }
+  }
+
+  function closePayment() {
+    if (saving || pixBusy) return
+    setPaying(false)
+    setPixCharge(null)
+    setPixError('')
+    setCopied(false)
+  }
+
   async function finish() {
+    if (method === 'pix' && !pixCharge) {
+      show('Gere o QR Code Pix antes de concluir a venda.', true)
+      return
+    }
     try {
       const sale = await commit((current) => {
         const result = applySale(current, cart, method)
@@ -84,6 +142,9 @@ export default function VenderPage() {
       setCart([])
       setPaying(false)
       setMethod('pix')
+      setPixCharge(null)
+      setPixError('')
+      setCopied(false)
     } catch (cause) {
       show(cause instanceof Error ? cause.message : 'Não consegui concluir a venda.', true)
     }
@@ -186,22 +247,68 @@ export default function VenderPage() {
       )}
 
       {paying && (
-        <div className={styles.backdrop} onClick={() => !saving && setPaying(false)}>
+        <div className={styles.backdrop} onClick={closePayment}>
           <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
             <div className={styles.grab} />
             <div className={styles.total}>
-              <span className={styles.totalLabel}>Total</span>
-              <span className={styles.totalValue}>{money(totalCents)}</span>
+              <span className={styles.totalLabel}>{pixCharge ? 'Cobrança Pix' : 'Total'}</span>
+              <span className={styles.totalValue}>{money(pixCharge?.amountCents ?? totalCents)}</span>
             </div>
-            <div className={styles.pay}>
-              {PAYMENTS.map(({ id, label, icon: Icon }) => (
-                <button key={id} className={`${styles.payBtn} ${method === id ? styles.payOn : ''}`} onClick={() => setMethod(id)}>
-                  <Icon size={24} />{label}
+
+            {pixCharge ? (
+              <>
+                <div style={{ display: 'grid', placeItems: 'center', margin: '18px 0' }}>
+                  <img
+                    src={pixCharge.qrDataUrl}
+                    alt={`QR Code Pix de ${money(pixCharge.amountCents)}`}
+                    style={{ width: 'min(320px, 100%)', height: 'auto', borderRadius: 12, background: 'white' }}
+                  />
+                </div>
+                <div className={styles.meta} style={{ marginBottom: 8 }}>Pix Copia e Cola</div>
+                <textarea
+                  readOnly
+                  value={pixCharge.payload}
+                  onFocus={(event) => event.currentTarget.select()}
+                  style={{ width: '100%', minHeight: 88, boxSizing: 'border-box', resize: 'vertical', border: '1px solid var(--line)', borderRadius: 12, padding: 12, fontSize: 12, lineHeight: 1.4 }}
+                />
+                {pixError && <div className={styles.meta} style={{ marginTop: 8 }}>{pixError}</div>}
+                <button className={styles.linkBtn} style={{ width: '100%', marginTop: 10 }} onClick={() => void copyPix()} disabled={saving}>
+                  {copied ? 'Código copiado' : 'Copiar código Pix'}
                 </button>
-              ))}
-            </div>
-            <button className={styles.btn} disabled={saving} onClick={finish}>{saving ? 'Registrando…' : 'Confirmar venda'}</button>
-            <button className={styles.linkBtn} style={{ width: '100%', marginTop: 8 }} onClick={() => setPaying(false)} disabled={saving}>Voltar</button>
+                <button className={styles.btn} style={{ marginTop: 8 }} disabled={saving} onClick={() => void finish()}>
+                  {saving ? 'Registrando…' : 'Pagamento recebido'}
+                </button>
+                <button className={styles.linkBtn} style={{ width: '100%', marginTop: 8 }} onClick={closePayment} disabled={saving}>Cancelar</button>
+              </>
+            ) : (
+              <>
+                <div className={styles.pay}>
+                  {PAYMENTS.map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      className={`${styles.payBtn} ${method === id ? styles.payOn : ''}`}
+                      disabled={pixBusy || saving}
+                      onClick={() => {
+                        setMethod(id)
+                        setPixError('')
+                        if (id === 'pix') void chargePix()
+                      }}
+                    >
+                      <Icon size={24} />{label}
+                    </button>
+                  ))}
+                </div>
+                {pixError && <div className={styles.meta} style={{ marginBottom: 8 }}>{pixError}</div>}
+                <button
+                  className={styles.btn}
+                  disabled={saving || pixBusy}
+                  onClick={() => method === 'pix' ? void chargePix() : void finish()}
+                >
+                  {pixBusy ? 'Gerando QR Pix…' : saving ? 'Registrando…' : method === 'pix' ? 'Gerar QR Pix' : 'Confirmar venda'}
+                </button>
+                <button className={styles.linkBtn} style={{ width: '100%', marginTop: 8 }} onClick={closePayment} disabled={saving || pixBusy}>Voltar</button>
+              </>
+            )}
           </div>
         </div>
       )}
