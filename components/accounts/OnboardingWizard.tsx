@@ -110,7 +110,10 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
       const phoneDigits = normalizeDigits(form.phone)
       if (phoneDigits.length < 10 || phoneDigits.length > 11) errors.phone = 'Digite DDD + telefone, com 10 ou 11 números.'
       if (!isValidCpf(form.taxId) && !isValidCnpj(form.taxId)) errors.taxId = 'Informe um CPF ou CNPJ válido.'
-      if (form.pixKey && (!form.pixType || !validatePixKeyForType(form.pixType, form.pixKey))) {
+      if (!form.pixType) errors.pixType = 'Escolha o tipo da chave Pix.'
+      if (!form.pixKey.trim()) {
+        errors.pixKey = 'Informe a chave Pix que receberá as vendas.'
+      } else if (!form.pixType || !validatePixKeyForType(form.pixType, form.pixKey)) {
         errors.pixKey = 'Confira a chave Pix para o tipo selecionado.'
       }
     }
@@ -365,18 +368,19 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
           <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Chave Pix <span className="font-normal text-slate-500">(opcional)</span></h2>
-                <p className="mt-1 text-sm leading-5 text-slate-600">Se quiser cadastrar agora, escolha o tipo. Caso contrário, continue normalmente.</p>
+                <h2 className="text-base font-bold text-slate-900">Chave Pix</h2>
+                <p className="mt-1 text-sm leading-5 text-slate-600">Cadastre a chave que será usada para gerar as cobranças Pix no Caixa.</p>
               </div>
-              {form.pixType ? <button type="button" onClick={clearPix} className="min-h-11 rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50">Remover chave</button> : null}
+              {form.pixType ? <button type="button" onClick={clearPix} className="min-h-11 rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50">Trocar chave</button> : null}
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label="Tipo da chave Pix">
+            <div id="pixType" className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label="Tipo da chave Pix" aria-invalid={invalid('pixType')}>
               {pixTypes.map((option) => {
                 const selected = form.pixType === option.value
                 return <button key={option.value} type="button" onClick={() => choosePixType(option.value)} aria-pressed={selected} className={`min-h-12 rounded-xl border px-3 py-2 text-sm font-semibold transition ${selected ? 'border-blue-700 bg-blue-50 text-blue-800 ring-2 ring-blue-100' : 'border-slate-300 bg-white text-slate-800 hover:border-slate-400'}`}>{option.label}</button>
               })}
             </div>
+            {fieldError('pixType')}
 
             {form.pixType ? <div className="mt-5">
               <label className={labelClass} htmlFor="pixKey">{pixTypes.find((option) => option.value === form.pixType)?.label}</label>
