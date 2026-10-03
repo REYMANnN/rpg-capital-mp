@@ -176,7 +176,12 @@ const onboardingSchema = z.object({
   referralSource: z.enum(REFERRAL_SOURCES),
   referralOther: z.string().trim().max(240).optional().default(''),
 }).superRefine((data, ctx) => {
-  if (data.pixKey) {
+  if (!data.pixType) {
+    ctx.addIssue({ code: 'custom', path: ['pixType'], message: 'Escolha o tipo da chave Pix.' })
+  }
+  if (!data.pixKey) {
+    ctx.addIssue({ code: 'custom', path: ['pixKey'], message: 'Informe a chave Pix que receberá as vendas.' })
+  } else {
     const valid = data.pixType ? validatePixKeyForType(data.pixType, data.pixKey) : validatePixKey(data.pixKey)
     if (!valid) ctx.addIssue({ code: 'custom', path: ['pixKey'], message: 'Confira a chave Pix e o tipo selecionado.' })
   }
