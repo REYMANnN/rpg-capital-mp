@@ -88,3 +88,24 @@ test('checkout UI keeps Pix charge before recording the sale through the payment
   assert.match(inventory, /JSON\.stringify\(\{ amountCents: total \}\)/)
   assert.doesNotMatch(inventory, /COBRAR NO PIX/)
 })
+
+test('Rafa checkout generates the Pix charge before recording a Pix sale', () => {
+  const rafa = source('app/r/vender/page.tsx')
+
+  assert.match(rafa, /\/api\/balcao\/checkout\/pix/)
+  assert.match(rafa, /JSON\.stringify\(\{ amountCents: totalCents \}\)/)
+  assert.match(rafa, /setPixCharge/)
+  assert.match(rafa, /method === 'pix' && !pixCharge/)
+  assert.match(rafa, /Pagamento recebido/)
+  assert.match(rafa, /QR Code Pix/)
+})
+
+test('onboarding requires a Pix key for new stores', () => {
+  const wizard = source('components/accounts/OnboardingWizard.tsx')
+  const validation = source('lib/accounts/validation.ts')
+
+  assert.match(wizard, /Cadastre a chave que será usada para gerar as cobranças Pix no Caixa/)
+  assert.doesNotMatch(wizard, /Chave Pix[^\n]*opcional/)
+  assert.match(validation, /if \(!data\.pixType\)/)
+  assert.match(validation, /if \(!data\.pixKey\)/)
+})
