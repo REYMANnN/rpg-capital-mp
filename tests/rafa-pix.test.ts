@@ -43,6 +43,10 @@ test('does not auto-save a phone without Pix/key intent', () => {
   assert.deepEqual(parseExplicitPixKey('meu telefone é 11 99999-9999'), { status: 'none' })
 })
 
+test('does not treat a general Pix question as a key submission', () => {
+  assert.deepEqual(parseExplicitPixKey('como funciona o Pix no caixa?'), { status: 'none' })
+})
+
 test('rejects two valid Pix candidates as ambiguous', () => {
   assert.deepEqual(parseExplicitPixKey('pix: loja@exemplo.com ou 529.982.247-25'), { status: 'ambiguous' })
 })
