@@ -1,0 +1,26 @@
+name: Admin Trial Accounts CI
+
+on:
+  push:
+    branches: [feature/admin-trial-accounts]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install
+      - name: Trial and Pix tests
+        run: node --experimental-strip-types --test tests/admin-trial-accounts.test.ts tests/rafa-pix.test.ts
+      - name: Existing WhatsApp tests
+        run: npm run test:whatsapp
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
