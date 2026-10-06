@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { markAsRead, sendText } from '@/lib/whatsapp'
 import { enqueueWhatsApp, evoTyping, isEvolutionProvider } from '@/lib/whatsapp-evolution'
 import { askStorePick, bindRafaStore, phoneStores, resolveRafaStore, runRafaAgent, STORE_PICK_PREFIX, type RafaAgentSource } from '@/lib/rafa-agent'
+import { parsePixSubmission, pixStatusForStore, savePixForStore } from '@/lib/rafa-pix'
 import { fileKind, isNfeXml, looksLikeInvoice, readPdfText, readPlainText, readTable, tooBig } from '@/lib/rafa-files'
 import { buildImportPlan, findHeader, importSummaryMessage, tableToText } from '@/lib/rafa-import'
 import { classifyWhatsAppText, replyForIntent, type WhatsAppIntent } from '@/lib/whatsapp-router'
@@ -292,6 +293,41 @@ export async function processValue(value: JsonRecord) {
 
     const session = await sessionFor(fromPhone)
     const storeId = typeof session?.store_id === 'string' ? session.store_id : null
+
+    // Chave Pix é capturada deterministicamente antes de chamar a IA. Só entra aqui
+    // quando a pessoa claramente está ENTREGANDO uma chave, nunca por mera menção a Pix.
+    const pixSubmission = parsePixSubmission(text)
+    if (pixSubmission.status !== 'none') {
+      const pixResolved = storeId
+        ? { status: 'ok' as const, storeId }
+        : await resolveRafaStore(fromPhone).catch(() => ({ status: 'none' as const }))
+      if (pixResolved.status === 'ok') {
+        const currentPix = await pixStatusForStore(pixResolved.storeId).catch(() => null)
+        // Captura automática existe apenas enquanto a loja ainda não tem chave.
+        // Uma chave já cadastrada nunca é sobrescrita silenciosamente pelo WhatsApp.
+        if (currentPix && !currentPix.key) {
+          if (pixSubmission.status === 'ambiguous') {
+            const result = await sendText(fromPhone, 'Encontrei mais de uma possível chave Pix nessa mensagem. Me manda só uma chave por vez.', { inReplyTo: wamid, noMenu: true })
+            if (!result.ok) throw new Error(result.error)
+            return
+          }
+          if (pixSubmission.status === 'invalid') {
+            const result = await sendText(fromPhone, 'Não consegui validar essa chave Pix. Pode me mandar de novo? Não envie senha, token nem código do banco.', { inReplyTo: wamid, noMenu: true })
+            if (!result.ok) throw new Error(result.error)
+            return
+          }
+          const saved = await savePixForStore(pixResolved.storeId, pixSubmission.key)
+          const message = saved.status === 'saved' || saved.status === 'already_saved'
+            ? 'Perfeito. Salvei sua chave Pix. Ela será usada só para receber pagamentos da loja. Nunca me mande senha, token ou código do banco.'
+            : saved.status === 'different_key_exists'
+              ? 'Sua loja já tem uma chave Pix cadastrada. Não alterei nada.'
+              : 'Não consegui salvar sua chave Pix agora. Tente de novo em instantes.'
+          const result = await sendText(fromPhone, message, { inReplyTo: wamid, noMenu: true })
+          if (!result.ok) throw new Error(result.error)
+          return
+        }
+      }
+    }
 
     if (routing.intent === 'produto_por_ean' && storeId) {
       const { state } = await loadRafaStore(storeId)

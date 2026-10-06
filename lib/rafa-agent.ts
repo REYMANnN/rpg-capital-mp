@@ -870,7 +870,7 @@ export async function runRafaAgent(input: { waId: string; storeId: string; text:
       const reminder = await claimPriceReminder(input.waId, pending).catch(() => null)
       const withTip = tip && !body.includes(tip) ? `${body}\n\nDica do dia: ${tip}` : body
       const withReminder = reminder && !withTip.includes(reminder) ? `${withTip}\n\n${reminder}` : withTip
-      const sent = await sendText(input.waId, withReminder, { inReplyTo: input.inReplyTo })
+      const sent = await sendText(input.waId, withReminder, { inReplyTo: input.inReplyTo, pixReminderStoreId: input.storeId })
       if (!sent.ok) throw new Error(sent.error)
       return 'replied'
     }

@@ -340,8 +340,12 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
 
   let usedPriceTool = false
   const appliedSummaries: string[] = []
-  const reply = async (body: string, noMenu = false) => {
-    const sent = await sendText(input.waId, body, { inReplyTo: input.wamid, noMenu })
+  const reply = async (body: string, noMenu = false, allowPixReminder = false) => {
+    const sent = await sendText(input.waId, body, {
+      inReplyTo: input.wamid,
+      noMenu,
+      ...(allowPixReminder ? { pixReminderStoreId: input.storeId } : {}),
+    })
     if (!sent.ok) throw new Error(sent.error)
   }
 
@@ -755,7 +759,7 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
       const mentionsPrices = /pre[çc]o/i.test(body)
       const reminder = !mentionsPrices && pending.length ? await claimPriceReminder(input.waId, pending).catch(() => null) : null
       const withTip = tip && !body.includes(tip) ? `${body}\n\nDica do dia: ${tip}` : body
-      await reply(reminder ? `${withTip}\n\n${reminder}` : withTip)
+      await reply(reminder ? `${withTip}\n\n${reminder}` : withTip, false, true)
       return 'replied'
     }
 
