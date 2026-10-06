@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { withPixReminder } from '@/lib/rafa-pix'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { enqueueWhatsApp, evoMarkAsRead, isEvolutionProvider } from '@/lib/whatsapp-evolution'
 
@@ -18,6 +19,8 @@ type SendOptions = {
   inReplyTo?: string
   // Evolution: não anexar o menu principal (mensagem aguarda resposta de outro menu).
   noMenu?: boolean
+  // Só respostas conversacionais finais da Rafa devem optar pelo lembrete de Pix.
+  pixReminderStoreId?: string
 }
 
 function normalizeRecipient(value: string) {
@@ -87,8 +90,12 @@ export async function sendText(to: string, body: string, options?: SendOptions):
   const blocked = await validateOutboundRecipient(recipient, options)
   if (blocked) return blocked
 
+  const finalBody = options?.pixReminderStoreId
+    ? await withPixReminder(options.pixReminderStoreId, body)
+    : body
+
   if (isEvolutionProvider()) {
-    return enqueueWhatsApp({ to: recipient, kind: 'text', payload: { body }, inReplyTo: options?.inReplyTo, noMenu: options?.noMenu })
+    return enqueueWhatsApp({ to: recipient, kind: 'text', payload: { body: finalBody }, inReplyTo: options?.inReplyTo, noMenu: options?.noMenu })
   }
 
   return graphPost({
@@ -97,7 +104,7 @@ export async function sendText(to: string, body: string, options?: SendOptions):
     recipient_type: 'individual',
     to: recipient,
     type: 'text',
-    text: { body, preview_url: false },
+    text: { body: finalBody, preview_url: false },
   })
 }
 
@@ -168,4 +175,3 @@ export async function markAsRead(wamid: string, fromPhone?: string): Promise<Wha
     message_id: wamid,
   })
 }
-
