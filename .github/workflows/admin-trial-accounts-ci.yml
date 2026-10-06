@@ -18,9 +18,13 @@ jobs:
       - run: npm install
       - name: Trial and Pix tests
         run: node --experimental-strip-types --test tests/admin-trial-accounts.test.ts tests/rafa-pix.test.ts
-      - name: Existing WhatsApp tests
+      - name: Scanner tests
+        run: npm run test:scanner
+      - name: WhatsApp tests
         run: npm run test:whatsapp
-      - name: Feature lint
-        run: npx eslint lib/admin/trial-accounts-core.ts lib/admin/trial-accounts.ts lib/rafa-pix-core.ts lib/rafa-pix.ts lib/whatsapp.ts app/api/admin/trial-accounts/route.ts app/admin/trial-accounts/page.tsx app/admin/trial-accounts/TrialAccountsClient.tsx app/admin/page.tsx
+      - name: Rafa AI tests
+        run: npm run test:rafa-ai
+      - name: Full lint
+        run: npm run lint
       - name: Build
         run: npm run build
