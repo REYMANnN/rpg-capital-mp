@@ -14,5 +14,8 @@ export default async function AdminPage() {
   try { allowed = verifyAdminSession(token) } catch { allowed = false }
   if (!allowed) return <AdminLogin />
   const data = await loadAdminMetrics()
-  return <AdminDashboard data={data} />
+  return <>
+    <a href="/admin/trial-accounts" className="fixed bottom-5 right-5 z-50 rounded-full bg-emerald-500 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg">Contas teste</a>
+    <AdminDashboard data={data} />
+  </>
 }
