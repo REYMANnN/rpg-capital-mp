@@ -316,6 +316,7 @@ export async function processValue(value: JsonRecord) {
             if (!result.ok) throw new Error(result.error)
             return
           }
+          if (pixSubmission.status !== 'valid') return
           const saved = await savePixForStore(pixResolved.storeId, pixSubmission.key)
           const message = saved.status === 'saved' || saved.status === 'already_saved'
             ? 'Perfeito. Salvei sua chave Pix. Ela será usada só para receber pagamentos da loja. Nunca me mande senha, token ou código do banco.'
