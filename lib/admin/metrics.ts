@@ -235,7 +235,7 @@ export async function loadAdminMetrics() {
     return {
       businessId: id,
       name: String(row.display_name || 'Loja'),
-      ownerName: row.created_by ? userNameById.get(String(row.created_by)) || 'Dono' : 'Dono',
+      ownerName: row.primary_contact_name ? String(row.primary_contact_name) : row.created_by ? userNameById.get(String(row.created_by)) || 'Dono' : 'Dono',
       phone: row.phone ? String(row.phone) : null,
       createdAt: String(row.created_at),
       billingStatus: bill ? String(bill.status) : 'sem_cobranca',
