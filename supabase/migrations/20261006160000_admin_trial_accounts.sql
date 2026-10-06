@@ -37,8 +37,9 @@ as $$
   from cleaned;
 $$;
 
--- Prevent every NEW/changed active phone collision without rewriting legacy duplicates.
--- Advisory lock closes the concurrent insert race that an application-only check leaves open.
+-- Prevent NEW/changed active phone collisions without rewriting legacy duplicates.
+-- Unrelated updates on old rows are deliberately allowed even if their historical
+-- phone formatting would not pass today's validator.
 create or replace function public.guard_balcao_business_phone()
 returns trigger
 language plpgsql
@@ -47,19 +48,30 @@ set search_path = public, pg_temp
 as $$
 declare
   v_phone text;
-  v_should_check boolean;
+  v_phone_changed boolean := false;
+  v_should_check boolean := false;
 begin
-  v_phone := public.normalize_brazil_phone(new.phone);
-  if new.phone is not null and v_phone is null then
-    raise exception 'invalid_phone' using errcode = '22023';
+  if tg_op = 'INSERT' then
+    v_phone_changed := true;
+  else
+    v_phone_changed := new.phone is distinct from old.phone;
   end if;
-  if v_phone is not null then new.phone := v_phone; end if;
 
-  v_should_check := new.active and (
-    tg_op = 'INSERT'
-    or new.phone is distinct from old.phone
-    or (tg_op = 'UPDATE' and old.active = false and new.active = true)
-  );
+  if v_phone_changed then
+    v_phone := public.normalize_brazil_phone(new.phone);
+    if new.phone is not null and v_phone is null then
+      raise exception 'invalid_phone' using errcode = '22023';
+    end if;
+    if v_phone is not null then new.phone := v_phone; end if;
+  else
+    v_phone := public.normalize_brazil_phone(new.phone);
+  end if;
+
+  if tg_op = 'INSERT' then
+    v_should_check := new.active;
+  else
+    v_should_check := new.active and (v_phone_changed or (old.active = false and new.active = true));
+  end if;
 
   if v_should_check and v_phone is not null then
     perform pg_advisory_xact_lock(hashtext(v_phone));
