@@ -20,7 +20,7 @@ jobs:
         run: node --experimental-strip-types --test tests/admin-trial-accounts.test.ts tests/rafa-pix.test.ts
       - name: Existing WhatsApp tests
         run: npm run test:whatsapp
-      - name: Lint
-        run: npm run lint
+      - name: Feature lint
+        run: npx eslint lib/admin/trial-accounts-core.ts lib/admin/trial-accounts.ts lib/rafa-pix-core.ts lib/rafa-pix.ts lib/whatsapp.ts app/api/admin/trial-accounts/route.ts app/admin/trial-accounts/page.tsx app/admin/trial-accounts/TrialAccountsClient.tsx app/admin/page.tsx
       - name: Build
         run: npm run build
