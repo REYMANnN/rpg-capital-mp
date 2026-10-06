@@ -52,9 +52,10 @@ export function normalizePixPhone(value: string) {
 
 function explicitPixIntent(text: string) {
   const normalized = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  return /\bpix\b/.test(normalized)
+  return /\bchave\s+pix\b/.test(normalized)
+    || /\bpix\s*(?:e|eh|:)/.test(normalized)
     || /\b(minha|essa|a)\s+chave\b/.test(normalized)
-    || /\bchave\s+(e|eh|:)/.test(normalized)
+    || /\bchave\s+(?:e|eh|:)/.test(normalized)
 }
 
 function unique<T>(values: T[]) {
