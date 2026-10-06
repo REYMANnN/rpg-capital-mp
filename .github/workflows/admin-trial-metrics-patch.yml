@@ -1,0 +1,34 @@
+name: Admin Trial Metrics Patch
+
+on:
+  push:
+    branches: [feature/admin-trial-accounts]
+    paths:
+      - scripts/admin-trial-metrics-patch.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/admin-trial-accounts
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/admin-trial-metrics-patch.mjs
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/admin/metrics.ts
+          git commit -m "fix: show trial contact in admin accounts [skip ci]"
+          git push origin HEAD:feature/admin-trial-accounts
