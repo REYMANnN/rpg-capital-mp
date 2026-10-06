@@ -6,7 +6,7 @@ Branch: `feature/admin-trial-accounts`
 
 ## Goal
 
-Allow an RPG administrator to create a usable Rafa account for a prospect with only:
+Let an RPG administrator create a usable Rafa account for a prospect using only:
 
 - person/contact name;
 - commerce/store name;
@@ -14,92 +14,97 @@ Allow an RPG administrator to create a usable Rafa account for a prospect with o
 
 The prospect must be able to message Rafa immediately without email, password, Google login, bank connection, Pix key, onboarding, or pre-existing inventory.
 
-The account must use the same production inventory, sales, Rafa, and WhatsApp code paths as a normal merchant. A trial account is only a different creation/lifecycle state, not a second product or database.
+The trial must use the same production inventory, sales, Rafa, and WhatsApp paths as a normal merchant. It is a different creation/lifecycle state, not a second product or database.
 
-While the business has no Pix key, Rafa should answer the user's actual request first and then append a short reminder asking for the Pix key. If the user explicitly sends a Pix key in free text, Rafa validates and stores it in the current business. Once stored, Pix reminders stop.
+While the business has no Pix key, Rafa answers the real request first and then appends a short Pix reminder. If the user explicitly sends a valid Pix key in free text, Rafa stores it in the current business and reminders stop immediately.
 
 ## Current architecture confirmed
 
 ### Admin
 
-- `/admin` is served by `app/admin/page.tsx`.
-- Admin authentication uses the existing `ADMIN_COOKIE` / `verifyAdminSession` flow.
-- The dashboard UI is `app/admin/AdminDashboard.tsx` and currently has tabs such as Convites, Contas, and Custos e uso.
-- Admin write APIs use server routes protected by `isAdminRequest`, for example `app/api/admin/settings/route.ts`.
-- `lib/admin/metrics.ts` already loads businesses, stores, WhatsApp bindings, billing, bank status, sales, and users with the server-side admin Supabase client.
+- `/admin`: `app/admin/page.tsx`.
+- Dashboard UI: `app/admin/AdminDashboard.tsx`.
+- Admin session: existing `ADMIN_COOKIE` / `verifyAdminSession` and `isAdminRequest` flow.
+- Admin server APIs already follow this pattern, e.g. `app/api/admin/settings/route.ts`.
+- `lib/admin/metrics.ts` already loads businesses, stores, WhatsApp bindings, billing, bank, sales, and Auth users with the server-side Supabase admin client.
 
-### Business/store data
+### Existing data model
 
-Current production tables already provide the core fields:
+`balcao_businesses` already contains:
 
-- `balcao_businesses`
-  - `id uuid` default `gen_random_uuid()`
-  - `display_name text not null`
-  - `phone text`
-  - `pix_key text`
-  - `created_by uuid` nullable
-  - `active boolean`
-  - `rafa_welcomed_at timestamptz`
-  - timestamps and other onboarding fields
-- `inventory_v1_stores`
-  - `id uuid` default `gen_random_uuid()`
-  - `installation_id uuid not null`, unique, no DB default
-  - `display_name text not null`
-  - `business_id uuid`
-  - `active boolean`
-- `wa_store_bindings`
-  - primary/unique key is `wa_id`
-  - maps one WhatsApp number to one `store_id`
-- `whatsapp_sessions`
-  - primary/unique key is `wa_id`
-  - may hold `store_id` and conversational payload
+- `id uuid` with `gen_random_uuid()` default;
+- `display_name text not null`;
+- `phone text`;
+- `pix_key text`;
+- nullable `created_by uuid`;
+- `active boolean`;
+- `rafa_welcomed_at timestamptz`.
 
-There is currently no unique index on `balcao_businesses.phone`, so duplicate-phone protection must be explicit and transaction-safe.
+`inventory_v1_stores` already contains:
+
+- `id uuid` with `gen_random_uuid()` default;
+- `installation_id uuid not null`, unique, with no DB default;
+- `display_name text not null`;
+- `business_id uuid`;
+- `active boolean`.
+
+`wa_store_bindings` maps one unique `wa_id` to one `store_id`.
+
+`whatsapp_sessions` is also keyed by `wa_id` and may hold `store_id` plus conversational payload.
+
+There is no unique index on `balcao_businesses.phone` today.
 
 ### Rafa / WhatsApp
 
 - Evolution webhook: `app/api/whatsapp/evolution/route.ts`.
 - Common inbound processor: `lib/whatsapp-inbound.ts`.
 - Store resolution: `resolveRafaStore()` / `phoneStores()` in `lib/rafa-agent.ts`.
-- `phoneStores()` already checks `balcao_businesses.phone`, then maps the business to active `inventory_v1_stores`.
+- `phoneStores()` already matches `balcao_businesses.phone` and resolves active `inventory_v1_stores`.
 - Rafa 3.0 path: `lib/rafa-brain.ts`.
 - Legacy agent path: `lib/rafa-agent.ts`.
 
-This means an admin-created business will already be discoverable by WhatsApp if it has a normalized phone plus an active inventory store. We should preserve this mechanism rather than create a special lookup system.
+Therefore an admin-created business can use the existing resolution mechanism as soon as it has a normalized phone, active store, and binding. No special trial resolver is needed.
 
-## Proposed data model
+## Data model changes
 
-### `balcao_businesses` additions
-
-Add lifecycle metadata to the existing business row:
+Add to `balcao_businesses`:
 
 - `account_origin text not null default 'self_signup'`
-  - allowed values initially: `self_signup`, `admin_trial`
+  - allowed initial values: `self_signup`, `admin_trial`;
+  - immutable provenance: an admin-created account remains `admin_trial` even after conversion.
 - `primary_contact_name text null`
-  - used for admin-created trials before an Auth user exists
+  - used before a real Auth owner exists and retained as a useful contact fallback.
 - `trial_converted_at timestamptz null`
-  - set when an `admin_trial` is converted to the normal account lifecycle
+  - null while still a trial; set when linked into the normal authenticated lifecycle.
 
-Do not create a fake Supabase Auth user for a trial.
+Derived trial status:
 
-Do not create a separate trial-business table, trial inventory, or trial sales table.
+- `Teste`: `account_origin='admin_trial'`, `active=true`, `trial_converted_at is null`;
+- `Convertida`: `account_origin='admin_trial'`, `trial_converted_at is not null`;
+- `Desativada`: `account_origin='admin_trial'`, `active=false`.
 
-### Phone uniqueness
+Do not create a fake Supabase Auth user.
 
-Store business phone in one canonical normalized form: Brazilian E.164 digits, e.g. `5511999999999`.
+Do not create separate trial inventory, sales, Pix, or business tables.
 
-Before trial creation, check the normalized last 10/11 local digits against:
+## Phone normalization and collision safety
+
+Canonical stored business phone: Brazilian E.164 digits, e.g. `5511999999999`.
+
+Before create/edit, compare the same normalized local identity against:
 
 1. active `balcao_businesses.phone`;
-2. `balcao_profiles.phone` belonging to active business members;
+2. `balcao_profiles.phone` linked to active business members;
 3. `wa_store_bindings.wa_id`;
-4. any existing active/incomplete business that would resolve to the same WhatsApp identity.
+4. any active/incomplete record that would resolve the same WhatsApp identity.
 
-Creation must fail with a clear conflict response showing the already-linked business when possible.
+Production audit on 2026-10-06 found at least one existing normalized-phone collision involving three old test businesses. Therefore a unique constraint must not be added blindly.
 
-Because application-only checks race, the implementation should also add a normalized-phone database uniqueness mechanism for business-level direct phone ownership. Preferred implementation: a stored normalized phone column or immutable normalization function plus a partial unique index on active businesses. The final migration must be chosen only after checking current production duplicates and must not fail deployment on existing dirty data.
+Implementation must first handle existing collisions, then add a transaction-safe uniqueness mechanism for direct active business phones. Preferred shape: a canonical normalized-phone column or immutable normalization function plus a partial unique index. Existing dirty test records must be reconciled before enabling that index.
 
-## Trial creation transaction
+Application-level checks still return a friendly conflict such as `phone_already_linked` and, when safe, the existing business name.
+
+## Trial creation
 
 New admin API: `POST /api/admin/trial-accounts`.
 
@@ -113,286 +118,279 @@ Input:
 }
 ```
 
-Server behavior:
+Server flow:
 
-1. Require existing admin session with `isAdminRequest`.
-2. Trim/validate contact and business names.
-3. Normalize phone with the same canonical function used by WhatsApp.
+1. Require `isAdminRequest`.
+2. Validate/trim names.
+3. Normalize phone with the same canonical phone logic used by WhatsApp.
 4. Run collision checks.
-5. Create one `balcao_businesses` row:
-   - `display_name = businessName`
-   - `phone = normalized phone`
-   - `pix_key = null`
-   - `created_by = null`
-   - `account_origin = 'admin_trial'`
-   - `primary_contact_name = contactName`
-   - `active = true`
-6. Create one active `inventory_v1_stores` row using the same `business_id` and display name.
-   - Generate `installation_id` server-side with a real UUID because the current column is required and has no default.
-   - This UUID is only an inventory installation identifier; it is not a fake Auth user.
-7. Create/upsert `wa_store_bindings` for the normalized WhatsApp number and new store.
-8. Do not create billing, bank connection, Auth user, coupon, or Pix payment rows.
-9. Return the created business/store IDs and status.
+5. Create `balcao_businesses` with:
+   - `display_name = businessName`;
+   - `phone = normalized phone`;
+   - `pix_key = null`;
+   - `created_by = null`;
+   - `account_origin = 'admin_trial'`;
+   - `primary_contact_name = contactName`;
+   - `active = true`.
+6. Create one active `inventory_v1_stores` row for that business.
+   - Generate a real UUID for required `installation_id`.
+   - This is an inventory installation identifier, not an Auth identity.
+7. Create/upsert `wa_store_bindings` from normalized WhatsApp to the new store.
+8. Do not create billing, bank, Auth user, coupon, or Pix payment rows.
+9. Return business/store IDs and status.
 
-The business + store + binding creation must be atomic. Preferred: one server-side database function/RPC or transaction-capable database operation with explicit admin-only invocation. Do not leave a half-created trial if store/binding creation fails.
+Business + store + binding must be atomic. Prefer one database transaction/RPC invoked only by the trusted server. A failure must not leave a half-created trial.
+
+Double-click/retry must not create two businesses for the same phone.
 
 ## Admin UI
 
-Add a dedicated `testes` tab to the existing `/admin` dashboard labeled `Contas teste`.
+Add tab `Contas teste` to the existing `/admin` dashboard.
 
 ### Create form
 
-Fields only:
+Only:
 
 - Nome da pessoa
 - Nome do comércio
 - WhatsApp
-
-Action:
-
-- `Criar conta teste`
+- button `Criar conta teste`
 
 No CNPJ, email, password, address, Pix, bank, inventory, SumUp, or onboarding fields.
 
-### Trial list
+### List
 
 Columns:
 
 - Comércio
 - Pessoa
 - WhatsApp
-- Pix (`Cadastrado` / `Não cadastrado`)
-- Status (`Teste`, later `Convertida`/`Desativada` if retained in list)
+- Pix: `Cadastrado` / `Não cadastrado`
+- Status: `Teste` / `Convertida` / `Desativada`
 - Última interação
 - Criada em
 - Ações
 
-Initial actions in this scope:
+Initial actions:
 
-- Editar contact/business name and phone safely
+- Editar
 - Desativar
 
-Conversion support is designed now but may be a separate UI action if the normal-account handoff flow needs additional product decisions.
+`lib/admin/metrics.ts` must use `primary_contact_name` before falling back to Auth-derived owner names for admin trials.
 
-`lib/admin/metrics.ts` should expose trial rows without relying on Supabase Auth for `ownerName`; use `primary_contact_name` as the first source for admin trials.
+## WhatsApp identification / first contact
 
-## WhatsApp identification and first contact
+The existing `phoneStores()` path stays authoritative.
 
-No new identification path is necessary.
+Creation writes both `balcao_businesses.phone` and `wa_store_bindings`, so the first incoming message resolves immediately to the new store.
 
-The existing `phoneStores()` already matches `balcao_businesses.phone` and resolves the active inventory store. Creation also writes `wa_store_bindings`, making lookup deterministic immediately.
+For an admin trial, Rafa may greet with the stored contact name, but the name is presentation only, never authorization.
 
-For an admin trial:
-
-- a first `Oi` resolves to the newly created store;
-- Rafa should use `primary_contact_name` when helpful, but must not depend on that name for authorization;
-- normal Rafa tools operate against the same `storeId` as any other business.
-
-Example first response:
+Expected first-contact style:
 
 > Oi, Carlos! Esse número está registrado no Mercadinho Avenida. Como posso te ajudar hoje?
 >
 > Ah, ainda estou sem sua chave Pix. Sua chave serve para receber pagamentos. A Rafa não precisa da sua senha, código do banco ou qualquer outro dado bancário. Se quiser, pode me mandar sua chave aqui.
 
-Exact microcopy may be shortened to respect Rafa's 6-line response rule.
+Microcopy may be shortened to preserve Rafa's normal response-length rules.
 
-## Pix reminder behavior
+## Pix reminder
 
-Canonical source of truth: `balcao_businesses.pix_key` for the business backing the current store.
+Canonical source of truth: `balcao_businesses.pix_key` for the business behind the current store.
 
-If it is null/blank:
+If blank/null:
 
 1. answer the user's actual request first;
-2. append one short Pix reminder at the end whenever the response path supports it;
-3. do not block inventory, product, sales, or other non-Pix functionality;
-4. do not request bank password, token, SMS code, login, card data, or other banking secrets.
+2. append one short Pix reminder at the end whenever the response type allows it;
+3. never block inventory, product, sales, or unrelated operations;
+4. never ask for password, token, SMS code, login, card data, or banking secrets.
 
-Preferred shared helper:
+Create shared server helper, proposed `lib/rafa-pix.ts`, responsible for:
 
-- `lib/rafa-pix.ts`
-  - resolve `storeId -> businessId -> pix_key`
-  - format reminder
-  - detect/store keys
+- `storeId -> businessId -> pix_key` lookup;
+- Pix reminder formatting;
+- parsing/validation;
+- safe Pix storage.
 
-Both `lib/rafa-brain.ts` and `lib/rafa-agent.ts` should use the same helper. Fast/direct reply paths in `lib/whatsapp-inbound.ts` that bypass both agents should use the helper where practical so reminders are not silently skipped.
+Use the same helper from both `lib/rafa-brain.ts` and `lib/rafa-agent.ts`. Important direct responses in `lib/whatsapp-inbound.ts` that bypass both agents should also apply it when safe.
 
-No cooldown is required by the requested behavior. The reminder stops immediately after a valid Pix key is stored.
+Requested behavior has no cooldown: while Pix is missing, Rafa may remind after each normal supported interaction. The reminder stops immediately once a valid key is stored.
 
-Do not append the reminder when:
+Do not append a reminder when:
 
-- the current message itself is successfully registering the Pix key;
-- the current reply is already asking/confirming a Pix key;
-- adding it would corrupt a confirmation or machine-sensitive payload.
+- the current message successfully registers the key;
+- Rafa is already asking/confirming a Pix key;
+- the response is a confirmation/machine-sensitive payload where an appended paragraph could break the flow.
 
 ## Free-text Pix capture
 
-Before normal conversational routing, inspect text for an explicit Pix-key statement.
+Inspect incoming text before normal conversational routing for explicit Pix-key intent.
 
-Examples that should be eligible for direct capture:
+Examples eligible for direct capture:
 
 - `minha chave pix é loja@exemplo.com`
 - `pix: 12345678909`
 - `minha chave é 550e8400-e29b-41d4-a716-446655440000`
 - `usa essa chave pix +5511999999999`
 
-Supported types:
+Supported deterministic types:
 
 - CPF
 - CNPJ
-- Brazilian phone number
+- Brazilian phone
 - email
-- EVP/random Pix key (UUID format)
+- EVP/random UUID key
 
-Validation must be deterministic server-side:
+Validation:
 
-- CPF/CNPJ: normalize digits and validate check digits;
-- phone: normalize to accepted Pix phone format;
-- email: syntactic validation and reasonable length limits;
-- EVP: UUID syntax validation.
+- CPF/CNPJ: strip punctuation and validate check digits;
+- phone: normalize to accepted Pix phone form;
+- email: syntax + length bounds;
+- EVP: UUID syntax.
 
 ### Ambiguity rule
 
-Do not treat arbitrary personal data as Pix merely because it resembles a key.
+Never store arbitrary personal data merely because it resembles a key.
 
-Example:
+`meu telefone é 11999999999` must not auto-save as Pix.
 
-`meu telefone é 11999999999`
-
-must not be auto-saved as Pix. If the user appears to be offering the number as Pix but intent is not explicit, ask:
+If context suggests possible Pix but is not explicit, ask:
 
 > Quer usar esse número como sua chave Pix?
 
-Direct auto-save requires explicit Pix/key context plus one unambiguous valid candidate.
+Direct auto-save requires explicit key/Pix context plus exactly one unambiguous valid candidate.
 
-### Save behavior
+### Save
 
-When a valid explicit key is captured:
+When valid and explicit:
 
-1. resolve the current `storeId` and its `business_id`;
-2. update only that business's `balcao_businesses.pix_key`;
-3. confirm the stored key in a masked or minimally exposed form where appropriate;
-4. stop future Pix reminders immediately.
+1. resolve current store and its `business_id`;
+2. update only `balcao_businesses.pix_key` for that business;
+3. confirm success, exposing no more of the key than needed;
+4. future reminders stop immediately.
 
-Do not duplicate the key into a trial-only table.
+Do not create or write a trial-specific Pix table.
 
-If current checkout code still mirrors Pix into `balcao_profiles.pix_key`, do not add a second write until code inspection proves it is required. Business-level `pix_key` is the canonical target for this feature.
+`balcao_profiles.pix_key` exists, but it must not become a second write target unless implementation inspection proves a current checkout path still requires it. For this feature, business-level `pix_key` is canonical.
 
 ## Editing a trial
 
-Admin edits must be server-side and admin-authenticated.
+Admin edits are server-side and admin-authenticated.
 
-Changing the phone must:
+A phone change must atomically:
 
-1. normalize the new phone;
-2. run the same collision checks as creation;
-3. update `balcao_businesses.phone`;
-4. move the `wa_store_bindings` row atomically from old number to new number;
-5. clear/migrate the old `whatsapp_sessions` association as needed so old number no longer resolves to the store.
+1. normalize/check the new phone;
+2. update `balcao_businesses.phone`;
+3. move the `wa_store_bindings` association old -> new;
+4. clear/migrate old `whatsapp_sessions` state as appropriate;
+5. ensure the old number no longer resolves to this store.
 
-Do not instruct the admin to manually edit identity/linkage fields in Supabase as a normal workflow.
+Identity/linkage fields should be edited through the Admin UI, not as the normal workflow through manual Supabase edits.
 
 ## Deactivation
 
-Deactivation should mark the business/store inactive and remove or invalidate the direct WhatsApp binding. Historical inventory, sales, and messages remain intact.
+Mark business/store inactive and invalidate/remove direct WhatsApp binding. Preserve historical inventory, sales, messages, and audit data.
 
 A deactivated trial must no longer resolve through Rafa.
 
-## Conversion to normal account
+## Conversion to a normal account
 
-Conversion must preserve the existing `balcao_businesses.id` and `inventory_v1_stores.id` so all inventory, sales, Rafa history, and integrations remain attached.
+Preserve the same `balcao_businesses.id` and `inventory_v1_stores.id`.
 
-Target transition:
+Conversion:
 
-`account_origin = 'admin_trial'` -> normal/self-service lifecycle, setting `trial_converted_at`.
+- keeps `account_origin='admin_trial'` as provenance;
+- sets `trial_converted_at`;
+- attaches the real Auth user as the business owner/member;
+- leaves inventory, sales, Rafa history, and integrations in place.
 
-The future signup/linking flow should attach a real Auth user as business member/owner instead of creating a new business. Never copy inventory into a replacement business.
+Never create a replacement business and copy data into it.
 
 ## Security
 
-- Keep Supabase service-role access server-only through the existing admin client.
-- Never expose service-role credentials to `AdminDashboard.tsx` or other browser code.
-- Every `/api/admin/trial-accounts` mutation requires the existing admin-session check.
-- Any new public-schema columns/tables/functions must follow current RLS/Data API posture after inspecting existing policies.
-- A privileged DB function, if used for atomic trial creation, must not be publicly executable by `anon`/`authenticated`; revoke default `PUBLIC` execution and expose it only through the trusted server path.
-- Do not use user-editable JWT metadata for admin authorization.
+- Supabase service-role remains server-only.
+- Never expose it to `AdminDashboard.tsx` or any browser bundle.
+- Every trial-account mutation requires the existing admin-session check.
+- Any new public-schema column/function follows the project's RLS/Data API posture.
+- If an atomic privileged DB function is used, revoke default `PUBLIC` execution and do not expose it to `anon`/`authenticated`; call only from the trusted server path.
+- Do not use user-editable JWT metadata for authorization.
 
 ## Error handling / idempotency
 
-Creation errors must be explicit:
+Explicit errors:
 
-- invalid phone
-- phone already linked
-- missing contact name
-- missing business name
-- database creation failure
+- `invalid_phone`
+- `phone_already_linked`
+- `missing_contact_name`
+- `missing_business_name`
+- `creation_failed`
 
-A double click/retry must not create two businesses for the same normalized phone.
+A failed store/binding step rolls back the business creation.
 
-If business creation succeeds but store/binding fails, the whole transaction must roll back.
+Receiving the same Pix key twice is idempotent and does not corrupt state.
 
-Pix capture must be idempotent: receiving the same key twice leaves the same value and returns a normal confirmation.
+An invalid or ambiguous candidate never overwrites an existing key.
 
 ## Tests
 
-### Pure/unit tests
+### Unit
 
 - Brazilian phone normalization
-- CPF validation
-- CNPJ validation
-- email Pix parsing
-- EVP UUID parsing
-- explicit Pix-intent detection
+- CPF validator
+- CNPJ validator
+- email Pix parser
+- EVP UUID parser
+- explicit Pix intent
 - `meu telefone é ...` does not auto-save
-- duplicate key/candidate ambiguity
-- reminder formatting
+- ambiguous/multiple candidate rejection
+- reminder formatter
 
-### Server/API tests
+### API / DB
 
 - admin auth required
-- trial creation produces business + store + binding
+- create => business + store + binding
 - no Auth user created
 - `pix_key` starts null
 - duplicate phone rejected
+- concurrent/retried creation does not duplicate
 - phone edit moves binding
 - deactivate stops resolution
+- transaction rolls back on partial failure
 
-### Rafa integration tests
+### Rafa integration
 
-- trial phone resolves via `resolveRafaStore`
-- inventory question works with empty inventory
-- answer is produced before Pix reminder
-- reminder appears while `pix_key` is null
-- explicit valid Pix message stores key
-- next normal response contains no reminder
-- ambiguous phone message asks before saving
-- malformed Pix candidate is rejected without overwriting existing data
-- both Rafa 3.0 and legacy agent behave consistently
+- trial phone resolves with `resolveRafaStore`
+- empty inventory can still be queried normally
+- business answer appears before Pix reminder
+- reminder appears while Pix is blank
+- explicit valid Pix message stores correct business key
+- next normal response has no reminder
+- ambiguous phone asks before save
+- invalid key does not overwrite data
+- Rafa 3.0 and legacy agent stay consistent
 
-## Migration/deployment sequence
+## Deployment sequence
 
-1. Audit existing normalized-phone duplicates in production.
-2. Add lifecycle/contact columns and safe phone-uniqueness mechanism.
-3. Add server trial-account service/API.
-4. Add admin `Contas teste` UI.
+1. Reconcile existing normalized-phone collisions found in production.
+2. Add lifecycle/contact columns and safe phone uniqueness.
+3. Add atomic server trial-account creation service/API.
+4. Add `Contas teste` Admin UI.
 5. Add shared Pix parser/reminder/storage helper.
-6. Wire helper into Rafa 3.0, legacy Rafa, and important direct reply paths.
+6. Wire Rafa 3.0, legacy Rafa, and important direct reply paths.
 7. Add tests.
-8. Run DB/security advisors and application test suite.
-9. Deploy code/schema together in an order that keeps old accounts valid.
-10. Create one internal trial number and verify end-to-end before broader use.
+8. Run Supabase DB/security advisors and app test suite.
+9. Deploy schema/code in backward-compatible order.
+10. Create one internal trial and verify end-to-end before broader use.
 
 ## Non-goals
 
-This feature does not:
+- separate trial database or inventory;
+- fake Auth users;
+- requiring Pix before Rafa works;
+- requiring bank connection;
+- SumUp/card onboarding;
+- deleting history on conversion/deactivation.
 
-- create a second trial inventory system;
-- create fake Auth users;
-- require Pix before using Rafa;
-- require bank connection;
-- add SumUp/card onboarding;
-- change normal-account behavior except for shared, safe Pix parsing/reminder code where applicable;
-- erase historical data when a trial is converted or deactivated.
+## Acceptance criteria
 
-## Implementation acceptance criteria
-
-The feature is complete when an admin can create `Carlos / Mercadinho Avenida / +55...` from `/admin`, Carlos can immediately message Rafa and use normal inventory/sales features, Rafa keeps appending the Pix reminder while the business has no key, `minha chave pix é ...` stores a valid key in the correct business, reminders stop on the very next response, duplicate WhatsApp identities are prevented, and no fake Auth user or duplicate trial data model is introduced.
+Feature is complete when the admin can create `Carlos / Mercadinho Avenida / +55...` from `/admin`; Carlos can immediately message Rafa and use normal store functions; Rafa keeps appending the Pix reminder while that business has no key; `minha chave pix é ...` stores one valid key in the correct business; reminders stop on the next response; duplicate WhatsApp identities are prevented; and no fake Auth user or duplicate trial data model is introduced.
