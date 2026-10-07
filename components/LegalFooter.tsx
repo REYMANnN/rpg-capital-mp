@@ -4,14 +4,12 @@ export default function LegalFooter() {
   return (
     <footer className="border-t border-slate-200 bg-white px-4 py-6 text-center text-[13px] leading-6 text-slate-600">
       <p className="m-0">
-        RPG Capital é uma marca de <strong className="font-semibold text-slate-800">57.114.756 RENAN PANGONI GUADALUPE</strong> · CNPJ 57.114.756/0001-89
+        RPG Capital & Crédito é uma marca de <strong className="font-semibold text-slate-800">57.114.756 RENAN PANGONI GUADALUPE</strong> · CNPJ 57.114.756/0001-89
       </p>
       <p className="mt-1.5 mb-0">
         <a className="underline-offset-4 hover:underline" href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a>
         {' · '}
-        <a className="underline-offset-4 hover:underline" href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">WhatsApp +55 11 93620-1445</a>
-        {' · '}
-        <a className="underline-offset-4 hover:underline" href="https://www.instagram.com/rpgcapital/" target="_blank" rel="noreferrer">Instagram</a>
+        <a className="underline-offset-4 hover:underline" href="https://www.instagram.com/rpg_capital_credito/" target="_blank" rel="noreferrer">Instagram</a>
         {' · '}
         <a className="underline-offset-4 hover:underline" href="https://www.linkedin.com/company/rpgcapital/" target="_blank" rel="noreferrer">LinkedIn</a>
         {' · '}
