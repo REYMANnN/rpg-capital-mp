@@ -19,12 +19,20 @@ const softwareVersion = INVENTORY_APP_VERSION.replace(/^v/, "");
 const deploymentCommit = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || "local";
 
 export const metadata: Metadata = {
-  title: "RPG Capital — Pagamentos simples. Crédito justo.",
-  description: "Infraestrutura de pagamentos zero taxa para lojistas brasileiros.",
+  metadataBase: new URL("https://www.rpgcapital.com.br"),
+  title: "RPG Capital & Crédito — Crédito justo para o pequeno varejo",
+  description:
+    "A RPG Capital & Crédito é uma empresa de crédito para o pequeno varejo brasileiro. Com a Rafa, assistente no WhatsApp, transforma a operação real da loja em crédito com juros justos.",
+  applicationName: "RPG Capital & Crédito",
   icons: {
-    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
-    shortcut: "/favicon.svg",
-    apple: "/favicon.svg",
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/icon-48.png", sizes: "48x48", type: "image/png" },
+      { url: "/icon-96.png", sizes: "96x96", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    shortcut: "/icon-96.png",
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 

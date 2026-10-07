@@ -19,15 +19,18 @@ import {
   SiteHeader,
 } from '@/components/site/SiteChrome'
 
-const TITLE = 'Rafa — sua loja mais organizada pelo WhatsApp | RPG Capital & Crédito'
+const TITLE = 'RPG Capital & Crédito — Crédito justo para o pequeno varejo'
 const DESCRIPTION =
-  'A Rafa é a assistente da RPG no WhatsApp: registra vendas, sobe o estoque pela foto da nota, gera Pix e avisa o que está acabando. Você toca a loja. A Rafa organiza o resto.'
-const OG_IMAGE = `${SITE_URL}/site/pix-cartao.webp`
+  'A RPG Capital & Crédito é uma empresa de crédito para o pequeno varejo brasileiro. Com a Rafa, assistente no WhatsApp que organiza vendas, estoque e caixa, transforma a operação real da loja em crédito com juros justos.'
+const SOCIAL_TITLE = 'RPG Capital & Crédito — crédito justo para o pequeno varejo, com a Rafa no WhatsApp'
+const OG_IMAGE = `${SITE_URL}/og-rpg-capital-credito.png`
+const FOUNDER_LINKEDIN = 'https://br.linkedin.com/in/renan-guadalupe-aa562a2ba'
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: TITLE,
+  title: { absolute: TITLE },
   description: DESCRIPTION,
+  applicationName: 'RPG Capital & Crédito',
   alternates: { canonical: `${SITE_URL}/` },
   robots: {
     index: true,
@@ -38,30 +41,55 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'pt_BR',
     siteName: 'RPG Capital & Crédito',
-    title: 'Sua loja mais organizada pelo WhatsApp — conheça a Rafa',
+    title: SOCIAL_TITLE,
     description: DESCRIPTION,
     url: `${SITE_URL}/`,
-    images: [{ url: OG_IMAGE, width: 1200, height: 1200, alt: 'Rafa gerando Pix e cobrança no cartão pelo celular' }],
+    images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: 'RPG Capital & Crédito — Crédito justo para o pequeno varejo' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Sua loja mais organizada pelo WhatsApp — conheça a Rafa',
+    title: SOCIAL_TITLE,
     description: DESCRIPTION,
     images: [OG_IMAGE],
   },
   manifest: '/manifest.webmanifest',
 }
 
+const FAQ = [
+  ['O que é a RPG Capital & Crédito?', 'Uma empresa de crédito para o pequeno varejo brasileiro. A gente usa a operação real da loja — vendas, estoque e caixa — para construir crédito com juros justos, em vez de olhar só para balanço e histórico bancário.'],
+  ['O que é a Rafa?', 'A assistente da RPG Capital & Crédito no WhatsApp. Ela registra vendas, sobe estoque pela foto da nota, gera Pix e responde sobre a sua loja.'],
+  ['A RPG Capital & Crédito empresta dinheiro?', 'Ainda não. Estamos construindo crédito com juros justos, com parceiros autorizados. Quando chegar, custo e limite vêm claros antes de tudo.'],
+  ['A RPG cobra taxa no Pix?', 'Não. O Pix cai direto na conta da sua loja. Vale conferir se o seu banco cobra tarifa de Pix para empresa.'],
+  ['Preciso trocar de banco ou de maquininha?', 'Não. Continue com os seus. E, se quiser, seu celular também recebe cartão por aproximação — a ativação é simples e sai no mesmo dia ou no seguinte.'],
+  ['Preciso de computador?', 'Não. Tudo funciona no celular e no WhatsApp. O painel também abre no computador.'],
+  ['Meus dados estão seguros?', 'O banco é conectado pelo Open Finance, só com a sua autorização, e você desconecta quando quiser.'],
+  ['Dá pra testar antes?', 'Sim. Use a conta de teste ou crie sua conta para começar a falar com a Rafa.'],
+] as const
+
 const structuredData = {
   '@context': 'https://schema.org',
   '@graph': [
     {
-      '@type': 'Organization',
+      '@type': ['Organization', 'FinancialService'],
       '@id': `${SITE_URL}/#organization`,
       name: 'RPG Capital & Crédito',
+      alternateName: ['RPG Capital', 'RPG Capital e Crédito'],
+      legalName: 'RPG Capital & Crédito',
+      taxID: '57.114.756/0001-89',
       url: `${SITE_URL}/`,
-      logo: `${SITE_URL}/brand/logo-rpg-capital-credito-azul.png`,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${SITE_URL}/brand/rpg-capital-credito-logo-512.png`,
+        width: 512,
+        height: 512,
+      },
+      image: OG_IMAGE,
+      description: DESCRIPTION,
+      slogan: 'Crédito justo para o pequeno varejo.',
       email: CONTACT_EMAIL,
+      areaServed: { '@type': 'Country', name: 'Brasil' },
+      knowsAbout: ['crédito para pequenas empresas', 'capital de giro', 'varejo', 'gestão de estoque', 'Pix', 'Open Finance'],
+      founder: { '@type': 'Person', '@id': `${SITE_URL}/sobre#renan`, name: 'Renan Pangoni Guadalupe', jobTitle: 'Fundador', sameAs: [FOUNDER_LINKEDIN] },
       sameAs: [INSTAGRAM_URL, LINKEDIN_URL],
     },
     {
@@ -69,6 +97,7 @@ const structuredData = {
       '@id': `${SITE_URL}/#website`,
       url: `${SITE_URL}/`,
       name: 'RPG Capital & Crédito',
+      alternateName: ['RPG Capital', 'RPG Capital e Crédito'],
       publisher: { '@id': `${SITE_URL}/#organization` },
       inLanguage: 'pt-BR',
     },
@@ -78,8 +107,18 @@ const structuredData = {
       name: 'Rafa',
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'WhatsApp, Web',
-      description: DESCRIPTION,
+      description:
+        'Assistente da RPG Capital & Crédito no WhatsApp que registra vendas, sobe o estoque pela foto da nota, gera Pix e responde sobre a loja.',
       publisher: { '@id': `${SITE_URL}/#organization` },
+    },
+    {
+      '@type': 'FAQPage',
+      '@id': `${SITE_URL}/#faq`,
+      mainEntity: FAQ.map(([question, answer]) => ({
+        '@type': 'Question',
+        name: question,
+        acceptedAnswer: { '@type': 'Answer', text: answer },
+      })),
     },
   ],
 }
@@ -138,16 +177,6 @@ const STEPS = [
     alt: 'Lojista sorrindo enquanto confere o resumo do dia no celular',
   },
 ]
-
-const FAQ = [
-  ['O que é a Rafa?', 'A assistente da RPG no WhatsApp. Ela registra vendas, sobe estoque pela foto da nota, gera Pix e responde sobre a sua loja.'],
-  ['A RPG cobra taxa no Pix?', 'Não. O Pix cai direto na conta da sua loja. Vale conferir se o seu banco cobra tarifa de Pix para empresa.'],
-  ['Preciso trocar de banco ou de maquininha?', 'Não. Continue com os seus. E, se quiser, seu celular também recebe cartão por aproximação — a ativação é simples e sai no mesmo dia ou no seguinte.'],
-  ['Preciso de computador?', 'Não. Tudo funciona no celular e no WhatsApp. O painel também abre no computador.'],
-  ['Meus dados estão seguros?', 'O banco é conectado pelo Open Finance, só com a sua autorização, e você desconecta quando quiser.'],
-  ['A RPG empresta dinheiro?', 'Ainda não. Estamos construindo crédito com juros justos, com parceiros autorizados. Quando chegar, custo e limite vêm claros antes de tudo.'],
-  ['Dá pra testar antes?', 'Sim. Use a conta de teste ou crie sua conta para começar a falar com a Rafa.'],
-] as const
 
 export default function Home() {
   return (
