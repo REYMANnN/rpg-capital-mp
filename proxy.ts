@@ -3,7 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 
 // Páginas públicas que, no endereço *.vercel.app de produção, devem ir para o domínio oficial
 // (assim o Google para de indexar as cópias da Vercel). Webhooks, API, login e app não são redirecionados.
-const PUBLIC_MARKETING_PATHS = ['/', '/integracoes', '/credito', '/cultura', '/edu', '/privacidade', '/termos']
+const PUBLIC_MARKETING_PATHS = ['/', '/integracoes', '/credito', '/cultura', '/sobre', '/edu', '/privacidade', '/termos']
 const CANONICAL_ORIGIN = 'https://www.rpgcapital.com.br'
 
 function vercelHostResponse(request: NextRequest) {

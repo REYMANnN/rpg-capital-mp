@@ -3,8 +3,9 @@ import InterestForm from './InterestForm'
 import styles from './interesse.module.css'
 
 export const metadata: Metadata = {
-  title: 'Tenho interesse — RPG para Balcões',
-  description: 'Cadastre seu interesse em usar a RPG para Balcões durante a fase final de testes.',
+  alternates: { canonical: 'https://www.rpgcapital.com.br/interesse' },
+  title: 'Criar conta — Rafa | RPG Capital & Crédito',
+  description: 'Crie sua conta na RPG Capital & Crédito e comece a usar a Rafa, a assistente no WhatsApp que organiza vendas, estoque e caixa da sua loja.',
   robots: { index: true, follow: true },
 }
 
@@ -12,11 +13,11 @@ export default function InteressePage() {
   return (
     <main className={styles.page}>
       <header className={styles.header}>
-        <a className={styles.brand} href="/" aria-label="RPG para Balcões — início">
+        <a className={styles.brand} href="/" aria-label="RPG Capital & Crédito — início">
           <span className={styles.brandMark}>RPG</span>
           <span className={styles.brandCopy}>
-            <strong>RPG para Balcões</strong>
-            <small>por RPG Capital</small>
+            <strong>Rafa</strong>
+            <small>por RPG Capital &amp; Crédito</small>
           </span>
         </a>
         <a className={styles.loginLink} href="/login?intent=login">Entrar na minha conta</a>
@@ -25,7 +26,7 @@ export default function InteressePage() {
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
           <p className={styles.eyebrow}>FASE FINAL DE TESTES</p>
-          <h1>A RPG para Balcões já está na fase de testes finais!</h1>
+          <h1>A Rafa já está na fase de testes finais!</h1>
           <p className={styles.lead}>
             Caso tenha interesse em ajudar a RPG a ajudar outros lojistas, basta preencher o formulário de interesse abaixo.
           </p>
