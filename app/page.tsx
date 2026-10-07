@@ -1,50 +1,53 @@
 import type { Metadata } from 'next'
-import styles from './landing.module.css'
+import styles from '@/components/site/site.module.css'
+import { display } from '@/components/site/fonts'
+import DaySummary from '@/components/site/DaySummary'
+import HeroPhone from '@/components/site/HeroPhone'
+import { NotaScan, PayToggle, StockBars, VendaFeed } from '@/components/site/MiniUIs'
+import Reveal from '@/components/site/Reveal'
+import RotatingWord from '@/components/site/RotatingWord'
+import StickySteps from '@/components/site/StickySteps'
+import TiltCard from '@/components/site/TiltCard'
+import {
+  CONTACT_EMAIL,
+  DEMO_HREF,
+  INSTAGRAM_URL,
+  LINKEDIN_URL,
+  SIGNUP_HREF,
+  SITE_URL,
+  SiteFooter,
+  SiteHeader,
+} from '@/components/site/SiteChrome'
 
-const signupHref = '/interesse'
-const loginHref = '/login?intent=login'
-const demoHref = '/demo'
+const TITLE = 'Rafa — sua loja mais organizada pelo WhatsApp | RPG Capital & Crédito'
+const DESCRIPTION =
+  'A Rafa é a assistente da RPG no WhatsApp: registra vendas, sobe o estoque pela foto da nota, gera Pix e avisa o que está acabando. Você toca a loja. A Rafa organiza o resto.'
+const OG_IMAGE = `${SITE_URL}/site/pix-cartao.webp`
 
 export const metadata: Metadata = {
-  title: 'RPG para Balcões — Gestão completa da sua loja por R$ 9,99/mês',
-  description:
-    'Gerencie inventário, vendas, finanças e equipe por R$ 9,99/mês. Use a Rafa pelo WhatsApp para tirar dúvidas e fazer tarefas por você. A RPG também quer ajudar comerciantes a terem acesso a crédito mais barato.',
-  alternates: { canonical: 'https://rpgcapital.com.br/' },
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: `${SITE_URL}/` },
   robots: {
     index: true,
     follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
-      'max-video-preview': -1,
-    },
+    googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1, 'max-video-preview': -1 },
   },
   openGraph: {
     type: 'website',
     locale: 'pt_BR',
-    siteName: 'RPG para Balcões',
-    title: 'RPG para Balcões — Sua loja inteira por R$ 9,99/mês',
-    description:
-      'Inventário, vendas, finanças e Rafa no WhatsApp. Super mega simples de usar, por R$ 9,99/mês.',
-    url: 'https://rpgcapital.com.br/',
-    images: [
-      {
-        url: 'https://images.unsplash.com/photo-1750262701480-91fc40e726ba?auto=format&fit=crop&fm=jpg&q=85&w=1200&h=630',
-        width: 1200,
-        height: 630,
-        alt: 'Atendimento e pagamento em um pequeno comércio',
-      },
-    ],
+    siteName: 'RPG Capital & Crédito',
+    title: 'Sua loja mais organizada pelo WhatsApp — conheça a Rafa',
+    description: DESCRIPTION,
+    url: `${SITE_URL}/`,
+    images: [{ url: OG_IMAGE, width: 1200, height: 1200, alt: 'Rafa gerando Pix e cobrança no cartão pelo celular' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'RPG para Balcões — Sua loja inteira por R$ 9,99/mês',
-    description: 'Rafa no WhatsApp, inventário, vendas, finanças, equipe, Pix sem taxa e gestão por R$ 9,99/mês.',
-    images: [
-      'https://images.unsplash.com/photo-1750262701480-91fc40e726ba?auto=format&fit=crop&fm=jpg&q=85&w=1200&h=630',
-    ],
+    title: 'Sua loja mais organizada pelo WhatsApp — conheça a Rafa',
+    description: DESCRIPTION,
+    images: [OG_IMAGE],
   },
   manifest: '/manifest.webmanifest',
 }
@@ -54,356 +57,449 @@ const structuredData = {
   '@graph': [
     {
       '@type': 'Organization',
-      '@id': 'https://rpgcapital.com.br/#organization',
-      name: 'RPG Capital',
-      url: 'https://rpgcapital.com.br/',
-      logo: 'https://rpgcapital.com.br/favicon.svg',
-      email: 'comercial@rpgcapital.com.br',
-      telephone: '+5511936201445',
-      sameAs: [
-        'https://www.instagram.com/rpg_capital_credito/',
-        'https://www.linkedin.com/company/rpgcapital/',
-      ],
+      '@id': `${SITE_URL}/#organization`,
+      name: 'RPG Capital & Crédito',
+      url: `${SITE_URL}/`,
+      logo: `${SITE_URL}/brand/logo-rpg-capital-credito-azul.png`,
+      email: CONTACT_EMAIL,
+      sameAs: [INSTAGRAM_URL, LINKEDIN_URL],
     },
     {
       '@type': 'WebSite',
-      '@id': 'https://rpgcapital.com.br/#website',
-      url: 'https://rpgcapital.com.br/',
-      name: 'RPG para Balcões',
-      publisher: { '@id': 'https://rpgcapital.com.br/#organization' },
+      '@id': `${SITE_URL}/#website`,
+      url: `${SITE_URL}/`,
+      name: 'RPG Capital & Crédito',
+      publisher: { '@id': `${SITE_URL}/#organization` },
       inLanguage: 'pt-BR',
     },
     {
       '@type': 'SoftwareApplication',
-      '@id': 'https://rpgcapital.com.br/#software',
-      name: 'RPG para Balcões',
+      '@id': `${SITE_URL}/#rafa`,
+      name: 'Rafa',
       applicationCategory: 'BusinessApplication',
-      operatingSystem: 'Web',
-      description:
-        'Sistema de gestão para pequenos varejistas com Rafa no WhatsApp, inventário, vendas, finanças, equipe e cobrança Pix sem taxa da RPG.',
-      publisher: { '@id': 'https://rpgcapital.com.br/#organization' },
-      offers: {
-        '@type': 'Offer',
-        price: '9.99',
-        priceCurrency: 'BRL',
-        url: 'https://www.rpgcapital.com.br/interesse',
-      },
+      operatingSystem: 'WhatsApp, Web',
+      description: DESCRIPTION,
+      publisher: { '@id': `${SITE_URL}/#organization` },
     },
   ],
 }
 
-const features = [
-  ['01', 'Inventário', 'Controle produtos, entradas, saídas, custos e o que está acabando.'],
-  ['02', 'Vendas', 'Registre as vendas e mantenha o estoque atualizado junto com o caixa.'],
-  ['03', 'Finanças', 'Acompanhe saldo e movimentações para entender para onde o dinheiro da loja está indo.'],
-  ['04', 'Equipe', 'Organize quem vende, quem cuida do estoque e quem administra o negócio.'],
-  ['05', 'Pix sem taxa', 'Cobre direto no balcão com o valor certo — sem taxa no Pix.'],
-  ['06', 'Código de barras', 'Use o celular para encontrar e cadastrar produtos com muito menos digitação.'],
+const PAINS = ['Produto acaba sem perceber', 'Venda fica sem registro', 'Estoque vira confusão', 'Sistema complicado atrapalha']
+
+const STORES = [
+  'Mercadinho',
+  'Farmácia',
+  'Pet shop',
+  'Loja de roupas',
+  'Material de construção',
+  'Papelaria',
+  'Conveniência',
+  'Padaria',
+  'Açougue',
+  'Hortifruti',
+]
+
+const BENEFITS = [
+  ['Menos caderno', 'Cada venda e cada entrada de mercadoria vira registro na hora.'],
+  ['Estoque sem chute', 'O estoque baixa a cada venda e a Rafa avisa quando algo está acabando.'],
+  ['Resposta na hora', '“Quanto vendi hoje?”, “O que mais dá lucro?” — pergunte como perguntaria a um sócio.'],
+  ['Perda também conta', '“Quebrei duas garrafas” vira baixa de estoque com o motivo certo.'],
+  ['Do seu jeito', 'Escreveu errado? Mandou áudio? Ela entende.'],
+  ['Equipe no lugar', 'Cada funcionário com o seu acesso. Você decide quem vê o quê.'],
+] as const
+
+const STEPS = [
+  {
+    tag: 'VENDER',
+    title: 'Escaneie, finalize e pronto.',
+    text: 'Escaneie o produto ou só fale o que vendeu. A venda fica registrada e o estoque baixa sozinho.',
+    image: '/site/venda-scanner.webp',
+    alt: 'Lojista escaneando o código de barras de um produto com o celular',
+  },
+  {
+    tag: 'SUBIR ESTOQUE',
+    title: 'Tirou foto da nota? Acabou.',
+    text: 'A Rafa lê produto, quantidade e custo e cadastra tudo. Você não digita item por item — ela só pergunta o que não conseguiu ler.',
+    image: '/site/nota-fiscal.webp',
+    alt: 'Celular fotografando uma nota fiscal de fornecedor',
+  },
+  {
+    tag: 'RECEBER',
+    title: 'Pix ou cartão, você escolhe.',
+    text: 'A Rafa gera o QR Code do Pix com o valor certo ou abre o pagamento por aproximação no celular. Você acompanha e a venda fica registrada.',
+    image: '/site/pix-cartao.webp',
+    alt: 'Dois celulares: um com QR Code de Pix e outro recebendo cartão por aproximação',
+  },
+  {
+    tag: 'ACOMPANHAR',
+    title: 'Veja como foi o dia.',
+    text: 'Vendas de hoje, mais vendidos e o que precisa comprar — num resumo no seu WhatsApp, no fim do dia.',
+    image: '/site/lojista-feliz.webp',
+    alt: 'Lojista sorrindo enquanto confere o resumo do dia no celular',
+  },
+]
+
+const FAQ = [
+  ['O que é a Rafa?', 'A assistente da RPG no WhatsApp. Ela registra vendas, sobe estoque pela foto da nota, gera Pix e responde sobre a sua loja.'],
+  ['A RPG cobra taxa no Pix?', 'Não. O Pix cai direto na conta da sua loja. Vale conferir se o seu banco cobra tarifa de Pix para empresa.'],
+  ['Preciso trocar de banco ou de maquininha?', 'Não. Continue com os seus. E, se quiser, seu celular também recebe cartão por aproximação — a ativação é simples e sai no mesmo dia ou no seguinte.'],
+  ['Preciso de computador?', 'Não. Tudo funciona no celular e no WhatsApp. O painel também abre no computador.'],
+  ['Meus dados estão seguros?', 'O banco é conectado pelo Open Finance, só com a sua autorização, e você desconecta quando quiser.'],
+  ['A RPG empresta dinheiro?', 'Ainda não. Estamos construindo crédito com juros justos, com parceiros autorizados. Quando chegar, custo e limite vêm claros antes de tudo.'],
+  ['Dá pra testar antes?', 'Sim. Use a conta de teste ou crie sua conta para começar a falar com a Rafa.'],
 ] as const
 
 export default function Home() {
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${display.variable}`}>
       <style>{'[data-build-version]{display:none!important}'}</style>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
 
-      <header className={styles.header}>
-        <div className={styles.container + ' ' + styles.headerInner}>
-          <a className={styles.brand} href="#topo" aria-label="RPG para Balcões — início">
-            <span className={styles.brandMark}>RPG</span>
-            <span className={styles.brandCopy}>
-              <strong>RPG para Balcões</strong>
-              <small>por RPG Capital</small>
-            </span>
-          </a>
-          <nav className={styles.nav} aria-label="Navegação principal">
-            <a href="#produto">Produto</a>
-            <a href="#rafa">Rafa</a>
-            <a href="#como-funciona">Como funciona</a>\n            <a href="/integracoes">Integrações</a>
-            <a href="#preco">Preço</a>
-            <a href={demoHref}>Conta de teste</a>
-            <a className={styles.loginLink} href="/login?intent=login">Entrar</a>
-            <a className={styles.smallButton} href="/interesse">Criar conta</a>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main>
+        {/* 1. Topo */}
         <section className={styles.hero} id="topo">
-          <div className={styles.container + ' ' + styles.heroGrid}>
+          <span className={styles.guides} aria-hidden="true" />
+          <div className={`${styles.container} ${styles.heroGrid}`}>
             <div className={styles.heroCopy}>
-              <p className={styles.eyebrow}>GESTÃO FEITA PARA O VAREJO REAL</p>
-              <h1>RPG para Balcões</h1>
-              <p className={styles.heroLine}>Tudo que sua loja precisa para vender, controlar e crescer.</p>
-              <p className={styles.heroText}>
-                Estoque, vendas, financeiro e equipe em um só lugar. Simples o bastante para usar no balcão.
-                Completo o bastante para cuidar do negócio.
-              </p>
-              <div className={styles.heroActions}>
-                <a className={styles.button} href={signupHref}>Começar agora</a>
-                <a className={styles.yellowButton} href={demoHref}>Testar conta demo</a>
-                <a className={styles.textLink} href={loginHref}>Já tenho uma conta <span>→</span></a>
-              </div>
-              <ul className={styles.heroPoints} aria-label="Destaques">
-                <li>✓ R$ 9,99 por mês</li>
-                <li>✓ Pix sem taxa</li>
-                <li>✓ Rafa no WhatsApp</li>
-                <li>✓ Sem migração complicada</li>
+              <Reveal>
+                <span className={styles.eyebrow}>Conheça a Rafa</span>
+              </Reveal>
+              <Reveal delay={80}>
+                <h1 className={styles.heroTitle}>
+                  Sua loja <span className={styles.highlight}>mais organizada</span> pelo WhatsApp.
+                </h1>
+              </Reveal>
+              <Reveal delay={140}>
+                <p className={styles.rotateLine}>
+                  A Rafa cuida do seu{' '}
+                  <RotatingWord words={['estoque', 'caixa', 'Pix', 'cartão', 'fornecedor', 'dia a dia']} />
+                </p>
+              </Reveal>
+              <Reveal delay={200}>
+                <p className={styles.heroSub}>
+                  A assistente da RPG que ajuda você a vender mais e ter controle total — por mensagem, foto ou áudio.
+                </p>
+              </Reveal>
+              <Reveal delay={260}>
+                <p className={styles.tagline}>
+                  Você toca a loja. <span>A Rafa organiza o resto.</span>
+                </p>
+              </Reveal>
+              <Reveal delay={320} className={styles.actions}>
+                <a className={styles.btnPrimary} href={SIGNUP_HREF}>
+                  Criar conta
+                </a>
+                <a className={styles.btnYellow} href={DEMO_HREF}>
+                  Testar conta demo
+                </a>
+              </Reveal>
+              <Reveal delay={380}>
+                <ul className={styles.chips} aria-label="Destaques">
+                  <li>Tudo pelo WhatsApp</li>
+                  <li>Sem planilha</li>
+                  <li>Sem sistema difícil</li>
+                </ul>
+              </Reveal>
+            </div>
+            <HeroPhone />
+          </div>
+        </section>
+
+        {/* Faixa de tipos de loja */}
+        <div className={styles.marquee} aria-label="Feito para mercadinho, farmácia, pet shop e outras lojas">
+          <div className={styles.marqueeTrack} aria-hidden="true">
+            {[...STORES, ...STORES].map((store, index) => (
+              <span key={index}>{store}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* 2. O problema */}
+        <section className={styles.section}>
+          <div className={`${styles.container} ${styles.split}`}>
+            <Reveal className={styles.photoFrame}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/site/lojista-cansado.webp" width={688} height={941} alt="Lojista cansado no balcão com caderno e calculadora" loading="lazy" />
+            </Reveal>
+            <div>
+              <Reveal>
+                <h2 className={styles.sectionTitle}>
+                  Loja <span className={styles.blueWord}>dá trabalho.</span>
+                </h2>
+                <span className={styles.underline} aria-hidden="true" />
+              </Reveal>
+              <ul className={styles.painList}>
+                {PAINS.map((pain, index) => (
+                  <Reveal as="li" key={pain} delay={index * 140} activeClassName={styles.solved}>
+                    <span className={styles.painIcon} aria-hidden="true">
+                      ✓
+                    </span>
+                    <span className={styles.painText}>{pain}</span>
+                  </Reveal>
+                ))}
               </ul>
+              <Reveal delay={700}>
+                <p className={styles.lead} style={{ marginTop: 24 }}>
+                  Com a Rafa, cada uma dessas dores vira coisa resolvida — sem planilha e sem sistema difícil.
+                </p>
+              </Reveal>
             </div>
-            <figure className={styles.heroVisual}>
-              <img
-                src="https://images.unsplash.com/photo-1750262701480-91fc40e726ba?auto=format&fit=crop&fm=jpg&q=82&w=1600"
-                width="1600"
-                height="1067"
-                alt="Pessoa realizando um pagamento no balcão de um pequeno comércio"
-              />
-              <figcaption className={styles.floatingCard}>
-                <span className={styles.statusDot} aria-hidden="true" />
-                <span><strong>Venda registrada</strong><small>estoque atualizado automaticamente</small></span>
-              </figcaption>
-            </figure>
           </div>
         </section>
 
-        <section className={styles.statementSection}>
-          <div className={styles.container + ' ' + styles.statement}>
-            <p>RPG PARA BALCÕES</p>
-            <h2>Menos planilha. Menos confusão. <span>Mais controle.</span></h2>
-          </div>
-        </section>
-
-        <section className={styles.section} id="produto">
+        {/* 3. A Rafa funciona no WhatsApp */}
+        <section className={styles.sectionDark} id="rafa">
           <div className={styles.container}>
-            <div className={styles.sectionHeading}>
-              <p className={styles.eyebrow}>TODA A OPERAÇÃO</p>
-              <h2>Sua loja inteira em um só lugar.</h2>
-              <p>As ferramentas que o comerciante usa todos os dias, reunidas sem transformar a operação em um curso de software.</p>
-            </div>
-            <div className={styles.featureGrid}>
-              {features.map(([number, title, description]) => (
-                <article key={number} className={title === 'Pix sem taxa' ? styles.featureCardAccent : styles.featureCard}>
-                  <span className={styles.featureNumber}>{number}</span>
-                  <h3>{title}</h3>
-                  <p>{description}</p>
-                </article>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrowLight}>Rafa no WhatsApp</span>
+              <h2 className={styles.sectionTitle}>
+                A Rafa funciona <span className={styles.yellowWord}>no WhatsApp.</span>
+              </h2>
+              <p className={styles.lead}>O app que você já usa o dia inteiro vira o sistema da sua loja.</p>
+            </Reveal>
+            <div className={styles.flow}>
+              {[
+                ['Mande foto, áudio ou mensagem.', 'Do jeito que você fala no balcão. Escreveu errado? Ela entende.'],
+                ['A Rafa entende e organiza.', 'Venda, estoque, lista de compras e financeiro, tudo no lugar certo, automaticamente.'],
+                ['Sem planilha. Sem sistema difícil.', 'Nada de curso, nada de tela confusa. Você só conversa.'],
+              ].map(([title, text], index) => (
+                <Reveal key={title} className={styles.flowStep} delay={index * 140}>
+                  <span className={styles.flowNumber}>{index + 1}</span>
+                  <b>{title}</b>
+                  <p>{text}</p>
+                  {index < 2 && <span className={styles.flowLine} aria-hidden="true" />}
+                </Reveal>
               ))}
             </div>
           </div>
         </section>
 
-        <section className={styles.splitSection + ' ' + styles.section}>
-          <div className={styles.container + ' ' + styles.splitGrid}>
-            <figure className={styles.scanVisual}>
-              <img
-                src="https://images.unsplash.com/photo-1770013413878-2530e2c3d82b?auto=format&fit=crop&fm=jpg&q=82&w=1600"
-                width="1600"
-                height="1067"
-                alt="Comerciante usando o celular para conferir produtos do estoque"
-              />
-            </figure>
-            <div className={styles.splitCopy}>
-              <p className={styles.eyebrow}>SIMPLES DE PROPÓSITO</p>
-              <h2>Feito para o balcão. Não para complicar o balcão.</h2>
-              <p>Você não precisa transformar sua loja numa operação de tecnologia. Use o que já tem, cadastre seus produtos e comece a ter mais controle.</p>
-              <ul className={styles.checkList}>
-                <li>Funciona no celular e no computador.</li>
-                <li>Não exige maquininha própria da RPG.</li>
-                <li>Pix vai direto para a conta da sua loja.</li>
-                <li>Gestão sem planilhas espalhadas.</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-
-        <section className={styles.rafaSection + ' ' + styles.section} id="rafa">
-          <div className={styles.container + ' ' + styles.rafaGrid}>
-            <div className={styles.rafaCopy}>
-              <p className={styles.eyebrowLight}>CONHEÇA A RAFA</p>
-              <h2>A RPG roda dentro do WhatsApp.</h2>
-              <p className={styles.rafaLead}>
-                <strong>Super mega simples de usar.</strong> A Rafa tira todas as suas dúvidas, não só te ajuda a usar a plataforma, mas faz as coisas por você!
-              </p>
-              <p>
-                Mande mensagem, foto e áudio e a Rafa entende tudo! Ela conversa com você de um jeito simples e transforma o que você manda em ação dentro da RPG para Balcões.
-              </p>
-              <div className={styles.rafaSalesGrid}>
-                <article>
-                  <strong>Venda uma vez. O resto acontece sozinho.</strong>
-                  <span>Use Vender para fechar a venda. Ela já fica registrada e o estoque é atualizado automaticamente.</span>
-                </article>
-                <article>
-                  <strong>Suba estoque pela nota fiscal.</strong>
-                  <span>Mande foto, PDF ou XML da nota. A Rafa lê produtos, quantidades e custos e prepara a entrada no estoque.</span>
-                </article>
-                <article>
-                  <strong>Pergunte sobre a sua loja.</strong>
-                  <span>Consulte vendas, ticket médio, lucro, produtos, estoque e financeiro conversando normalmente com a Rafa.</span>
-                </article>
-              </div>
-              <div className={styles.rafaChips} aria-label="O que a Rafa faz">
-                <span>Vender</span>
-                <span>Ler código</span>
-                <span>Prateleira</span>
-                <span>Subir estoque</span>
-                <span>Consultar vendas</span>
-                <span>Ver financeiro</span>
-              </div>
-              <div className={styles.rafaContact}>
-                <a className={styles.yellowButton} href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">Falar com a Rafa no WhatsApp</a>
-                <p className={styles.rafaNumberNote}>WhatsApp RPG: <strong>+55 11 93620-1445</strong></p>
-              </div>
-            </div>
-            <div className={styles.whatsappMock} aria-label="Exemplo de conversa com a Rafa no WhatsApp">
-              <div className={styles.whatsappTop}>
-                <span className={styles.rafaAvatar}>R</span>
-                <span><strong>Rafa · RPG</strong><small>online</small></span>
-              </div>
-              <div className={styles.whatsappBody}>
-                <div className={styles.chatRafa}>Oi! Sou a Rafa. O que você quer fazer agora?</div>
-                <div className={styles.rafaMenuMock} aria-label="Menu da Rafa">
-                  <span>Vender</span>
-                  <span>Ler código</span>
-                  <span>Prateleira</span>
-                  <span>Subir estoque</span>
-                </div>
-                <div className={styles.chatUser}>Quanto eu vendi hoje?</div>
-                <div className={styles.chatRafa}>
-                  Hoje foram <strong>27 vendas</strong>, com <strong>R$ 1.486,40</strong> de faturamento e ticket médio de <strong>R$ 55,05</strong>.
-                </div>
-                <div className={styles.chatUser}>E quais foram os produtos mais vendidos?</div>
-                <div className={styles.chatRafa}>Posso te mostrar os mais vendidos por faturamento e quantidade. Também consigo comparar com ontem, a semana ou o mês.</div>
-                <div className={styles.chatUser}>Subir estoque</div>
-                <div className={styles.chatRafa}>Manda a foto, PDF ou XML da nota fiscal. Eu leio os produtos, quantidades e custos e preparo a entrada no seu estoque.</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.container + ' ' + styles.previewGrid}>
-            <div className={styles.previewCopy}>
-              <p className={styles.eyebrow}>CONTROLE SEM COMPLICAÇÃO</p>
-              <h2>Abra a loja. Veja o que importa.</h2>
-              <p>Vendas, estoque e financeiro conversam entre si para você enxergar a operação sem juntar informação na mão.</p>
-            </div>
-            <div className={styles.dashboardShell} role="img" aria-label="Exemplo visual das áreas de gestão da RPG para Balcões">
-              <div className={styles.dashboardTop}><span>RPG para Balcões</span><span>Loja aberta</span></div>
-              <div className={styles.dashboardBody}>
-                <aside className={styles.dashboardSide}><strong>Visão geral</strong><span>Vendas</span><span>Estoque</span><span>Financeiro</span><span>Equipe</span></aside>
-                <div className={styles.dashboardMain}>
-                  <div className={styles.metricRow}>
-                    <div><small>Vendas</small><strong>Hoje</strong></div>
-                    <div><small>Estoque</small><strong>Em dia</strong></div>
-                    <div><small>Financeiro</small><strong>Atualizado</strong></div>
-                  </div>
-                  <div className={styles.activityBars} aria-hidden="true">
-                    {[34, 56, 45, 78, 64, 88, 72].map((height, index) => <span key={index} style={{ height: `${height}%` }} />)}
-                  </div>
-                  <div className={styles.activityList}>
-                    <p><span>Produto vendido</span><strong>Estoque -1</strong></p>
-                    <p><span>Pix recebido</span><strong>Sem taxa</strong></p>
-                    <p><span>Conta conectada</span><strong>Dados atualizados</strong></p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className={styles.pricing + ' ' + styles.section} id="preco">
-          <div className={styles.container + ' ' + styles.priceCard}>
-            <div className={styles.priceCopy}>
-              <p className={styles.eyebrowLight}>PREÇO QUE CABE NO BALCÃO</p>
-              <h2>O preço de um café por mês. <span>E você gerencia toda a sua loja.</span></h2>
-              <p>Pague o preço de um café por mês e gerencie <strong>TODO o seu negócio:</strong> inventário, vendas, finanças, equipe e muito mais.</p>
-              <div className={styles.price}><span>R$</span><strong>9,99</strong><small>/ mês</small></div>
-              <a className={styles.yellowButton} href={signupHref}>Criar minha conta</a>
-            </div>
-            <div className={styles.coffeeCard}>
-              <div className={styles.coffeeIcon}>☕</div>
-              <p><strong>1 café</strong></p>
-              <span>custa praticamente o mesmo que um mês inteiro de gestão da sua loja.</span>
-              <hr />
-              <p className={styles.coffeeResult}>RPG para Balcões<br /><strong>R$ 9,99/mês</strong></p>
-            </div>
-          </div>
-        </section>
-
-
-        <section className={styles.creditSection + ' ' + styles.section} id="credito">
-          <div className={styles.container + ' ' + styles.creditInner}>
-            <div>
-              <p className={styles.eyebrow}>MAIS ACESSO. MENOS CUSTO.</p>
-              <h2>A RPG quer ajudar comerciantes a terem acesso a crédito mais barato.</h2>
-            </div>
-            <div className={styles.creditCopy}>
-              <p>
-                Pequenos lojistas movimentam negócios todos os dias, mas muitas vezes ainda pagam caro para ter acesso a capital.
-                Um dos objetivos da RPG é usar tecnologia e dados da operação para ajudar a aproximar o comerciante de opções de crédito mais acessíveis.
-              </p>
-              <p className={styles.creditNote}>Crédito é uma frente em desenvolvimento da RPG.</p>
-            </div>
-          </div>
-        </section>
-
-        <section className={styles.section} id="como-funciona">
+        {/* 4. O que a Rafa faz */}
+        <section className={styles.section} id="produto">
           <div className={styles.container}>
-            <div className={styles.sectionHeading}>
-              <p className={styles.eyebrow}>COMECE SEM BUROCRACIA</p>
-              <h2>Da conta criada ao balcão em três passos.</h2>
-            </div>
-            <div className={styles.stepsGrid}>
-              <article><span>1</span><h3>Crie sua conta</h3><p>Comece pela sua Conta Google, sem precisar decorar uma nova senha.</p></article>
-              <article><span>2</span><h3>Configure sua loja</h3><p>Organize produtos, equipe e as informações necessárias para sua operação.</p></article>
-              <article><span>3</span><h3>Abra o balcão</h3><p>Venda, acompanhe e administre tudo no mesmo lugar.</p></article>
+            <Reveal className={`${styles.sectionHead} ${styles.center}`}>
+              <span className={styles.eyebrow}>O que a Rafa faz por você</span>
+              <h2 className={styles.sectionTitle}>
+                A loja inteira, <span className={styles.muted}>numa conversa.</span>
+              </h2>
+            </Reveal>
+            <div className={styles.bento2}>
+              <Reveal>
+                <TiltCard className={styles.bentoCard} max={4}>
+                  <h3>Estoque sem planilha</h3>
+                  <p>Tirou foto da nota? A Rafa cadastra os produtos. Você não digita item por item.</p>
+                  <NotaScan />
+                </TiltCard>
+              </Reveal>
+              <Reveal delay={100}>
+                <TiltCard className={styles.bentoCard} max={4}>
+                  <h3>Venda simples</h3>
+                  <p>Escaneie o produto, finalize a venda e o estoque baixa sozinho.</p>
+                  <VendaFeed />
+                </TiltCard>
+              </Reveal>
+              <Reveal>
+                <TiltCard className={styles.bentoCard} max={4}>
+                  <h3>Pix ou cartão</h3>
+                  <p>A Rafa gera o QR Code do Pix ou abre o pagamento por aproximação no celular. A venda fica registrada.</p>
+                  <PayToggle />
+                </TiltCard>
+              </Reveal>
+              <Reveal delay={100}>
+                <TiltCard className={styles.bentoCard} max={4}>
+                  <h3>Saiba o que está acabando</h3>
+                  <p>Veja os itens com estoque baixo e reponha antes de faltar. Nada de perder venda por produto em falta.</p>
+                  <StockBars />
+                </TiltCard>
+              </Reveal>
+              <Reveal>
+                <TiltCard className={styles.bentoSmall} max={3}>
+                  <span className={styles.cardIcon} aria-hidden="true">
+                    🏦
+                  </span>
+                  <h3>Seu dinheiro no lugar</h3>
+                  <p>Conecte o banco com segurança e veja pra onde o dinheiro da loja está indo. Sem trocar de banco.</p>
+                </TiltCard>
+              </Reveal>
+              <Reveal delay={100}>
+                <TiltCard className={styles.bentoSmall} max={3}>
+                  <span className={styles.cardIcon} aria-hidden="true">
+                    👥
+                  </span>
+                  <h3>Cada um no seu lugar</h3>
+                  <p>Cada funcionário com o seu acesso. Você decide quem vê o quê.</p>
+                </TiltCard>
+              </Reveal>
             </div>
           </div>
         </section>
 
-        <section className={styles.manifesto + ' ' + styles.section}>
-          <div className={styles.container + ' ' + styles.manifestoInner}>
-            <p className={styles.eyebrow}>NOSSA IDEIA É SIMPLES</p>
-            <h2>Sua loja não precisa de um sistema caro para ser bem administrada.</h2>
-            <p>A RPG para Balcões foi feita para colocar ferramentas de gestão de verdade nas mãos de quem toca uma loja todos os dias.</p>
+        {/* 5. Como funciona — passo a passo */}
+        <section className={styles.sectionSoft} id="como-funciona">
+          <div className={styles.container}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>Como funciona</span>
+              <h2 className={styles.sectionTitle}>
+                A Rafa trabalha pela sua loja. <span className={styles.muted}>Você só conversa.</span>
+              </h2>
+            </Reveal>
+            <StickySteps steps={STEPS} />
           </div>
         </section>
 
-        <section className={styles.faq + ' ' + styles.section}>
-          <div className={styles.container + ' ' + styles.faqGrid}>
-            <div className={styles.sectionHeading}><p className={styles.eyebrow}>DÚVIDAS RÁPIDAS</p><h2>O que o comerciante quer saber.</h2></div>
+        {/* 6. O que muda no seu dia */}
+        <section className={styles.section}>
+          <div className={styles.container}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>O que muda no seu dia</span>
+              <h2 className={styles.sectionTitle}>Menos correria. Mais controle.</h2>
+            </Reveal>
+            <div className={styles.benefits}>
+              {BENEFITS.map(([title, text], index) => (
+                <Reveal key={title} className={styles.benefit} delay={(index % 3) * 100}>
+                  <h3>{title}</h3>
+                  <p>{text}</p>
+                </Reveal>
+              ))}
+            </div>
+            <Reveal className={styles.actions} delay={200}>
+              <a className={styles.btnYellow} href={SIGNUP_HREF} style={{ marginTop: 40 }}>
+                Falar com a Rafa no WhatsApp
+              </a>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* 7. Resumo do dia */}
+        <section className={styles.sectionSoft}>
+          <div className={`${styles.container} ${styles.summarySplit}`}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>Veja como foi o dia</span>
+              <h2 className={styles.sectionTitle}>
+                Fechou a loja? <span className={styles.blueWord}>A Rafa já fez as contas.</span>
+              </h2>
+              <p className={styles.lead}>
+                Todo fim de dia chega no seu WhatsApp um resumo curto: quanto você vendeu, o que mais saiu e o que precisa comprar amanhã. Sem
+                abrir sistema nenhum.
+              </p>
+              <ul className={styles.bulletList}>
+                <li>Comparação com ontem, pra saber se o dia foi bom.</li>
+                <li>Os produtos que mais venderam.</li>
+                <li>O que está acabando, com a lista de compras pronta.</li>
+              </ul>
+            </Reveal>
+            <Reveal delay={120}>
+              <DaySummary />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* 8. Crédito */}
+        <section className={styles.section}>
+          <div className={styles.container}>
+            <Reveal className={styles.creditBand}>
+              <div>
+                <h2 className={styles.creditTitle}>
+                  Mais controle hoje. <span>Crédito mais justo amanhã.</span>
+                </h2>
+                <ul className={styles.bulletList}>
+                  <li>Seu histórico de vendas, pagamentos e compras fica organizado.</li>
+                  <li>A RPG entende melhor a realidade da sua loja.</li>
+                  <li>No futuro, isso ajuda a oferecer crédito mais adequado para você.</li>
+                </ul>
+                <a className={styles.textLink} href="/credito">
+                  Entenda a tese dos juros justos <span aria-hidden="true">→</span>
+                </a>
+              </div>
+              <div className={styles.checkCard} aria-hidden="true">
+                <div className={styles.checkRow}>
+                  Vendas <i>✓</i>
+                </div>
+                <div className={styles.checkRow}>
+                  Pagamentos <i>✓</i>
+                </div>
+                <div className={styles.checkRow}>
+                  Compras <i>✓</i>
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* 9. Como começar */}
+        <section className={styles.sectionSoft}>
+          <div className={styles.container}>
+            <Reveal className={`${styles.sectionHead} ${styles.center}`}>
+              <span className={styles.eyebrow}>Como começar</span>
+              <h2 className={styles.sectionTitle}>Três passos e a Rafa já está trabalhando.</h2>
+            </Reveal>
+            <div className={styles.steps}>
+              {[
+                ['Crie sua conta', 'Preencha o formulário de inscrição. Leva poucos minutos.'],
+                ['Ative a Rafa', 'Ela aparece no seu WhatsApp, pronta para ajudar.'],
+                ['Mande a primeira nota ou venda', 'Conectar o banco é opcional e pode ficar para depois.'],
+              ].map(([title, text], index) => (
+                <Reveal key={title} className={styles.step} delay={index * 120}>
+                  <h3>{title}</h3>
+                  <p>{text}</p>
+                </Reveal>
+              ))}
+            </div>
+            <Reveal className={`${styles.actions}`} delay={300}>
+              <a className={styles.btnPrimary} href={SIGNUP_HREF} style={{ margin: '40px auto 0' }}>
+                Criar conta
+              </a>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* 10. Perguntas frequentes */}
+        <section className={styles.section}>
+          <div className={`${styles.container} ${styles.faqGrid}`}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>Dúvidas rápidas</span>
+              <h2 className={styles.sectionTitle}>O que o lojista quer saber.</h2>
+              <p className={styles.lead}>
+                Ficou alguma dúvida? Escreva para <a href={`mailto:${CONTACT_EMAIL}`} className={styles.blueWord}>{CONTACT_EMAIL}</a>.
+              </p>
+            </Reveal>
             <div className={styles.faqList}>
-              <details><summary>Quanto custa a RPG para Balcões?</summary><p>O acesso custa R$ 9,99 por mês.</p></details>
-              <details><summary>A RPG cobra taxa no Pix?</summary><p>Não. A RPG não cobra taxa sobre as vendas em Pix feitas pelo fluxo do Balcões.</p></details>
-              <details><summary>O que eu consigo gerenciar?</summary><p>Inventário, vendas, finanças, equipe e outras rotinas de gestão da loja em um só sistema.</p></details>
-              <details><summary>O que é a Rafa?</summary><p>A Rafa é a assistente da RPG dentro do WhatsApp. Ela tira suas dúvidas, ajuda a usar a plataforma e também faz tarefas por você, como registrar vendas, consultar produtos, atualizar estoque e interpretar arquivos.</p></details>
-              <details><summary>A RPG trabalha com crédito?</summary><p>Crédito é uma frente em desenvolvimento. A RPG quer ajudar comerciantes a terem acesso a crédito mais barato usando tecnologia e dados da operação.</p></details>
-              <details><summary>Preciso trocar minha maquininha?</summary><p>Não. A proposta é funcionar com a operação que o comerciante já tem, sem exigir uma maquininha própria da RPG.</p></details>
+              {FAQ.map(([question, answer], index) => (
+                <Reveal as="details" key={question} delay={index * 60}>
+                  <summary>{question}</summary>
+                  <p>{answer}</p>
+                </Reveal>
+              ))}
             </div>
           </div>
         </section>
 
+        {/* 11. Chamada final */}
         <section className={styles.finalCta}>
-          <div className={styles.container + ' ' + styles.finalInner}>
-            <div><p className={styles.eyebrowLight}>RPG PARA BALCÕES</p><h2>Sua loja inteira. Na sua mão.</h2><p>Inventário, vendas, finanças e equipe por R$ 9,99 por mês.</p></div>
-            <a className={styles.yellowButton} href={signupHref}>Começar agora</a>
+          <div className={`${styles.container} ${styles.finalInner}`}>
+            <Reveal>
+              <h2 className={styles.finalTitle}>
+                Comece a usar a <span>Rafa hoje.</span>
+              </h2>
+            </Reveal>
+            <Reveal delay={120}>
+              <p>Você toca a loja. A Rafa organiza o resto.</p>
+            </Reveal>
+            <Reveal delay={200} className={styles.actions}>
+              <a className={styles.btnYellow} href={SIGNUP_HREF}>
+                Criar conta
+              </a>
+              <a className={styles.btnGhostLight} href={DEMO_HREF}>
+                Testar conta demo
+              </a>
+            </Reveal>
           </div>
         </section>
       </main>
 
-      <footer className={styles.footer}>
-        <div className={styles.container + ' ' + styles.footerGrid}>
-          <div><a className={styles.brand} href="#topo"><span className={styles.brandMark}>RPG</span><span className={styles.brandCopy}><strong>RPG para Balcões</strong><small>por RPG Capital</small></span></a><p>Gestão simples para quem tem uma loja para tocar.</p></div>
-          <div><strong>Produto</strong><a href="#produto">Funcionalidades</a><a href="#rafa">Rafa no WhatsApp</a><a href="#credito">Crédito</a><a href="#preco">Preço</a><a href="#como-funciona">Como funciona</a></div>
-          <div><strong>Acesso</strong><a href={demoHref}>Conta de teste</a><a href={loginHref}>Entrar</a><a href={signupHref}>Criar conta</a><a href="/integracoes">Integrações</a><a href="/developers/docs">RPG for Developers</a></div>
-          <div><strong>Contato</strong><a href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a><a href="https://wa.me/5511936201445" target="_blank" rel="noreferrer">WhatsApp: +55 11 93620-1445</a><a href="https://www.instagram.com/rpg_capital_credito/" target="_blank" rel="noreferrer">Instagram</a><a href="https://www.linkedin.com/company/rpgcapital/" target="_blank" rel="noreferrer">LinkedIn</a></div>
-        </div>
-        <div className={styles.container + ' ' + styles.footerBottom}><span>© 2026 RPG Capital.</span><span>Feito para o varejo brasileiro.</span></div>
-      </footer>
+      <SiteFooter />
     </div>
   )
 }

@@ -1,12 +1,15 @@
 import type { MetadataRoute } from 'next'
 
+const SITE_URL = 'https://www.rpgcapital.com.br'
+
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: '*',
-      allow: ['/', '/integracoes', '/developers/docs', '/openapi.json', '/llms.txt', '/llms-full.txt'],
+      allow: ['/', '/integracoes', '/credito', '/cultura', '/edu', '/developers/docs', '/openapi.json', '/llms.txt', '/llms-full.txt'],
       disallow: ['/connect/', '/api/', '/manage/', '/app/', '/developers/login'],
     },
-    sitemap: 'https://rpgcapital.com.br/sitemap.xml',
+    sitemap: `${SITE_URL}/sitemap.xml`,
+    host: SITE_URL,
   }
 }
