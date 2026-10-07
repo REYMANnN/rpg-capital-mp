@@ -80,6 +80,7 @@ export function SiteFooter() {
         </div>
         <div className={styles.footerCol}>
           <strong>Empresa</strong>
+          <Link href="/sobre">Sobre a RPG</Link>
           <Link href="/credito">Crédito</Link>
           <Link href="/edu">RPG Edu</Link>
           <Link href="/cultura">Cultura</Link>
