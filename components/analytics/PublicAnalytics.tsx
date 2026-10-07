@@ -289,23 +289,23 @@ export default function PublicAnalytics() {
 
   return <div style={{
     position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 9999,
-    maxWidth: 760, margin: '0 auto', borderRadius: 18, padding: 16,
+    maxWidth: 400, margin: 0, borderRadius: 16, padding: 14,
     background: '#111827', color: '#fff', boxShadow: '0 18px 55px rgba(0,0,0,.25)',
     fontFamily: 'Arial, sans-serif',
   }}>
-    <div style={{ fontSize: 14, lineHeight: 1.5 }}>
+    <div style={{ fontSize: 13, lineHeight: 1.45 }}>
       <strong>Podemos analisar como o site é usado?</strong>
       <div style={{ marginTop: 4, color: '#cbd5e1' }}>
         Usamos dados de navegação, cliques, scroll e movimento do mouse para melhorar a RPG. Não gravamos o que você digita nos formulários.
       </div>
     </div>
-    <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
       <button onClick={() => { localStorage.setItem(CONSENT_KEY, 'yes'); setConsent('yes') }} style={{
-        border: 0, borderRadius: 999, padding: '10px 16px', fontWeight: 800, cursor: 'pointer',
+        border: 0, borderRadius: 999, padding: '8px 14px', fontSize: 13, fontWeight: 800, cursor: 'pointer',
         background: '#ffd92f', color: '#172033',
       }}>Permitir análise</button>
       <button onClick={() => { localStorage.setItem(CONSENT_KEY, 'no'); setConsent('no') }} style={{
-        border: '1px solid #475569', borderRadius: 999, padding: '10px 16px', fontWeight: 700, cursor: 'pointer',
+        border: '1px solid #475569', borderRadius: 999, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
         background: 'transparent', color: '#fff',
       }}>Só necessários</button>
       <a href="/privacidade" style={{ alignSelf: 'center', color: '#cbd5e1', fontSize: 13, marginLeft: 4 }}>Privacidade</a>
