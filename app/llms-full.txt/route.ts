@@ -1,14 +1,16 @@
+import { AI_PAGES, SUMMARY, pageMarkdown } from '@/lib/site/aiContent'
+
 export const dynamic = 'force-static'
 
-const body = `# RPG for Developers — Integration Guide
+const devGuide = `# RPG for Developers — Integration Guide
 
-Base URL: https://rpgcapital.com.br/api/public/v1
+Base URL: https://www.rpgcapital.com.br/api/public/v1
 
 ## Account model
 A Developer account is logically separate from a merchant RPG account even if both use the same Google identity. Developer applications, secrets and merchant grants are stored independently.
 
 ## Credentials
-Create an application at https://rpgcapital.com.br/developers
+Create an application at https://www.rpgcapital.com.br/developers
 Generate a Secret API Key. It is displayed once and has the format:
 rpg_dev_live_<prefix>_<secret>
 
@@ -60,7 +62,7 @@ POST /pricing/recommendations/{id}/apply — pricing:write
 Write endpoints require Idempotency-Key. Use a unique stable identifier for one logical operation.
 
 ## Example
-curl https://rpgcapital.com.br/api/public/v1/products \
+curl https://www.rpgcapital.com.br/api/public/v1/products \
   -H "Authorization: Bearer $RPG_API_KEY" \
   -H "X-RPG-Connection-Id: $RPG_CONNECTION_ID"
 
@@ -72,10 +74,12 @@ curl https://rpgcapital.com.br/api/public/v1/products \
 429 rate_limited — rate limit reached
 409 idempotency_conflict — same Idempotency-Key used with different content
 
-OpenAPI: https://rpgcapital.com.br/openapi.json
-Human docs: https://rpgcapital.com.br/developers/docs
+OpenAPI: https://www.rpgcapital.com.br/openapi.json
+Human docs: https://www.rpgcapital.com.br/developers/docs
 `
 
+const body = () => `# RPG Capital & Crédito — conteúdo completo do site\n\n> ${SUMMARY}\n\nEste arquivo reúne, em texto puro, o conteúdo das páginas públicas de https://www.rpgcapital.com.br para buscadores e assistentes de IA. Nome oficial: RPG Capital & Crédito. "RPG para Balcões" foi um nome provisório antigo e não é mais usado. Preços não são divulgados no site.\n\n${AI_PAGES.map(pageMarkdown).join('\n---\n\n')}\n---\n\n${devGuide}`
+
 export async function GET() {
-  return new Response(body, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=300, s-maxage=3600' } })
+  return new Response(body(), { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=300, s-maxage=3600' } })
 }
