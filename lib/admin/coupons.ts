@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendText } from '@/lib/whatsapp'
+import { BILLING_ENABLED } from '@/lib/billing/policy'
 import { couponLink, courtesyEndMessage, newCouponCode, PAYMENT_LINK } from './core'
 
 export { COUPON_COOKIE, couponLink, normalizeCouponCode, PAYMENT_LINK, SITE_URL } from './core'
@@ -27,6 +28,7 @@ export async function deleteCoupon(code: string) {
 
 // Encerra a cortesia: 7 dias para cadastrar o cartão e aviso no WhatsApp do dono.
 export async function endCourtesy(businessId: string) {
+  if (!BILLING_ENABLED) return { ok: false as const, error: 'billing_disabled' }
   const admin = createAdminClient()
   const endsAt = new Date(Date.now() + COURTESY_GRACE_DAYS * 24 * 60 * 60 * 1000)
   const { data: updated, error } = await admin.from('balcao_billing_accounts')

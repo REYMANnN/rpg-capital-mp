@@ -1,3 +1,4 @@
+import { BILLING_ENABLED } from '@/lib/billing/policy'
 import type { User } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 
@@ -40,7 +41,7 @@ export async function getAccountState(userId: string): Promise<{ onboarded: bool
     return {
       onboarded: profile?.onboarding_completed === true,
       hasBusiness: false,
-      billingConfigured: false,
+      billingConfigured: !BILLING_ENABLED,
     }
   }
 
@@ -55,7 +56,7 @@ export async function getAccountState(userId: string): Promise<{ onboarded: bool
     onboarded: profile?.onboarding_completed === true,
     hasBusiness: true,
     // Cortesia (cupom) conta como cobrança resolvida: o cadastro segue para o banco sem cartão.
-    billingConfigured: ['configured', 'active', 'courtesy', 'courtesy_ending'].includes(String(billing?.status)),
+    billingConfigured: !BILLING_ENABLED || ['configured', 'active', 'courtesy', 'courtesy_ending'].includes(String(billing?.status)),
   }
 }
 

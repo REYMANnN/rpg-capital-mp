@@ -1,3 +1,7 @@
+// Mensalidade desligada: nenhum lojista é cobrado. O cadastro segue sem cartão, /assinar volta para o painel
+// e a configuração de cobrança no Asaas fica bloqueada. Para religar no futuro, mude para true.
+export const BILLING_ENABLED = false
+
 export type BillingPlan = {
   initialCharge: null | { amountCents: 1998; dueDate: string; maxPayments: 1 }
   recurring: { amountCents: 999; firstDueDate: string }

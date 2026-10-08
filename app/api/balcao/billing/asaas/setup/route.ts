@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { getBusinessRole, getStoreBusiness } from '@/lib/accounts/currentUser'
 import { normalizeDigits } from '@/lib/accounts/validation'
-import { buildBillingPlan } from '@/lib/billing/policy'
+import { BILLING_ENABLED, buildBillingPlan } from '@/lib/billing/policy'
 import { validateAndNormalizeBillingInput } from '@/lib/billing/cardValidation'
 import {
   ensureAsaasCreditCardSubscription,
@@ -45,6 +45,7 @@ function asaasUserMessage(message: string) {
 }
 
 export async function POST(request: Request) {
+  if (!BILLING_ENABLED) return NextResponse.json({ error: 'A cobrança está desativada. Nenhum cartão é necessário.' }, { status: 410 })
   const supabase = await createServerClient()
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) return NextResponse.json({ error: 'Entre com sua Conta Google para continuar.' }, { status: 401 })
