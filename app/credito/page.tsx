@@ -3,6 +3,7 @@ import styles from '@/components/site/site.module.css'
 import { display } from '@/components/site/fonts'
 import PartnerForm from '@/components/site/PartnerForm'
 import Reveal from '@/components/site/Reveal'
+import { FAQ_CREDITO } from '@/lib/site/aiContent'
 import { SIGNUP_HREF, SITE_URL, SiteFooter, SiteHeader } from '@/components/site/SiteChrome'
 
 const SEBRAE_SOURCE = 'https://crcma.org.br/noticias/aprovacao-de-credito-para-pequenos-negocios-atinge-maior-nivel-desde-2022'
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
   title: 'Crédito — Juros justos começam com dados reais | RPG Capital & Crédito',
   description:
     'A tese dos juros justos da RPG: enxergar a operação real do pequeno varejo para medir o risco de verdade. Para bancos, fintechs, FIDCs, cooperativas e indústria.',
-  alternates: { canonical: `${SITE_URL}/credito` },
+  alternates: { canonical: `${SITE_URL}/credito`, types: { 'text/markdown': `${SITE_URL}/credito.md` } },
   robots: { index: true, follow: true },
 }
 
@@ -33,6 +34,17 @@ export default function CreditPage() {
   return (
     <div className={`${styles.page} ${display.variable}`}>
       <style>{'[data-build-version]{display:none!important}'}</style>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'FAQPage',
+            '@id': `${SITE_URL}/credito#faq`,
+            mainEntity: FAQ_CREDITO.map(([name, text]) => ({ '@type': 'Question', name, acceptedAnswer: { '@type': 'Answer', text } })),
+          }),
+        }}
+      />
       <SiteHeader />
 
       <main>
@@ -195,6 +207,23 @@ export default function CreditPage() {
               </h3>
               <PartnerForm />
             </Reveal>
+          </div>
+        </section>
+
+        <section className={styles.sectionSoft} id="perguntas">
+          <div className={styles.container}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>Perguntas frequentes</span>
+              <h2 className={styles.sectionTitle}>Crédito, sem letra miúda.</h2>
+            </Reveal>
+            <div className={styles.faqList}>
+              {FAQ_CREDITO.map(([question, answer], index) => (
+                <Reveal as="details" key={question} delay={index * 60}>
+                  <summary>{question}</summary>
+                  <p>{answer}</p>
+                </Reveal>
+              ))}
+            </div>
           </div>
         </section>
 
