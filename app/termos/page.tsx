@@ -2,9 +2,9 @@ import type { Metadata } from 'next'
 import { onboardingTerms, type OnboardingTerm } from '@/lib/legal/onboardingTerms'
 
 export const metadata: Metadata = {
-  title: 'Termos e Condições — RPG Capital',
-  description: 'Termos de Uso, Termos Comerciais, Dados e Privacidade (LGPD) e Termos de IA do RPG Balcão.',
-  alternates: { canonical: 'https://rpgcapital.com.br/termos' },
+  title: 'Termos e Condições — RPG Capital & Crédito',
+  description: 'Termos de Uso, Termos Comerciais, Dados e Privacidade (LGPD) e Termos de IA da RPG Capital & Crédito.',
+  alternates: { canonical: 'https://www.rpgcapital.com.br/termos' },
 }
 
 function TermContent({ term }: { term: OnboardingTerm }) {
@@ -29,12 +29,12 @@ export default function Termos() {
 
   return (
     <main className="mx-auto w-full max-w-[860px] px-4 py-12 text-slate-900 sm:px-6">
-      <p className="text-sm font-bold tracking-[0.16em] text-blue-700">RPG CAPITAL · BALCÃO</p>
+      <p className="text-sm font-bold tracking-[0.16em] text-blue-700">RPG CAPITAL & CRÉDITO</p>
       <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Termos e Condições</h1>
       <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
-        Esta página reúne os documentos aplicáveis ao uso do RPG Balcão. A RPG Capital é uma marca de <strong>57.114.756 RENAN PANGONI GUADALUPE</strong>, CNPJ <strong>57.114.756/0001-89</strong>.
+        Esta página reúne os documentos aplicáveis ao uso da plataforma RPG e da Rafa. A RPG Capital &amp; Crédito é uma marca de <strong>57.114.756 RENAN PANGONI GUADALUPE</strong>, CNPJ <strong>57.114.756/0001-89</strong>.
       </p>
-      <p className="mt-2 text-sm text-slate-500"><em>Última atualização: 16 de setembro de 2026</em></p>
+      <p className="mt-2 text-sm text-slate-500"><em>Última atualização: 8 de outubro de 2026</em></p>
 
       <nav aria-label="Índice dos termos" className="mt-8 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
         <a className="rounded-xl bg-white px-4 py-3 font-semibold text-blue-700 hover:bg-blue-50" href="#uso">1. Termos de Uso</a>

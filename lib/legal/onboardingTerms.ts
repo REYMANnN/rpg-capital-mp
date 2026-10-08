@@ -1,4 +1,4 @@
-export const ONBOARDING_TERMS_VERSION = '2026-10-01'
+export const ONBOARDING_TERMS_VERSION = '2026-10-08'
 
 export type OnboardingTermId = 'use' | 'commercial' | 'data' | 'ai'
 
@@ -20,14 +20,14 @@ export const onboardingTerms: OnboardingTerm[] = [
   {
     id: 'use',
     title: 'Termos de Uso',
-    shortDescription: 'Regras gerais para criar e usar sua conta no BALCÃO.',
+    shortDescription: 'Regras gerais para criar e usar sua conta na RPG.',
     publicHref: '/termos',
     sections: [
       {
         title: '1. Serviço e conta',
         paragraphs: [
-          'O RPG Balcão é oferecido pela RPG Capital, marca de 57.114.756 RENAN PANGONI GUADALUPE, CNPJ 57.114.756/0001-89. Ao criar uma conta ou usar o serviço, você concorda com estes termos e com a Política de Privacidade.',
-          'O BALCÃO é um software de gestão para comércio, com cadastro de produtos, estoque, caixa, registro de vendas e compras, relatórios e atendimento automatizado pelo WhatsApp.',
+          'A plataforma RPG, incluindo a Rafa, assistente no WhatsApp, é oferecida pela RPG Capital & Crédito, marca de 57.114.756 RENAN PANGONI GUADALUPE, CNPJ 57.114.756/0001-89. Ao criar uma conta ou usar o serviço, você concorda com estes termos e com a Política de Privacidade.',
+          'A plataforma RPG é uma ferramenta de gestão para comércio, com cadastro de produtos, estoque, caixa, registro de vendas e compras, relatórios e atendimento automatizado pelo WhatsApp.',
           'Você é responsável pelas informações cadastradas e por quem usa sua conta, seus PINs e o número de WhatsApp vinculado à loja.',
         ],
       },
@@ -44,7 +44,7 @@ export const onboardingTerms: OnboardingTerm[] = [
         title: '3. Disponibilidade e responsabilidade',
         paragraphs: [
           'Trabalhamos para manter o serviço disponível, mas podem ocorrer interrupções, inclusive de serviços de terceiros, bancos, WhatsApp e internet.',
-          'Relatórios e recursos do BALCÃO são ferramentas de apoio e não substituem contador ou orientação profissional.',
+          'Relatórios e recursos da plataforma RPG são ferramentas de apoio e não substituem contador ou orientação profissional.',
         ],
       },
       {
@@ -70,27 +70,27 @@ export const onboardingTerms: OnboardingTerm[] = [
       {
         title: '1. Plano e preço',
         paragraphs: [
-          'O plano BALCÃO custa R$ 9,99 por mês e é cobrado de forma recorrente pelo parceiro de pagamentos da RPG.',
-          'A cobrança recorrente ocorre todo dia 1. Não há cobrança proporcional.',
+          'O preço do plano, a periodicidade e a data de cobrança são apresentados de forma clara na tela de contratação, antes de qualquer cobrança. Quando houver plano pago, ele é cobrado de forma recorrente pelo parceiro de pagamentos da RPG.',
+          'Não há cobrança proporcional.',
         ],
       },
       {
         title: '2. Primeira cobrança',
         paragraphs: [
-          'Se você concluir a adesão depois do dia 1, não cobramos no momento da adesão. No próximo dia 1 serão cobrados R$ 19,98, correspondentes ao mês de entrada e ao mês corrente. Depois disso, a cobrança volta a R$ 9,99 por mês, todo dia 1.',
+          'As condições da primeira cobrança, incluindo valor e data, são informadas na tela de contratação antes da sua confirmação.',
         ],
       },
       {
         title: '3. Autorização de cobrança',
         paragraphs: [
-          'Ao aceitar estes Termos Comerciais e continuar, você autoriza a cobrança recorrente do BALCÃO nas condições apresentadas acima.',
-          'Os dados completos do cartão são enviados ao parceiro de pagamentos pelo servidor do BALCÃO e não são armazenados no banco de dados da RPG.',
+          'Ao aceitar estes Termos Comerciais e continuar, você autoriza a cobrança recorrente da plataforma RPG nas condições apresentadas acima.',
+          'Os dados completos do cartão são enviados ao parceiro de pagamentos pelo servidor da RPG e não são armazenados no banco de dados da RPG.',
         ],
       },
       {
         title: '4. Cancelamento e custos adicionais',
         paragraphs: [
-          'Você pode cancelar quando quiser em Configurações > Conta. O cancelamento interrompe cobranças futuras e encerra o acesso do negócio ao BALCÃO. Valores já pagos não são estornados automaticamente; quando houver direito legal a reembolso, ele será tratado conforme a legislação aplicável.',
+          'Você pode cancelar quando quiser em Configurações > Conta. O cancelamento interrompe cobranças futuras e encerra o acesso do negócio à plataforma RPG. Valores já pagos não são estornados automaticamente; quando houver direito legal a reembolso, ele será tratado conforme a legislação aplicável.',
           'Se algum recurso tiver custo extra ou houver alteração relevante de preço, a RPG informará antes da contratação ou da entrada em vigor da nova condição.',
         ],
       },
@@ -105,7 +105,7 @@ export const onboardingTerms: OnboardingTerm[] = [
       {
         title: '1. Controladora e dados tratados',
         paragraphs: [
-          'A RPG Capital, marca de 57.114.756 RENAN PANGONI GUADALUPE, CNPJ 57.114.756/0001-89, é controladora dos dados tratados no site rpgcapital.com.br, no aplicativo RPG Balcão e no atendimento pelo WhatsApp.',
+          'A RPG Capital & Crédito, marca de 57.114.756 RENAN PANGONI GUADALUPE, CNPJ 57.114.756/0001-89, é controladora dos dados tratados no site rpgcapital.com.br, na plataforma RPG e no atendimento pelo WhatsApp.',
           'Podemos tratar dados de cadastro, identificação, contato, loja, produtos, estoque, vendas, compras, notas fiscais, fornecedores, mensagens e arquivos enviados pelo WhatsApp, dados técnicos de acesso e, quando você optar por conectar, dados bancários via Open Finance.',
         ],
       },
@@ -146,28 +146,28 @@ export const onboardingTerms: OnboardingTerm[] = [
       {
         title: '1. O que a IA faz',
         paragraphs: [
-          'Recursos de inteligência artificial do BALCÃO podem interpretar texto, áudio, fotos e documentos para transcrever conteúdo, identificar informações, organizar dados e sugerir registros ou ações dentro do sistema.',
+          'Recursos de inteligência artificial da plataforma RPG, incluindo a Rafa, podem interpretar texto, áudio, fotos e documentos para transcrever conteúdo, identificar informações, organizar dados e sugerir registros ou ações dentro do sistema.',
         ],
       },
       {
         title: '2. Limitações e confirmação',
         paragraphs: [
           'Modelos de inteligência artificial podem errar, omitir informações ou interpretar conteúdo de forma incorreta. Você deve conferir as informações antes de confirmar registros ou decisões relevantes.',
-          'Quando o BALCÃO apresentar uma sugestão de estoque, preço, lançamento ou outro registro para sua confirmação, você é responsável por revisar o conteúdo que confirmar.',
+          'Quando a plataforma RPG apresentar uma sugestão de estoque, preço, lançamento ou outro registro para sua confirmação, você é responsável por revisar o conteúdo que confirmar.',
         ],
       },
       {
         title: '3. Dados enviados à IA',
         paragraphs: [
           'Somente os dados necessários para executar o recurso solicitado são enviados aos provedores de inteligência artificial utilizados pela RPG.',
-          'Esses provedores são contratados para prestar o serviço e não recebem autorização da RPG para usar os dados dos usuários do BALCÃO para treinar modelos próprios.',
+          'Esses provedores são contratados para prestar o serviço e não recebem autorização da RPG para usar os dados dos usuários da RPG para treinar modelos próprios.',
         ],
       },
       {
         title: '4. Responsabilidade de uso',
         paragraphs: [
           'Os recursos de IA são ferramentas de apoio e não substituem julgamento humano, contador, advogado ou outro profissional quando a situação exigir orientação especializada.',
-          'Não envie conteúdo ilegal ou dados de terceiros que você não esteja autorizado a tratar. O uso dos recursos de IA também está sujeito aos Termos de Uso e à Política de Privacidade do BALCÃO.',
+          'Não envie conteúdo ilegal ou dados de terceiros que você não esteja autorizado a tratar. O uso dos recursos de IA também está sujeito aos Termos de Uso e à Política de Privacidade da RPG.',
         ],
       },
     ],

@@ -1,21 +1,21 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Política de Privacidade — RPG Capital',
+  title: 'Política de Privacidade — RPG Capital & Crédito',
   description: 'Como a RPG Capital coleta, usa e protege os seus dados.',
-  alternates: { canonical: 'https://rpgcapital.com.br/privacidade' },
+  alternates: { canonical: 'https://www.rpgcapital.com.br/privacidade' },
 }
 
 export default function Privacidade() {
   return (
     <main className="mx-auto w-full max-w-[760px] px-4 py-12 leading-7 text-slate-900">
       <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Política de Privacidade</h1>
-      <p className="mt-3 text-sm text-slate-500"><em>Última atualização: 27 de setembro de 2026</em></p>
+      <p className="mt-3 text-sm text-slate-500"><em>Última atualização: 8 de outubro de 2026</em></p>
 
       <h2 className="mt-10 text-xl font-bold">1. Quem somos</h2>
       <p className="mt-3">
-        A RPG Capital é uma marca de <strong>57.114.756 RENAN PANGONI GUADALUPE</strong>, CNPJ 57.114.756/0001-89
-        (“RPG”, “nós”), controladora dos dados tratados no site rpgcapital.com.br, no aplicativo RPG Balcão e no
+        A RPG Capital &amp; Crédito é uma marca de <strong>57.114.756 RENAN PANGONI GUADALUPE</strong>, CNPJ 57.114.756/0001-89
+        (“RPG”, “nós”), controladora dos dados tratados no site rpgcapital.com.br, na plataforma RPG (incluindo a Rafa) e no
         atendimento pelo WhatsApp. Contato do encarregado de dados: <a className="text-blue-700 underline" href="mailto:comercial@rpgcapital.com.br">comercial@rpgcapital.com.br</a>.
       </p>
 
