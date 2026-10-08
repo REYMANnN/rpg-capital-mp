@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import styles from '@/components/site/site.module.css'
 import { display } from '@/components/site/fonts'
 import Reveal from '@/components/site/Reveal'
+import { FAQ_SOBRE } from '@/lib/site/aiContent'
 import { CONTACT_EMAIL, INSTAGRAM_URL, LINKEDIN_URL, SIGNUP_HREF, SITE_URL, SiteFooter, SiteHeader } from '@/components/site/SiteChrome'
 
 const RENAN_LINKEDIN = 'https://br.linkedin.com/in/renan-guadalupe-aa562a2ba'
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { absolute: 'Sobre a RPG Capital & Crédito — empresa de crédito para o pequeno varejo' },
   description: SUMMARY,
-  alternates: { canonical: `${SITE_URL}/sobre` },
+  alternates: { canonical: `${SITE_URL}/sobre`, types: { 'text/markdown': `${SITE_URL}/sobre.md` } },
   robots: { index: true, follow: true },
   openGraph: {
     type: 'website',
@@ -72,6 +73,11 @@ const structuredData = {
       jobTitle: 'Fundador e CEO',
       worksFor: { '@id': `${SITE_URL}/#organization` },
       sameAs: [RENAN_LINKEDIN],
+    },
+    {
+      '@type': 'FAQPage',
+      '@id': `${SITE_URL}/sobre#faq`,
+      mainEntity: FAQ_SOBRE.map(([name, text]) => ({ '@type': 'Question', name, acceptedAnswer: { '@type': 'Answer', text } })),
     },
   ],
 }
@@ -186,6 +192,23 @@ export default function AboutPage() {
                 </a>
               </div>
             </Reveal>
+          </div>
+        </section>
+
+        <section className={styles.section} id="perguntas">
+          <div className={styles.container}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>Perguntas frequentes</span>
+              <h2 className={styles.sectionTitle}>O que mais perguntam sobre a RPG.</h2>
+            </Reveal>
+            <div className={styles.faqList}>
+              {FAQ_SOBRE.map(([question, answer], index) => (
+                <Reveal as="details" key={question} delay={index * 60}>
+                  <summary>{question}</summary>
+                  <p>{answer}</p>
+                </Reveal>
+              ))}
+            </div>
           </div>
         </section>
 
