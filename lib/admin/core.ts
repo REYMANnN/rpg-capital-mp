@@ -67,5 +67,5 @@ export function couponLink(code: string) {
 
 export function courtesyEndMessage(storeName: string, endsAt: Date) {
   const date = endsAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-  return `Oi! O período grátis da RPG para ${storeName} terminou.\nPara continuar usando, cadastre seu cartão (R$ 9,99/mês) até ${date}:\n${PAYMENT_LINK}`
+  return `Oi! O período grátis da RPG para ${storeName} terminou.\nPara continuar usando, cadastre seu cartão até ${date}:\n${PAYMENT_LINK}`
 }
