@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   title: { absolute: TITLE },
   description: DESCRIPTION,
   applicationName: 'RPG Capital & Crédito',
-  alternates: { canonical: `${SITE_URL}/` },
+  alternates: { canonical: `${SITE_URL}/`, types: { 'text/markdown': `${SITE_URL}/index.md` } },
   robots: {
     index: true,
     follow: true,

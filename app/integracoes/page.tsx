@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: 'Integrações e RPG for Developers — RPG Capital & Crédito',
   description: 'Conecte sistemas à RPG para ler ou escrever produtos, estoque, vendas, financeiro e preços com autorização explícita do lojista.',
-  alternates: { canonical: `${SITE_URL}/integracoes` },
+  alternates: { canonical: `${SITE_URL}/integracoes`, types: { 'text/markdown': `${SITE_URL}/integracoes.md` } },
   robots: { index: true, follow: true },
 }
 

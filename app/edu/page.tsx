@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   title: 'RPG Edu — Educação financeira e de gestão para o pequeno varejo',
   description:
     'Guias curtos e calculadoras grátis para quem toca loja: margem, fluxo de caixa, estoque, taxas da maquininha, Pix, crédito consciente e MEI. Sem economês.',
-  alternates: { canonical: `${SITE_URL}/edu` },
+  alternates: { canonical: `${SITE_URL}/edu`, types: { 'text/markdown': `${SITE_URL}/edu.md` } },
   robots: { index: true, follow: true },
 }
 

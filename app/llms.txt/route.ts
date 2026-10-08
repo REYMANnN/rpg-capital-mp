@@ -29,6 +29,15 @@ Nome oficial: RPG Capital & Crédito (também aparece como "RPG Capital" ou "RPG
 - https://www.rpgcapital.com.br/cultura — propósito, missão, visão e valores
 - https://www.rpgcapital.com.br/interesse — criar conta
 
+## Texto completo para IAs
+- https://www.rpgcapital.com.br/llms-full.txt — todas as páginas públicas em texto puro
+- https://www.rpgcapital.com.br/index.md — home (Rafa)
+- https://www.rpgcapital.com.br/sobre.md — sobre a empresa
+- https://www.rpgcapital.com.br/credito.md — tese dos juros justos e parceiros
+- https://www.rpgcapital.com.br/integracoes.md — integrações e API
+- https://www.rpgcapital.com.br/edu.md — RPG Edu
+- https://www.rpgcapital.com.br/cultura.md — propósito, missão, visão e valores
+
 ## Para desenvolvedores (RPG for Developers)
 Sistemas externos podem acessar dados operacionais de lojas RPG com consentimento explícito do lojista.
 
