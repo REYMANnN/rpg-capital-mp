@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   title: 'Cultura — Por que a RPG existe | RPG Capital & Crédito',
   description:
     'O sistema financeiro não foi feito para o pequeno comerciante. A RPG é. Conheça a matriz O³: propósito, missão, visão e os valores no centro de tudo.',
-  alternates: { canonical: `${SITE_URL}/cultura` },
+  alternates: { canonical: `${SITE_URL}/cultura`, types: { 'text/markdown': `${SITE_URL}/cultura.md` } },
   robots: { index: true, follow: true },
 }
 
