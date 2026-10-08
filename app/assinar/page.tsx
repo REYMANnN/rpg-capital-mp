@@ -2,11 +2,13 @@ import { redirect } from 'next/navigation'
 import OnboardingBillingStep from '@/components/accounts/OnboardingBillingStep'
 import { getCurrentUser, getManagementContext } from '@/lib/accounts/currentUser'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { BILLING_ENABLED } from '@/lib/billing/policy'
 
 export const dynamic = 'force-dynamic'
 
-// Link que o lojista recebe quando a cortesia acaba: cadastra o cartão e passa a pagar R$ 9,99/mês.
+// Link antigo de assinatura. Com a mensalidade desligada, só leva o lojista para o painel.
 export default async function AssinarPage() {
+  if (!BILLING_ENABLED) redirect('/manage')
   const user = await getCurrentUser()
   if (!user) redirect('/login?intent=login')
   const businesses = await getManagementContext(user.id)
