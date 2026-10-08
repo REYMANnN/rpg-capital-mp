@@ -5,6 +5,13 @@ import { createServerClient } from '@supabase/ssr'
 // (assim o Google para de indexar as cópias da Vercel). Webhooks, API, login e app não são redirecionados.
 const PUBLIC_MARKETING_PATHS = ['/', '/integracoes', '/credito', '/cultura', '/sobre', '/edu', '/privacidade', '/termos']
 const CANONICAL_ORIGIN = 'https://www.rpgcapital.com.br'
+// Páginas que podem aparecer no Google. Telas de login, cadastro e app ficam fora da busca.
+const INDEXABLE_PATHS = [...PUBLIC_MARKETING_PATHS, '/interesse', '/developers/docs']
+
+function isIndexable(pathname: string) {
+  if (pathname.includes('.')) return true // arquivos (robots.txt, sitemap.xml, llms.txt, .md, imagens) seguem as regras próprias
+  return INDEXABLE_PATHS.includes(pathname) || pathname.startsWith('/edu/')
+}
 
 function vercelHostResponse(request: NextRequest) {
   const host = request.headers.get('host') || ''
@@ -23,6 +30,7 @@ export async function proxy(request: NextRequest) {
   if (vercelHost && vercelHost !== 'noindex') return vercelHost
   const response = await handleSession(request)
   if (vercelHost === 'noindex') response.headers.set('X-Robots-Tag', 'noindex, nofollow')
+  else if (!isIndexable(request.nextUrl.pathname)) response.headers.set('X-Robots-Tag', 'noindex')
   return response
 }
 
