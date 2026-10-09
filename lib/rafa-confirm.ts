@@ -114,12 +114,10 @@ export async function askRafaMediaConfirmation(input: {
     payload: { kind: 'invoice_media', import_id: input.importId },
     message: input.message,
   })
-  return sendActionButtons(
+  return sendText(
     input.waId,
     input.message,
-    'A extração só começa depois do Sim.',
-    [{ id: CONFIRM_YES_ID, title: 'Sim' }, { id: CONFIRM_NO_ID, title: 'Não' }],
-    input.inReplyTo ? { inReplyTo: input.inReplyTo } : undefined,
+    { ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}), noMenu: true },
   )
 }
 
@@ -139,6 +137,18 @@ export async function getPendingRafaAction(waId: string) {
 export async function refuseRafaPending(waId: string) {
   const admin = createAdminClient()
   const pending = await getPendingRafaAction(waId)
+  const payload = pending?.payload as any
+
+  // Na coleta de uma nota, "não" / "2" significa "a nota ainda não está completa".
+  // A sessão continua aberta para receber quantas fotos forem necessárias.
+  if (pending && payload?.kind === 'invoice_media') {
+    return sendText(
+      waId,
+      'Certo. Pode mandar a próxima foto. Quando terminar, responda 1 ou diga que acabou.\n— Rafa',
+      { noMenu: true },
+    )
+  }
+
   if (pending) {
     await admin.from('rafa_pending_actions').update({ status: 'recusada' }).eq('id', pending.id)
   }
@@ -175,8 +185,25 @@ export async function confirmRafaPending(waId: string): Promise<ConfirmRafaResul
 
   const payload = pending.payload as any
   if (payload?.kind === 'invoice_media') {
+    const importId = String(payload.import_id)
+    const { data: invoice, error } = await admin.from('rafa_invoice_imports')
+      .select('classification')
+      .eq('id', importId)
+      .eq('wa_id', waId)
+      .eq('store_id', String(pending.store_id))
+      .maybeSingle()
+    if (error) throw error
+    if (!invoice) return { kind: 'none' }
+    const classification = invoice.classification && typeof invoice.classification === 'object' && !Array.isArray(invoice.classification)
+      ? invoice.classification as Record<string, unknown>
+      : {}
+    const { error: completeError } = await admin.from('rafa_invoice_imports').update({
+      classification: { ...classification, collection_mode: 'photos', collection_complete: true },
+      updated_at: new Date().toISOString(),
+    }).eq('id', importId).eq('status', 'classified')
+    if (completeError) throw completeError
     if (!await claim()) return { kind: 'none' }
-    return { kind: 'media', importId: String(payload.import_id), storeId: String(pending.store_id) }
+    return { kind: 'media', importId, storeId: String(pending.store_id) }
   }
 
   const changes = Array.isArray(payload?.changes) ? payload.changes as RafaChange[] : []
