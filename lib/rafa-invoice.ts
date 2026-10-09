@@ -2,7 +2,7 @@ import { createBalcaoDeepLink } from '@/lib/deeplink'
 import { extractRafaInvoiceImages, extractRafaInvoiceText, type RafaInvoiceExtraction, type RafaMediaClass } from '@/lib/rafa-ai'
 import { loadRafaStore } from '@/lib/inventory/rafa-store'
 import { mergeInvoiceExtractions } from '@/lib/rafa-ai-parse'
-import { askRafaConfirmation } from '@/lib/rafa-confirm'
+import { askRafaConfirmation, askRafaMediaConfirmation } from '@/lib/rafa-confirm'
 import { checkInvoice } from '@/lib/rafa-invoice-check'
 import { prepareInvoiceImages } from '@/lib/rafa-invoice-image'
 import { parseNfeXml } from '@/lib/inventory/nfe'
@@ -42,7 +42,7 @@ export async function appendInvoiceMedia(input: {
   const admin = createAdminClient()
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
   const { data: recent } = await admin.from('rafa_invoice_imports')
-    .select('id,media_paths')
+    .select('id,media_paths,classification')
     .eq('wa_id', input.waId)
     .eq('store_id', input.storeId)
     .eq('status', 'classified')
@@ -55,10 +55,13 @@ export async function appendInvoiceMedia(input: {
     const paths: string[] = Array.isArray(recent.media_paths)
       ? (recent.media_paths as unknown[]).filter((value): value is string => typeof value === 'string')
       : []
+    const previousClassification = recent.classification && typeof recent.classification === 'object' && !Array.isArray(recent.classification)
+      ? recent.classification as Record<string, unknown>
+      : {}
     const nextPaths: string[] = [...new Set([...paths, input.mediaPath])]
     const { error } = await admin.from('rafa_invoice_imports').update({
       media_paths: nextPaths,
-      classification: input.classification,
+      classification: { ...previousClassification, ...input.classification, collection_mode: 'photos', collection_complete: false },
       updated_at: new Date().toISOString(),
     }).eq('id', recent.id)
     if (error) throw error
@@ -69,7 +72,7 @@ export async function appendInvoiceMedia(input: {
     wa_id: input.waId,
     store_id: input.storeId,
     media_paths: [input.mediaPath],
-    classification: input.classification,
+    classification: { ...input.classification, collection_mode: 'photos', collection_complete: false },
     status: 'classified',
   }).select('id').single()
   if (error) throw error
@@ -85,7 +88,7 @@ async function extractInvoicePhotos(input: {
 }): Promise<RafaInvoiceExtraction> {
   const tileMode = process.env.RAFA_INVOICE_TILES !== 'off'
   const groups: string[][] = []
-  for (const path of input.imagePaths.slice(0, 5)) {
+  for (const path of input.imagePaths) {
     if (tileMode) groups.push(await prepareInvoiceImages(await loadInvoiceProofBytes(path)))
     else groups.push([await loadInvoiceProofDataUri(path)])
   }
@@ -139,6 +142,14 @@ function applyInvoiceChecks(extraction: RafaInvoiceExtraction) {
   }
 }
 
+function classificationObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function mediaPaths(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
 export async function processApprovedInvoiceMedia(input: {
   waId: string
   storeId: string
@@ -158,12 +169,64 @@ export async function processApprovedInvoiceMedia(input: {
   if (error) throw error
   if (!invoice) throw new Error('invoice_import_not_found')
 
-  const paths: string[] = Array.isArray(invoice.media_paths)
-    ? (invoice.media_paths as unknown[]).filter((value): value is string => typeof value === 'string')
-    : []
-  const imagePaths = paths.filter((path: string) => /\.(?:jpe?g|png|webp)$/i.test(path))
+  let paths = mediaPaths(invoice.media_paths)
+  let imagePaths = paths.filter((path: string) => /\.(?:jpe?g|png|webp)$/i.test(path))
   const xmlPath = paths.find((path: string) => /\.xml$/i.test(path))
   const pdfPath = paths.find((path: string) => /\.pdf$/i.test(path))
+  const classification = classificationObject(invoice.classification)
+
+  // Foto de nota: nunca extrai nem altera estoque antes de o lojista dizer que terminou.
+  // A Rafa 3.0 pode criar um novo import a cada nova foto; aqui consolidamos tudo em uma só sessão.
+  if (imagePaths.length && !xmlPath && !pdfPath && classification.collection_complete !== true) {
+    const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+    const { data: openRows, error: openError } = await admin.from('rafa_invoice_imports')
+      .select('id,media_paths,classification')
+      .eq('wa_id', input.waId)
+      .eq('store_id', input.storeId)
+      .eq('status', 'classified')
+      .neq('id', invoice.id)
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending: false })
+      .limit(6)
+    if (openError) throw openError
+
+    const previous = (openRows || []).find((row) => {
+      const c = classificationObject(row.classification)
+      return c.collection_mode === 'photos' && c.collection_complete !== true
+    })
+
+    if (previous) {
+      paths = [...new Set([...mediaPaths(previous.media_paths), ...paths])]
+      imagePaths = paths.filter((path: string) => /\.(?:jpe?g|png|webp)$/i.test(path))
+      const { error: cancelError } = await admin.from('rafa_invoice_imports').update({
+        status: 'cancelled',
+        updated_at: new Date().toISOString(),
+      }).eq('id', previous.id).eq('status', 'classified')
+      if (cancelError) throw cancelError
+    }
+
+    const nextClassification = { ...classification, collection_mode: 'photos', collection_complete: false }
+    const { error: collectError } = await admin.from('rafa_invoice_imports').update({
+      media_paths: paths,
+      classification: nextClassification,
+      status: 'classified',
+      updated_at: new Date().toISOString(),
+    }).eq('id', invoice.id)
+    if (collectError) throw collectError
+
+    const pageCount = imagePaths.length
+    const message = pageCount > 1
+      ? `Recebi ${pageCount} fotos dessa nota. A nota está completa agora ou ainda falta alguma foto?\n\n1 - Está completa\n2 - Vou mandar mais fotos\n\nPode responder com 1 ou 2, escrever normalmente ou mandar áudio.\n— Rafa`
+      : 'Identifiquei uma nota fiscal. Essa é a nota completa ou você ainda vai mandar mais fotos?\n\n1 - Está completa\n2 - Vou mandar mais fotos\n\nPode responder com 1 ou 2, escrever normalmente ou mandar áudio.\n— Rafa'
+    const sent = await askRafaMediaConfirmation({
+      waId: input.waId,
+      storeId: input.storeId,
+      importId: String(invoice.id),
+      message,
+    })
+    if (!sent.ok) throw new Error(sent.error)
+    return { ok: false as const, reason: 'awaiting_more_photos', importId: String(invoice.id), pageCount }
+  }
 
   await admin.from('rafa_invoice_imports').update({ status: 'extracting', updated_at: new Date().toISOString() }).eq('id', invoice.id)
 
