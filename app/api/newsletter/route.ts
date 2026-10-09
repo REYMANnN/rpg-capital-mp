@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { syncNewsletterSignupToSheet } from '@/lib/newsletter/sheets'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,10 +25,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Confira o e-mail e tente de novo.' }, { status: 400 })
   }
 
+  const email = parsed.data.email.toLowerCase()
   const { error } = await createAdminClient()
     .from('rpg_newsletter_subscribers')
     .upsert(
-      { email: parsed.data.email.toLowerCase(), name: parsed.data.name, source: parsed.data.source },
+      { email, name: parsed.data.name, source: parsed.data.source },
       { onConflict: 'email', ignoreDuplicates: true },
     )
 
@@ -35,6 +37,10 @@ export async function POST(request: NextRequest) {
     console.error('newsletter_insert_failed', { code: error.code })
     return NextResponse.json({ ok: false, error: 'Não foi possível inscrever agora. Tente de novo.' }, { status: 500 })
   }
+
+  // Supabase confirmou: copia para a planilha da newsletter depois de responder.
+  // Falha no Google não afeta o usuário; a rotina /api/newsletter/sync-sheet recupera.
+  after(() => syncNewsletterSignupToSheet({ email, name: parsed.data.name, source: parsed.data.source }))
 
   return NextResponse.json({ ok: true })
 }
