@@ -597,7 +597,8 @@ export async function processValue(value: JsonRecord) {
         const result = await sendText(
           fromPhone,
           `${FLOW_HINT[flow]}\n${link.url}`,
-          { inReplyTo: wamid },
+          // Link aberto = o lojista está na tela; o menu volta quando ele terminar o fluxo.
+          { inReplyTo: wamid, noMenu: true },
         )
         if (!result.ok) throw new Error(result.error)
 

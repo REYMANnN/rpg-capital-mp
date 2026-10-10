@@ -2,7 +2,7 @@
 import 'server-only'
 
 import { EVOLUTION_MEDIA_PREFIX } from '@/lib/rafa-media'
-import { cancelIdleMenus, lastOutboundWasTextMenu, normalizePhone } from '@/lib/whatsapp-evolution'
+import { cancelIdleMenus, lastOutboundWasTextMenu, normalizePhone, RAFA_MAIN_MENU } from '@/lib/whatsapp-evolution'
 import { confirmationTextId, getPendingRafaAction } from '@/lib/rafa-confirm'
 import { activePriceQuestion } from '@/lib/rafa-price-questions'
 
@@ -50,6 +50,26 @@ function buttonReplyId(message: JsonRecord): { id: string; title: string } | nul
   return null
 }
 
+function plain(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+// Só o texto EXATO de uma opção (com ou sem acento/maiúscula/pontuação). Frase com mais coisa
+// ("vender 2 cocas") continua indo pra Rafa entender.
+const MENU_ALIASES: Record<string, string> = {
+  'vender': 'vender',
+  'ler codigo': 'ler_codigo',
+  'prateleira': 'prateleira',
+  'subir estoque': 'entrada',
+  'entrada': 'entrada',
+}
+
+function menuOptionByTitle(text: string): { id: string; title: string } | null {
+  const id = MENU_ALIASES[plain(text)]
+  const option = id ? RAFA_MAIN_MENU.find((item) => item.id === id) : undefined
+  return option ? { id: option.id, title: option.title } : null
+}
+
 function unwrap(message: JsonRecord): JsonRecord {
   // Mensagens "efêmeras"/"view once"/documento com legenda vêm embrulhadas.
   for (const wrapper of ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']) {
@@ -89,13 +109,20 @@ export async function evolutionToCloudValue(data: JsonRecord): Promise<{ value: 
     if (confirmationId) {
       out = { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: confirmationId, title: text.trim() } } }
     } else {
-      const choice = text.trim().match(/^([1-9])\s*$/)
+      // Nome de uma opção do menu digitado ("Ler código", "vender"): vai direto pro botão, sem IA.
+      const typed = menuOptionByTitle(text)
+      if (typed) {
+        out = { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: typed } }
+      }
+      const choice = typed ? null : text.trim().match(/^([1-9])\s*$/)
       const pricing = choice ? Boolean(await activePriceQuestion(phone).catch(() => null)) : false
       const menu = choice && !pricing ? await lastOutboundWasTextMenu(phone) : null
       const picked = menu?.[Number(choice?.[1]) - 1]
-      out = picked
-        ? { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: picked.id, title: picked.title } } }
-        : { ...base, type: 'text', text: { body: text } }
+      if (!out) {
+        out = picked
+          ? { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: picked.id, title: picked.title } } }
+          : { ...base, type: 'text', text: { body: text } }
+      }
     }
   } else if (message.imageMessage) {
     out = { ...base, type: 'image', image: { id: `${EVOLUTION_MEDIA_PREFIX}${id}`, mime_type: message.imageMessage.mimetype, caption: message.imageMessage.caption } }

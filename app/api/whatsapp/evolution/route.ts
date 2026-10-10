@@ -1,7 +1,7 @@
 import { after } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { applyProviderStatus, recordConnectionState, runOutboxWorker } from '@/lib/whatsapp-evolution'
+import { applyProviderStatus, evoTyping, recordConnectionState, runOutboxWorker } from '@/lib/whatsapp-evolution'
 import { secretMatches } from '@/lib/whatsapp-evolution-auth'
 import { evolutionToCloudValue } from '@/lib/whatsapp-evolution-inbound'
 import { processValue, safeLogError, type JsonRecord } from '@/lib/whatsapp-inbound'
@@ -71,6 +71,9 @@ async function handle(payload: JsonRecord) {
     for (const item of asList(payload.data)) {
       const id = String(item.key?.id ?? '')
       if (!id || item.key?.fromMe) continue
+      // "Digitando..." no primeiro instante, antes de qualquer ida ao banco.
+      const jid = String(item.key?.remoteJidAlt || item.key?.remoteJid || '')
+      if (jid.endsWith('@s.whatsapp.net')) evoTyping(jid)
       if (!(await firstTime(`upsert:${id}`, event))) continue
       const converted = await evolutionToCloudValue(item)
       if (!converted.value) continue

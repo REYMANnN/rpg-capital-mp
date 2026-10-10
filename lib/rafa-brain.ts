@@ -338,6 +338,14 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
     { text: catalogText(state), cache: true },
   ]
 
+  // Esforço do modelo: conversa e ações de texto/áudio usam "medium" (responde bem mais rápido);
+  // foto, nota e arquivo continuam com o padrão do modelo (pensa mais). RAFA_BRAIN_EFFORT sobrescreve.
+  const effortEnv = process.env.RAFA_BRAIN_EFFORT?.trim().toLowerCase()
+  const heavy = currentImages.length > 0 || Boolean(input.attachment)
+  const effort = effortEnv === 'low' || effortEnv === 'medium' || effortEnv === 'high'
+    ? effortEnv as 'low' | 'medium' | 'high'
+    : heavy ? undefined : 'medium' as const
+
   let usedPriceTool = false
   const appliedSummaries: string[] = []
   const reply = async (body: string, noMenu = false, allowPixReminder = false) => {
@@ -715,13 +723,13 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
           const intro = String(args.texto || '').trim() ? cleanReply(String(args.texto)) : ctx.bank === 'conectado'
             ? 'Pra conectar outra conta ou ver as conexões, entra aqui com o mesmo Google do cadastro:'
             : 'Pra eu ver saldo e extrato, conecta o banco da loja aqui. Leva 2 minutos, é só entrar com o mesmo Google do cadastro:'
-          await reply(`${[...appliedSummaries.length ? [`Feito: ${appliedSummaries.join('\n')}`] : [], intro].join('\n\n')}\n${connectBankUrl(input.storeId)}`)
+          await reply(`${[...appliedSummaries.length ? [`Feito: ${appliedSummaries.join('\n')}`] : [], intro].join('\n\n')}\n${connectBankUrl(input.storeId)}`, true)
           return { result: { ok: 'link do banco enviado' }, terminal: true }
         }
         if (!isBalcaoFlow(fluxo)) return { result: { erro: 'fluxo inválido' } }
         const link = await createBalcaoDeepLink({ waId: input.waId, storeId: input.storeId, fluxo })
         const intro = String(args.texto || '').trim() ? cleanReply(String(args.texto)) : FLOW_HINT[fluxo]
-        await reply(`${[...appliedSummaries.length ? [`Feito: ${appliedSummaries.join('\n')}`] : [], intro].join('\n\n')}\n${link.url}`)
+        await reply(`${[...appliedSummaries.length ? [`Feito: ${appliedSummaries.join('\n')}`] : [], intro].join('\n\n')}\n${link.url}`, true)
         return { result: { ok: 'link enviado' }, terminal: true }
       }
 
@@ -747,6 +755,7 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
       maxTokens: 2000,
       temperature: 0.2,
       timeoutMs: 60_000,
+      effort,
     })
     const calls = response.content.filter((block): block is Extract<ClaudeContentBlock, { type: 'tool_use' }> => block.type === 'tool_use')
 

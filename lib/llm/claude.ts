@@ -18,8 +18,11 @@ export function claudeModel() {
 
 // Descobre na própria API quais modelos a chave pode usar (uma vez por instância) e escolhe
 // o Sonnet mais novo, caso o nome preferido não exista para esta conta.
+// Por padrão usa o modelo preferido direto (sem ida extra à API a cada instância nova);
+// a consulta à lista de modelos só acontece se a API disser que o modelo não existe.
+let lookupNeeded = false
 async function ensureModel() {
-  if (process.env.RAFA_AGENT_MODEL?.trim() || resolvedModel) return claudeModel()
+  if (process.env.RAFA_AGENT_MODEL?.trim() || resolvedModel || !lookupNeeded) return claudeModel()
   try {
     const response = await fetch('https://api.anthropic.com/v1/models?limit=100', {
       headers: { 'x-api-key': key(), 'anthropic-version': ANTHROPIC_VERSION },
@@ -59,8 +62,9 @@ function prices() {
   return {
     input: num('RAFA_LLM_PRICE_INPUT', 2),
     output: num('RAFA_LLM_PRICE_OUTPUT', 10),
-    cacheRead: num('RAFA_LLM_PRICE_CACHE_READ', 0.2),
-    cacheWrite: num('RAFA_LLM_PRICE_CACHE_WRITE', 2.5),
+    // Sonnet 5.5: leitura de cache = 0,05x a entrada; escrita de cache de 1 h = 2x.
+    cacheRead: num('RAFA_LLM_PRICE_CACHE_READ', 0.1),
+    cacheWrite: num('RAFA_LLM_PRICE_CACHE_WRITE', 4),
   }
 }
 
@@ -131,22 +135,29 @@ export async function claudeMessages(input: {
   maxTokens?: number
   temperature?: number
   timeoutMs?: number
+  // Quanto o modelo "pensa" antes de responder (low | medium | high). Omitido = padrão do modelo.
+  effort?: 'low' | 'medium' | 'high'
 }): Promise<ClaudeResponse> {
-  const model = await ensureModel()
+  let model = await ensureModel()
+  // Cache de 1 hora: instruções, ferramentas e catálogo mudam pouco. Com 5 min, a primeira
+  // mensagem depois de uma pausa pagava a escrita do cache inteiro (mais lenta e 5x mais cara).
+  const CACHE = { type: 'ephemeral' as const, ttl: '1h' as const }
   const system = input.system
     .filter((block) => block.text.trim())
-    .map((block) => ({ type: 'text' as const, text: block.text, ...(block.cache ? { cache_control: { type: 'ephemeral' as const } } : {}) }))
+    .map((block) => ({ type: 'text' as const, text: block.text, ...(block.cache ? { cache_control: CACHE } : {}) }))
   const tools = input.tools?.length
-    ? input.tools.map((tool, index) => index === input.tools!.length - 1 ? { ...tool, cache_control: { type: 'ephemeral' } } : tool)
+    ? input.tools.map((tool, index) => index === input.tools!.length - 1 ? { ...tool, cache_control: CACHE } : tool)
     : undefined
-  const body = JSON.stringify({
+  const buildBody = () => JSON.stringify({
     model,
     max_tokens: input.maxTokens || 2048,
     // Sonnet/Opus 5.5 recusam `temperature` (400 "deprecated"): não enviar. O parâmetro fica só por compatibilidade.
     system,
     messages: input.messages,
     ...(tools ? { tools } : {}),
+    ...(input.effort ? { output_config: { effort: input.effort } } : {}),
   })
+  let body = buildBody()
 
   const call = () => fetch(ANTHROPIC_URL, {
     method: 'POST',
@@ -164,10 +175,21 @@ export async function claudeMessages(input: {
   let response: Response
   let json: any
   let rawText = ''
+  const startedAt = Date.now()
   try {
     response = await call()
     rawText = await response.text().catch(() => '')
     json = safeJson(rawText)
+    // Modelo preferido não existe para esta chave: descobre um disponível e tenta de novo.
+    if (response.status === 404 && !process.env.RAFA_AGENT_MODEL?.trim() && !resolvedModel) {
+      lookupNeeded = true
+      model = await ensureModel()
+      errorContext.model = model
+      body = buildBody()
+      response = await call()
+      rawText = await response.text().catch(() => '')
+      json = safeJson(rawText)
+    }
     // Sobrecarga/limite: uma nova tentativa depois de 1,5 s.
     if ([429, 500, 502, 503, 529].includes(response.status)) {
       await new Promise((resolve) => setTimeout(resolve, 1500))
@@ -195,6 +217,7 @@ export async function claudeMessages(input: {
     inputTokens: Number(usage.input_tokens || 0) + Number(usage.cache_read_input_tokens || 0) + Number(usage.cache_creation_input_tokens || 0),
     outputTokens: usage.output_tokens,
     estimatedCostUsd: claudeCostUsd(usage),
+    durationMs: Date.now() - startedAt,
   }).catch(() => {})
 
   return {

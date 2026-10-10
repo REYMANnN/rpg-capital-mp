@@ -139,9 +139,18 @@ function autoMenuMode() {
   return value === 'always' || value === 'off' ? value : 'idle'
 }
 
-function idleMenuDelayMs() {
-  const minutes = Number(process.env.RAFA_IDLE_MENU_MIN || '5')
-  return (Number.isFinite(minutes) && minutes > 0 ? minutes : 5) * 60_000
+// Assunto em aberto (Rafa fez pergunta ou há confirmação aberta): o menu espera este tempo
+// e só vai se o lojista não responder antes. Padrão 60 s. (O worker da VM roda a cada minuto,
+// então na prática chega entre 1 e 2 minutos.)
+function openTopicMenuDelayMs() {
+  const seconds = Number(process.env.RAFA_OPEN_MENU_SECONDS || '60')
+  return (Number.isFinite(seconds) && seconds > 0 ? seconds : 60) * 1000
+}
+
+async function hasOpenConfirmation(phone: string) {
+  const { data } = await createAdminClient().from('rafa_pending_actions').select('id')
+    .eq('wa_id', phone).eq('status', 'pendente').gt('expires_at', new Date().toISOString()).limit(1)
+  return (data?.length || 0) > 0
 }
 
 function endsWithQuestion(body: unknown) {
@@ -247,6 +256,17 @@ export async function enqueueWhatsApp(input: {
   const idle = input.kind === 'menu_fallback' && input.payload.idle === true
   if (!idle) await cancelIdleMenus(to)
 
+  // Menu principal repetido em seguida (ex.: resposta já trouxe o menu e o fluxo chama sendMenu): manda só um.
+  const isMainMenuSend = input.kind === 'menu_fallback' && !idle && Array.isArray(input.payload.buttons)
+    && (input.payload.buttons as Array<{ id?: string }>).some((button) => button?.id === RAFA_MAIN_MENU[0]?.id)
+  if (isMainMenuSend && !String(input.payload.body || '').replace('O que você quer fazer agora?', '').trim()) {
+    const { data: last } = await createAdminClient().from('wa_outbox').select('kind,payload,created_at')
+      .eq('to_phone', to).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(1).maybeSingle()
+    const lastIsMenu = last?.kind === 'menu_fallback' && last.payload?.idle !== true && Array.isArray(last.payload?.buttons)
+      && (last.payload.buttons as Array<{ id?: string }>).some((button) => button?.id === RAFA_MAIN_MENU[0]?.id)
+    if (lastIsMenu && Date.now() - new Date(last.created_at).getTime() < 30_000) return { ok: true, data: { duplicateMenu: true } }
+  }
+
   // EVOLUTION_AUTO_MENU=idle (padrão): menu só depois de ociosidade e nunca após pergunta.
   // "always" mantém o comportamento antigo; "off" desliga o menu automático.
   if (input.kind === 'text' && !input.noMenu) {
@@ -264,9 +284,22 @@ export async function enqueueWhatsApp(input: {
       return sent
     }
     if (mode === 'idle') {
-      const sent = await enqueueWhatsApp({ ...input, noMenu: true })
+      // Regra (10/10/2026): assunto resolvido = menu na hora; assunto em aberto = menu depois
+      // de ~1 minuto, cancelado se o lojista responder antes.
+      const [sent, open] = await Promise.all([
+        enqueueWhatsApp({ ...input, noMenu: true }),
+        endsWithQuestion(input.payload.body) ? Promise.resolve(true) : hasOpenConfirmation(to).catch(() => true),
+      ])
       if (!sent.ok) return sent
-      if (!endsWithQuestion(input.payload.body)) {
+      if (!open) {
+        await enqueueWhatsApp({
+          to: input.to,
+          kind: 'menu_fallback',
+          payload: { body: 'O que você quer fazer agora?', buttons: RAFA_MAIN_MENU },
+          inReplyTo: input.inReplyTo,
+          noMenu: true,
+        })
+      } else {
         await enqueueWhatsApp({
           to: input.to,
           kind: 'menu_fallback',
@@ -313,7 +346,7 @@ export async function enqueueWhatsApp(input: {
     payload: input.payload,
     in_reply_to: input.inReplyTo ?? null,
     status: idle ? 'queued' : connected ? 'sending' : 'queued',
-    ...(idle ? { next_attempt_at: new Date(Date.now() + idleMenuDelayMs()).toISOString() } : {}),
+    ...(idle ? { next_attempt_at: new Date(Date.now() + openTopicMenuDelayMs()).toISOString() } : {}),
   }).select('*').maybeSingle()
 
   if (error) {
@@ -443,14 +476,16 @@ export async function runOutboxWorker(): Promise<Record<string, number | string>
   // 2) Drena a fila (claim atômico). Menu ocioso é revalidado antes do envio.
   const { data: claimed } = await admin.rpc('wa_outbox_claim', { p_limit: 20 })
   for (const row of (claimed ?? []) as OutboxRow[]) {
+    // Menu de assunto em aberto: vai mesmo com pendência (regra de 10/10/2026). Se o lojista
+    // respondeu antes, ele já foi cancelado na chegada da mensagem (cancelIdleMenus).
+    // Só não manda se a última mensagem da Rafa já foi um menu (evita menu duplicado).
     if (row.kind === 'menu_fallback' && row.payload?.idle === true) {
-      const now = new Date().toISOString()
-      const [{ data: pending }, { data: prices }] = await Promise.all([
-        admin.from('rafa_pending_actions').select('id').eq('wa_id', row.to_phone).eq('status', 'pendente').gt('expires_at', now).limit(1),
-        admin.from('rafa_pending_products').select('id').eq('wa_id', row.to_phone).eq('status', 'aguardando_preco').limit(1),
-      ])
-      if ((pending?.length || 0) > 0 || (prices?.length || 0) > 0) {
-        await admin.from('wa_outbox').update({ status: 'cancelled', updated_at: now }).eq('id', row.id)
+      const { data: last } = await admin.from('wa_outbox').select('kind,payload')
+        .eq('to_phone', row.to_phone).neq('id', row.id)
+        .in('status', ['sending', 'sent', 'pending', 'server_ack', 'delivered', 'read'])
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      if (last?.kind === 'menu_fallback' && Array.isArray(last.payload?.buttons) && !isConfirmationButtonSet(last.payload.buttons)) {
+        await admin.from('wa_outbox').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', row.id)
         continue
       }
     }
