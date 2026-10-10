@@ -74,10 +74,17 @@ export const SUMUP_PATHS = {
   transaction: (merchant: string, clientTransactionId: string) => `/v2.1/merchants/${merchant}/transactions?client_transaction_id=${encodeURIComponent(clientTransactionId)}`,
 }
 
-// Primeira conta de comerciante ativa do usuário (memberships), no formato da SumUp.
+// Conta de comerciante pelas memberships, só quando não há dúvida: um usuário pode ter várias
+// (ex.: conta real + sandbox), e aí quem decide é o /v0.1/me da credencial.
 export function merchantCodeFromMemberships(json: unknown): string | null {
   const items = Array.isArray((json as { items?: unknown })?.items) ? (json as { items: Array<Record<string, unknown>> }).items : []
-  const merchant = items.find((item) => item.type === 'merchant' && (item.status === 'accepted' || !item.status))
-  const code = merchant?.resource_id
+  const merchants = items.filter((item) => item.type === 'merchant' && (item.status === 'accepted' || !item.status))
+  const code = merchants.length === 1 ? merchants[0].resource_id : null
+  return typeof code === 'string' && code ? code : null
+}
+
+export function merchantCodeFromMe(json: unknown): string | null {
+  const data = json as { merchant_profile?: { merchant_code?: unknown }; merchant_code?: unknown } | null
+  const code = data?.merchant_profile?.merchant_code ?? data?.merchant_code
   return typeof code === 'string' && code ? code : null
 }

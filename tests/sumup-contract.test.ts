@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import {
   decodeStateWith,
   encodeStateWith,
+  merchantCodeFromMe,
   merchantCodeFromMemberships,
   normalizePairingCode,
   pairReaderBody,
@@ -111,8 +112,11 @@ test('caminhos usados existem na especificação com o método certo', async () 
   assert.ok(params.includes('client_transaction_id'), 'busca por client_transaction_id não existe')
 })
 
-test('merchant code sai das memberships', () => {
+test('merchant code: /me decide; memberships só sem ambiguidade', () => {
+  assert.equal(merchantCodeFromMe({ merchant_profile: { merchant_code: 'MND9NEHV' } }), 'MND9NEHV')
+  assert.equal(merchantCodeFromMe({}), null)
   assert.equal(merchantCodeFromMemberships({ items: [{ type: 'organization', resource_id: 'O1', status: 'accepted' }, { type: 'merchant', resource_id: 'MZ0ZWGY7', status: 'accepted' }] }), 'MZ0ZWGY7')
+  assert.equal(merchantCodeFromMemberships({ items: [{ type: 'merchant', resource_id: 'MZ0ZWGY7', status: 'accepted' }, { type: 'merchant', resource_id: 'MND9NEHV', status: 'accepted' }] }), null, 'conta real + sandbox é ambíguo')
   assert.equal(merchantCodeFromMemberships({ items: [{ type: 'merchant', resource_id: 'M2', status: 'disabled' }] }), null)
   assert.equal(merchantCodeFromMemberships(null), null)
 })

@@ -196,6 +196,11 @@ export async function settleCharge(chargeId: string) {
 
   const approved = txStatus === 'SUCCESSFUL'
   const now = new Date().toISOString()
+  // Cancelada por nós (a SumUp devolve FAILED depois do terminate): só fecha, sem "Não passou".
+  if (!approved && charge.status === 'canceled') {
+    await admin.from('rpg_tap_charges').update({ completed_at: now, sumup_tx_code: tx.transaction_code ? String(tx.transaction_code) : null, updated_at: now }).eq('id', chargeId).is('completed_at', null)
+    return { status: 'already' as const }
+  }
   const { data: claimed } = await admin.from('rpg_tap_charges').update({
     status: approved ? 'approved' : txStatus === 'CANCELLED' ? 'canceled' : 'declined',
     sumup_tx_code: tx.transaction_code ? String(tx.transaction_code) : null,

@@ -2,7 +2,7 @@
 import 'server-only'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { decodeStateWith, encodeStateWith, merchantCodeFromMemberships, signWith, SUMUP_PATHS, verifyWith, type OAuthState } from '@/lib/sumup/core'
+import { decodeStateWith, encodeStateWith, merchantCodeFromMe, merchantCodeFromMemberships, signWith, SUMUP_PATHS, verifyWith, type OAuthState } from '@/lib/sumup/core'
 
 // Cliente da SumUp (OAuth + Cloud API da Solo). Sem SDK: fetch direto.
 // Credenciais por loja ficam no Vault (rpg_tap_merchants); o access token do OAuth
@@ -184,19 +184,19 @@ export async function storeFetch(storeId: string, path: (merchantCode: string) =
   return result
 }
 
+// A conta dona da credencial vem do /v0.1/me (testado: a chave da sandbox devolve a sandbox,
+// enquanto as memberships listam conta real + sandbox). Memberships só como reserva.
 export async function fetchMerchantCode(token: string): Promise<string | null> {
-  const memberships = await sumupFetch(token, SUMUP_PATHS.memberships)
-  const fromMemberships = memberships.ok ? merchantCodeFromMemberships(memberships.json) : null
-  if (fromMemberships) return fromMemberships
-  // Endpoint antigo, fora da especificação atual, mas ainda usado por integrações existentes.
   const me = await sumupFetch(token, '/v0.1/me')
-  const code = me.json?.merchant_profile?.merchant_code || me.json?.merchant_code
-  return typeof code === 'string' && code ? code : null
+  const fromMe = me.ok ? merchantCodeFromMe(me.json) : null
+  if (fromMe) return fromMe
+  const memberships = await sumupFetch(token, SUMUP_PATHS.memberships)
+  return memberships.ok ? merchantCodeFromMemberships(memberships.json) : null
 }
 
 export async function fetchMerchantCountry(token: string): Promise<string | null> {
   const me = await sumupFetch(token, '/v0.1/me')
-  const country = me.json?.merchant_profile?.address?.country || me.json?.merchant_profile?.country
+  const country = me.json?.merchant_profile?.country || me.json?.merchant_profile?.address?.country
   return typeof country === 'string' && country ? country : null
 }
 
