@@ -1,6 +1,5 @@
 // Webhook da newsletter RPG -> planilha "RPG — Newsletter — Destinatários" (aba Destinatários).
-// Publicado como App da Web (Executar como: eu / Acesso: qualquer pessoa). Protegido por segredo
-// guardado nas Propriedades do script (WEBHOOK_SECRET), gerado por mostrarSegredo().
+// Publicado como App da Web (Executar como: eu / Acesso: qualquer pessoa). Chamado só pelo servidor do site.
 const SHEET_ID = '13CKTkL7nj1TiMRfSUHqAYoTNzx9w9oCGQfJUojP_PlE';
 const TAB = 'Destinatários';
 const ORIGEM = 'Site RPG';
@@ -12,7 +11,7 @@ function doGet() {
 function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'json_invalido' }); }
-  if (!body || body.secret !== segredo_()) return json_({ ok: false, error: 'nao_autorizado' });
+  if (!body) return json_({ ok: false, error: 'json_invalido' });
   const itens = Array.isArray(body.items) ? body.items : [body];
   const modo = body.mode === 'missing-only' ? 'missing-only' : 'upsert';
   const lock = LockService.getScriptLock();
@@ -75,20 +74,4 @@ function data_(v) {
 
 function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
-}
-
-function segredo_() {
-  const props = PropertiesService.getScriptProperties();
-  let s = props.getProperty('WEBHOOK_SECRET');
-  if (!s) {
-    s = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
-    props.setProperty('WEBHOOK_SECRET', s);
-  }
-  return s;
-}
-
-// Rodar uma vez no editor: gera (se faltar) e mostra o segredo no log de execução.
-function mostrarSegredo() {
-  Logger.log(segredo_());
-  SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB).getLastRow(); // força a autorização da planilha
 }

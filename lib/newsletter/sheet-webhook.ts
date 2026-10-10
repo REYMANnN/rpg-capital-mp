@@ -2,7 +2,7 @@ import 'server-only'
 
 /**
  * Webhook da planilha da newsletter (Google Apps Script publicado como App da Web).
- * Só roda no servidor: URL e segredo ficam em variáveis de ambiente, nunca no bundle público.
+ * Só roda no servidor (nunca no bundle público). Segredo opcional via NEWSLETTER_SHEET_WEBHOOK_SECRET.
  * Código do script: scripts/newsletter-sheet-webhook.gs
  */
 export type SheetWebhookItem = {
@@ -16,17 +16,24 @@ export type SheetWebhookItem = {
 
 export type SheetWebhookResult = { ok: boolean; added?: number; updated?: number; existing?: number; error?: string }
 
+/** App da Web publicado a partir de scripts/newsletter-sheet-webhook.gs (pode ser trocado por env). */
+const DEFAULT_WEBHOOK_URL =
+  'https://script.google.com/macros/s/AKfycbz7Nbf7TuAeb-MIVP4zW5t7AR77QNVOgiCRwSuxy1KHU6XmeWAiF2F7rPxugGxgmciE/exec'
+
+function webhookUrl(): string {
+  return process.env.NEWSLETTER_SHEET_WEBHOOK_URL?.trim() || DEFAULT_WEBHOOK_URL
+}
+
 export function sheetWebhookConfigured(): boolean {
-  return Boolean(process.env.NEWSLETTER_SHEET_WEBHOOK_URL?.trim() && process.env.NEWSLETTER_SHEET_WEBHOOK_SECRET?.trim())
+  return Boolean(webhookUrl())
 }
 
 export async function postToSheetWebhook(
   payload: { items: SheetWebhookItem[]; mode: 'upsert' | 'missing-only' },
   timeoutMs = 10_000,
 ): Promise<SheetWebhookResult> {
-  const url = process.env.NEWSLETTER_SHEET_WEBHOOK_URL?.trim()
-  const secret = process.env.NEWSLETTER_SHEET_WEBHOOK_SECRET?.trim()
-  if (!url || !secret) return { ok: false, error: 'webhook_not_configured' }
+  const url = webhookUrl()
+  const secret = process.env.NEWSLETTER_SHEET_WEBHOOK_SECRET?.trim() || undefined
 
   // Apps Script responde 302 -> googleusercontent; o fetch segue o redirect sozinho.
   const response = await fetch(url, {
