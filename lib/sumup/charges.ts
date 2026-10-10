@@ -9,12 +9,13 @@ import { recordRafaEvent } from '@/lib/rafa-events'
 import { commitRafaChanges } from '@/lib/rafa-ops'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { affiliate, errorMessage, SITE, sign, storeFetch, SumUpError } from '@/lib/sumup/client'
+import { normalizePairingCode, pairReaderBody, readerCheckoutBody, SUMUP_PATHS, type CardType } from '@/lib/sumup/core'
 import { sendText } from '@/lib/whatsapp'
 
 // Cobrança na maquininha Solo: a Rafa (ou o link de vender) manda o valor, a Solo cobra,
 // a SumUp avisa pelo webhook e a venda entra no estoque só depois de aprovada.
 
-export type CardType = 'credito' | 'debito'
+export type { CardType }
 export type ChargeItem = { productId: string; quantityMilli: number }
 
 const money = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -31,11 +32,11 @@ export async function listReaders(storeId: string): Promise<Reader[]> {
 
 // Pareia a Solo com o código que aparece na tela dela (Conexões > API > Conectar).
 export async function pairReader(storeId: string, pairingCode: string, name?: string) {
-  const code = String(pairingCode || '').replace(/[\s-]/g, '').toUpperCase()
-  if (!/^[A-Z0-9]{8,9}$/.test(code)) return { ok: false as const, error: 'O código tem 8 ou 9 letras/números. Confere na tela da maquininha.' }
+  const code = normalizePairingCode(pairingCode)
+  if (!code) return { ok: false as const, error: 'O código tem 8 ou 9 letras/números. Confere na tela da maquininha.' }
   const existing = await listReaders(storeId)
   const readerName = String(name || '').trim().slice(0, 60) || `Maquininha ${existing.length + 1}`
-  const result = await storeFetch(storeId, (merchant) => `/v0.1/merchants/${merchant}/readers`, { method: 'POST', body: { pairing_code: code, name: readerName } })
+  const result = await storeFetch(storeId, (merchant) => SUMUP_PATHS.readers(merchant), { method: 'POST', body: pairReaderBody(code, readerName) })
   if (!result.ok) {
     const expired = result.status === 404 || result.status === 422
     return { ok: false as const, error: expired ? 'Esse código não funcionou (ele vale 5 minutos). Gera outro na maquininha e me manda.' : errorMessage(result) }
@@ -117,19 +118,19 @@ export async function createCardCharge(input: CreateChargeInput): Promise<Create
   })
   if (insertError) throw insertError
 
-  const aff = affiliate()
-  const body: Record<string, unknown> = {
-    total_amount: { currency: 'BRL', minor_unit: 2, value: amountCents },
-    card_type: input.cardType === 'credito' ? 'credit' : 'debit',
-    ...(installments > 1 ? { installments } : {}),
-    description: (input.description || 'Venda RPG').slice(0, 120),
-    return_url: webhookUrl(chargeId),
-    ...(aff ? { affiliate: { ...aff, foreign_transaction_id: chargeId } } : {}),
-  }
+  const body = readerCheckoutBody({
+    amountCents,
+    cardType: input.cardType,
+    installments,
+    description: input.description || 'Venda RPG',
+    returnUrl: webhookUrl(chargeId),
+    affiliate: affiliate(),
+    foreignTransactionId: chargeId,
+  })
 
   let result
   try {
-    result = await storeFetch(input.storeId, (merchant) => `/v0.1/merchants/${merchant}/readers/${reader.id}/checkout`, { method: 'POST', body })
+    result = await storeFetch(input.storeId, (merchant) => SUMUP_PATHS.checkout(merchant, reader.id), { method: 'POST', body })
   } catch (error) {
     await admin.from('rpg_tap_charges').update({ status: 'failed', error_message: error instanceof Error ? error.message : 'erro', updated_at: new Date().toISOString() }).eq('id', chargeId)
     if (error instanceof SumUpError && error.code === 'not_connected') return { ok: false, code: 'not_connected', error: 'A conexão com a SumUp caiu. Conecte de novo.' }
@@ -160,7 +161,7 @@ export async function cancelCardCharge(storeId: string) {
     .eq('store_id', storeId).in('status', ['pending', 'processing']).not('reader_id', 'is', null)
     .order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (!open) return { ok: false as const, error: 'Não tem cobrança aberta na maquininha.' }
-  const result = await storeFetch(storeId, (merchant) => `/v0.1/merchants/${merchant}/readers/${open.reader_id}/terminate`, { method: 'POST', body: {} })
+  const result = await storeFetch(storeId, (merchant) => SUMUP_PATHS.terminate(merchant, String(open.reader_id)), { method: 'POST', body: {} })
   if (!result.ok && result.status !== 404) return { ok: false as const, error: errorMessage(result) }
   await admin.from('rpg_tap_charges').update({ status: 'canceled', updated_at: new Date().toISOString() }).eq('id', open.id).in('status', ['pending', 'processing'])
   return { ok: true as const }
@@ -187,7 +188,7 @@ export async function settleCharge(chargeId: string) {
   if (!charge || !charge.client_transaction_id) return { status: 'unknown' as const }
   if (['approved', 'failed', 'declined', 'canceled'].includes(String(charge.status)) && charge.completed_at) return { status: 'already' as const }
 
-  const lookup = await storeFetch(String(charge.store_id), (merchant) => `/v2.1/merchants/${merchant}/transactions?client_transaction_id=${encodeURIComponent(String(charge.client_transaction_id))}`)
+  const lookup = await storeFetch(String(charge.store_id), (merchant) => SUMUP_PATHS.transaction(merchant, String(charge.client_transaction_id)))
   if (!lookup.ok) return { status: 'unknown' as const, error: errorMessage(lookup) }
   const tx = (lookup.json || {}) as Record<string, any>
   const txStatus = String(tx.status || '').toUpperCase()

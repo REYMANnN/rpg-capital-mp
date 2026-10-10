@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import 'server-only'
 
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-
 import { createAdminClient } from '@/lib/supabase/admin'
+import { decodeStateWith, encodeStateWith, merchantCodeFromMemberships, signWith, SUMUP_PATHS, verifyWith, type OAuthState } from '@/lib/sumup/core'
 
 // Cliente da SumUp (OAuth + Cloud API da Solo). Sem SDK: fetch direto.
 // Credenciais por loja ficam no Vault (rpg_tap_merchants); o access token do OAuth
@@ -39,37 +38,23 @@ export function affiliate() {
 // ---------- Assinatura (state do OAuth e URL do webhook) ----------
 
 function signingSecret() {
-  const value = env('SUMUP_STATE_SECRET') || env('BALCAO_LINK_SECRET')
-  if (value.length < 32) throw new Error('SUMUP_STATE_SECRET (ou BALCAO_LINK_SECRET) precisa de 32+ caracteres')
-  return value
+  return env('SUMUP_STATE_SECRET') || env('BALCAO_LINK_SECRET')
 }
 
 export function sign(value: string) {
-  return createHmac('sha256', signingSecret()).update(value).digest('base64url')
+  return signWith(signingSecret(), value)
 }
 
 export function verifySignature(value: string, signature: string) {
-  const expected = Buffer.from(sign(value))
-  const given = Buffer.from(String(signature || ''))
-  return expected.length === given.length && timingSafeEqual(expected, given)
+  return verifyWith(signingSecret(), value, signature)
 }
 
-export type OAuthState = { storeId: string; userId: string; next: string; exp: number; nonce: string }
-
 export function encodeState(input: Omit<OAuthState, 'exp' | 'nonce'>) {
-  const payload = Buffer.from(JSON.stringify({ ...input, exp: Date.now() + 15 * 60_000, nonce: randomBytes(8).toString('hex') })).toString('base64url')
-  return `${payload}.${sign(payload)}`
+  return encodeStateWith(signingSecret(), input)
 }
 
 export function decodeState(state: string): OAuthState | null {
-  const [payload, signature] = String(state || '').split('.')
-  if (!payload || !signature || !verifySignature(payload, signature)) return null
-  try {
-    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as OAuthState
-    return parsed.exp > Date.now() ? parsed : null
-  } catch {
-    return null
-  }
+  return decodeStateWith(signingSecret(), state)
 }
 
 export function authorizeUrl(state: string) {
@@ -200,6 +185,10 @@ export async function storeFetch(storeId: string, path: (merchantCode: string) =
 }
 
 export async function fetchMerchantCode(token: string): Promise<string | null> {
+  const memberships = await sumupFetch(token, SUMUP_PATHS.memberships)
+  const fromMemberships = memberships.ok ? merchantCodeFromMemberships(memberships.json) : null
+  if (fromMemberships) return fromMemberships
+  // Endpoint antigo, fora da especificação atual, mas ainda usado por integrações existentes.
   const me = await sumupFetch(token, '/v0.1/me')
   const code = me.json?.merchant_profile?.merchant_code || me.json?.merchant_code
   return typeof code === 'string' && code ? code : null
