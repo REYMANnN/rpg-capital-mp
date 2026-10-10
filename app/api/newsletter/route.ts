@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse, after } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { syncNewsletterSignupToSheet } from '@/lib/newsletter/sheets'
+import { sendSignupToSheet } from '@/lib/newsletter/sheet-webhook'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,21 +26,29 @@ export async function POST(request: NextRequest) {
   }
 
   const email = parsed.data.email.toLowerCase()
-  const { error } = await createAdminClient()
-    .from('rpg_newsletter_subscribers')
-    .upsert(
-      { email, name: parsed.data.name, source: parsed.data.source },
-      { onConflict: 'email', ignoreDuplicates: true },
-    )
 
-  if (error) {
-    console.error('newsletter_insert_failed', { code: error.code })
-    return NextResponse.json({ ok: false, error: 'Não foi possível inscrever agora. Tente de novo.' }, { status: 500 })
+  // Planilha direto do site (webhook), sem depender do Supabase. Roda em paralelo.
+  const sheet = sendSignupToSheet({ email, name: parsed.data.name, createdAt: new Date().toISOString() })
+
+  // Supabase continua guardando o cadastro (cópia de segurança / recuperação).
+  let supabaseOk = false
+  try {
+    const { error } = await createAdminClient()
+      .from('rpg_newsletter_subscribers')
+      .upsert(
+        { email, name: parsed.data.name, source: parsed.data.source },
+        { onConflict: 'email', ignoreDuplicates: true },
+      )
+    if (error) console.error('newsletter_insert_failed', { code: error.code })
+    else supabaseOk = true
+  } catch (error) {
+    console.error('newsletter_insert_failed', { error: error instanceof Error ? error.message : String(error) })
   }
 
-  // Supabase confirmou: copia para a planilha da newsletter depois de responder.
-  // Falha no Google não afeta o usuário; a rotina /api/newsletter/sync-sheet recupera.
-  after(() => syncNewsletterSignupToSheet({ email, name: parsed.data.name, source: parsed.data.source }))
+  const sheetOk = await sheet
+  if (!supabaseOk && !sheetOk) {
+    return NextResponse.json({ ok: false, error: 'Não foi possível inscrever agora. Tente de novo.' }, { status: 500 })
+  }
 
   return NextResponse.json({ ok: true })
 }

@@ -1,6 +1,7 @@
 import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sheetConfigFromEnv, syncSubscribers, type NewsletterSubscriber, type SyncResult } from './sheets-core'
+import { postToSheetWebhook, sheetWebhookConfigured } from './sheet-webhook'
 
 type SubscriberRow = { id: string; email: string; name: string | null; source: string | null; created_at: string }
 
@@ -8,41 +9,11 @@ function toSubscriber(row: SubscriberRow): NewsletterSubscriber {
   return { id: row.id, email: row.email, name: row.name, source: row.source, createdAt: row.created_at }
 }
 
-/**
- * Chamado depois que o Supabase confirmou o cadastro. Nunca lança erro:
- * se o Sheets falhar, o cadastro já está salvo e a rotina de recuperação reenvia depois.
- */
-export async function syncNewsletterSignupToSheet(input: { email: string; name: string | null; source: string }): Promise<void> {
-  try {
-    const cfg = sheetConfigFromEnv()
-    if (!cfg) {
-      console.warn('newsletter_sheet_sync_skipped', { reason: 'missing_google_credentials' })
-      return
-    }
-
-    // Pega id e data reais do registro (o upsert com ignoreDuplicates não devolve a linha).
-    const { data } = await createAdminClient()
-      .from('rpg_newsletter_subscribers')
-      .select('id, email, name, source, created_at')
-      .eq('email', input.email)
-      .maybeSingle<SubscriberRow>()
-
-    // Nome digitado agora vale mais que o antigo; origem é sempre a do formulário atual.
-    const subscriber: NewsletterSubscriber = data
-      ? { ...toSubscriber(data), name: input.name || data.name, source: input.source }
-      : { email: input.email, name: input.name, source: input.source }
-
-    const result = await syncSubscribers(cfg, [subscriber], 'upsert')
-    console.info('newsletter_sheet_synced', result)
-  } catch (error) {
-    console.error('newsletter_sheet_sync_failed', { message: error instanceof Error ? error.message : String(error) })
-  }
-}
-
 /** Recuperação Supabase → Sheets para todos os inscritos. Idempotente: só adiciona quem falta. */
-export async function syncAllNewsletterSubscribersToSheet(): Promise<SyncResult & { subscribers: number }> {
+export async function syncAllNewsletterSubscribersToSheet(): Promise<SyncResult & { subscribers: number; via: string }> {
   const cfg = sheetConfigFromEnv()
-  if (!cfg) throw new Error('missing_google_credentials')
+  const useWebhook = sheetWebhookConfigured()
+  if (!cfg && !useWebhook) throw new Error('missing_sheet_webhook_or_google_credentials')
 
   const supabase = createAdminClient()
   const all: SubscriberRow[] = []
@@ -58,6 +29,13 @@ export async function syncAllNewsletterSubscribersToSheet(): Promise<SyncResult 
     if (!data || data.length < pageSize) break
   }
 
-  const result = await syncSubscribers({ ...cfg, timeoutMs: 20_000 }, all.map(toSubscriber), 'missing-only')
-  return { ...result, subscribers: all.length }
+  if (useWebhook) {
+    const items = all.map((row) => ({ id: row.id, email: row.email, name: row.name, createdAt: row.created_at }))
+    const result = await postToSheetWebhook({ items, mode: 'missing-only' }, 50_000)
+    if (!result.ok) throw new Error(`sheet_webhook_failed ${result.error ?? ''}`.trim())
+    return { added: result.added ?? 0, updated: 0, existing: result.existing ?? 0, duplicatesInSheet: 0, subscribers: all.length, via: 'webhook' }
+  }
+
+  const result = await syncSubscribers({ ...cfg!, timeoutMs: 20_000 }, all.map(toSubscriber), 'missing-only')
+  return { ...result, subscribers: all.length, via: 'service_account' }
 }
