@@ -58,7 +58,7 @@ export default async function OnboardingPage() {
             userName={userName}
             storeId={store.id}
             title="Último passo: conecte o banco da loja"
-            successHref="/onboarding/pronto"
+            successHref="/onboarding/maquininha?next=/onboarding/pronto"
             stepLabel={false}
           />
         </main>
@@ -69,7 +69,7 @@ export default async function OnboardingPage() {
           <OnboardingBillingStep storeId={store.id} userName={userName} userEmail={user.email ?? ''} />
         </main>
       }
-      return <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950"><OnboardingBankStep userName={userName} storeId={store.id} /></main>
+      return <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950"><OnboardingBankStep userName={userName} storeId={store.id} successHref="/onboarding/maquininha?next=/manage" /></main>
     }
   }
 

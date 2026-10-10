@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, CheckCircle2, CreditCard, QrCode, Search, Trash2 } from 'lucide-react'
 import type { PaymentMethod } from '@/lib/inventory/core'
 import ContinuousScanner from '../ContinuousScanner'
@@ -21,7 +21,7 @@ const PAYMENTS: Array<{ id: PaymentMethod; label: string; icon: typeof QrCode }>
 ]
 
 export default function VenderPage() {
-  const { state, status, saving, commit } = useWaStore()
+  const { state, status, saving, commit, reload } = useWaStore()
   const { toast, show } = useToast()
   const [cart, setCart] = useState<Line[]>([])
   const [unknownCode, setUnknownCode] = useState<string | null>(null)
@@ -35,6 +35,22 @@ export default function VenderPage() {
   const [session, setSession] = useState({ count: 0, totalCents: 0 })
   const [query, setQuery] = useState('')
   const [closed, setClosed] = useState(false)
+  // Maquininha Solo (SumUp) ligada à loja: cartão vai direto pra ela.
+  const [solo, setSolo] = useState<{ enabled: boolean; readers: Array<{ id: string; name: string }> }>({ enabled: false, readers: [] })
+  const [cardType, setCardType] = useState<'debito' | 'credito'>('debito')
+  const [installments, setInstallments] = useState(1)
+  const [cardCharge, setCardCharge] = useState<{ id: string; amountCents: number; readerName: string; status: string; message?: string } | null>(null)
+  const [cardBusy, setCardBusy] = useState(false)
+  const [cardError, setCardError] = useState('')
+  const poller = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    fetch('/api/r/cobranca-cartao', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((result) => { if (result?.ok) setSolo({ enabled: Boolean(result.enabled), readers: result.readers || [] }) })
+      .catch(() => {})
+    return () => { if (poller.current) window.clearTimeout(poller.current) }
+  }, [])
 
   const products = useMemo(() => activeProducts(state), [state])
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
@@ -115,11 +131,71 @@ export default function VenderPage() {
   }
 
   function closePayment() {
-    if (saving || pixBusy) return
+    if (saving || pixBusy || cardBusy || cardCharge?.status === 'processing') return
+    setCardCharge(null)
+    setCardError('')
     setPaying(false)
     setPixCharge(null)
     setPixError('')
     setCopied(false)
+  }
+
+  async function chargeCard() {
+    if (!cart.length || cardBusy) return
+    setCardBusy(true)
+    setCardError('')
+    try {
+      const response = await fetch('/api/r/cobranca-cartao', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cardType, installments: cardType === 'credito' ? installments : 1, items: cart }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result?.ok) throw new Error(result?.error || 'Não consegui mandar pra maquininha.')
+      setCardCharge({ id: result.chargeId, amountCents: result.amountCents, readerName: result.readerName, status: 'processing' })
+      pollCard(result.chargeId, 0)
+    } catch (cause) {
+      setCardError(cause instanceof Error ? cause.message : 'Não consegui mandar pra maquininha.')
+    } finally {
+      setCardBusy(false)
+    }
+  }
+
+  function pollCard(id: string, attempt: number) {
+    poller.current = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/r/cobranca-cartao?id=${id}`, { cache: 'no-store' })
+        const result = await response.json().catch(() => ({}))
+        const current = String(result?.status || 'processing')
+        if (current === 'approved') {
+          const amount = Number(result.amountCents || 0)
+          setSession((value) => ({ count: value.count + 1, totalCents: value.totalCents + amount }))
+          setDone({ totalCents: amount })
+          setCart([])
+          setPaying(false)
+          setMethod('pix')
+          setCardCharge(null)
+          void reload()
+          if (result.inventoryError) show('Pagamento aprovado, mas o estoque não baixou. Avise a Rafa.', true)
+          return
+        }
+        if (['declined', 'failed', 'canceled', 'expired'].includes(current)) {
+          setCardCharge((value) => value ? { ...value, status: current, message: result.failureReason || '' } : value)
+          return
+        }
+        // Até 3 minutos (90 x 2 s) esperando o cliente passar o cartão.
+        if (attempt < 90) pollCard(id, attempt + 1)
+        else setCardCharge((value) => value ? { ...value, status: 'unknown' } : value)
+      } catch {
+        if (attempt < 90) pollCard(id, attempt + 1)
+      }
+    }, 2000)
+  }
+
+  async function cancelCard() {
+    if (poller.current) window.clearTimeout(poller.current)
+    await fetch('/api/r/cobranca-cartao', { method: 'DELETE' }).catch(() => null)
+    setCardCharge(null)
   }
 
   async function finish() {
@@ -255,7 +331,25 @@ export default function VenderPage() {
               <span className={styles.totalValue}>{money(pixCharge?.amountCents ?? totalCents)}</span>
             </div>
 
-            {pixCharge ? (
+            {cardCharge ? (
+              <div style={{ textAlign: 'center', padding: '18px 0' }}>
+                {cardCharge.status === 'processing' ? (
+                  <>
+                    <div className={styles.bigIcon}><CreditCard size={32} /></div>
+                    <div className={styles.bigTitle}>Na maquininha {cardCharge.readerName}</div>
+                    <div className={styles.bigText}>{money(cardCharge.amountCents)} {cardType === 'credito' ? (installments > 1 ? `no crédito em ${installments}x` : 'no crédito') : 'no débito'}. Peça para o cliente passar o cartão.</div>
+                    <button className={styles.linkBtn} style={{ width: '100%', marginTop: 14 }} onClick={() => void cancelCard()}>Cancelar na maquininha</button>
+                  </>
+                ) : (
+                  <>
+                    <div className={styles.bigTitle}>{cardCharge.status === 'unknown' ? 'Ainda sem resposta da maquininha' : 'Não passou'}</div>
+                    <div className={styles.bigText}>{cardCharge.message || (cardCharge.status === 'unknown' ? 'Confira na tela da maquininha. Se aprovou, a Rafa te avisa no WhatsApp.' : 'Tente de novo ou use outra forma de pagamento.')}</div>
+                    <button className={styles.btn} style={{ marginTop: 14 }} onClick={() => { setCardCharge(null); void chargeCard() }}>Tentar de novo</button>
+                    <button className={styles.linkBtn} style={{ width: '100%', marginTop: 8 }} onClick={() => setCardCharge(null)}>Voltar</button>
+                  </>
+                )}
+              </div>
+            ) : pixCharge ? (
               <>
                 <div style={{ display: 'grid', placeItems: 'center', margin: '18px 0' }}>
                   <img
@@ -298,13 +392,33 @@ export default function VenderPage() {
                     </button>
                   ))}
                 </div>
+                {method === 'card' && solo.enabled && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div className={styles.pay}>
+                      {(['debito', 'credito'] as const).map((type) => (
+                        <button key={type} className={`${styles.payBtn} ${cardType === type ? styles.payOn : ''}`} disabled={cardBusy} onClick={() => { setCardType(type); if (type === 'debito') setInstallments(1) }}>
+                          {type === 'debito' ? 'Débito' : 'Crédito'}
+                        </button>
+                      ))}
+                    </div>
+                    {cardType === 'credito' && (
+                      <select value={installments} onChange={(event) => setInstallments(Number(event.target.value))} disabled={cardBusy}
+                        style={{ width: '100%', minHeight: 44, borderRadius: 12, border: '1px solid var(--line)', padding: '0 12px', fontSize: 16, background: 'white' }}>
+                        {Array.from({ length: 12 }, (_, index) => index + 1).map((count) => (
+                          <option key={count} value={count}>{count === 1 ? 'À vista' : `${count}x de ${money(Math.ceil(totalCents / count))}`}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
                 {pixError && <div className={styles.meta} style={{ marginBottom: 8 }}>{pixError}</div>}
+                {cardError && <div className={styles.meta} style={{ marginBottom: 8 }}>{cardError}</div>}
                 <button
                   className={styles.btn}
-                  disabled={saving || pixBusy}
-                  onClick={() => method === 'pix' ? void chargePix() : void finish()}
+                  disabled={saving || pixBusy || cardBusy}
+                  onClick={() => method === 'pix' ? void chargePix() : method === 'card' && solo.enabled ? void chargeCard() : void finish()}
                 >
-                  {pixBusy ? 'Gerando QR Pix…' : saving ? 'Registrando…' : method === 'pix' ? 'Gerar QR Pix' : 'Confirmar venda'}
+                  {pixBusy ? 'Gerando QR Pix…' : cardBusy ? 'Mandando pra maquininha…' : saving ? 'Registrando…' : method === 'pix' ? 'Gerar QR Pix' : method === 'card' && solo.enabled ? `Mandar ${money(totalCents)} pra maquininha` : 'Confirmar venda'}
                 </button>
                 <button className={styles.linkBtn} style={{ width: '100%', marginTop: 8 }} onClick={closePayment} disabled={saving || pixBusy}>Voltar</button>
               </>

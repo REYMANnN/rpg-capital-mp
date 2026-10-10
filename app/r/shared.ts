@@ -136,7 +136,12 @@ export function useWaStore() {
     }
   }, [])
 
-  return { state, status, saving, commit }
+  // Relê a loja do servidor (ex.: venda no cartão registrada pelo servidor quando a maquininha aprovou).
+  const reload = useCallback(async () => {
+    try { setState(await fetchState()) } catch (error) { if (error instanceof SessionEnded) setStatus('ended') }
+  }, [])
+
+  return { state, status, saving, commit, reload }
 }
 
 // Avisa no WhatsApp. keepOpen=true mantém o link valendo; false encerra (o link para de funcionar).
