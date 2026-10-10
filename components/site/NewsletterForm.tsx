@@ -3,8 +3,16 @@
 import { useState, type FormEvent } from 'react'
 import styles from './site.module.css'
 
-/** Inscrição na newsletter do RPG Edu (guarda só nome e e-mail). */
-export default function NewsletterForm({ source = 'site_edu' }: { source?: 'site_edu' | 'site_edu_aulas' }) {
+/** Inscrição por e-mail (guarda só nome e e-mail). `source` escolhe a lista: RPG Edu, Aulas ou newsletter. */
+export default function NewsletterForm({
+  source = 'site_edu',
+  successText = 'Pronto! Você vai receber as novidades do RPG Edu no seu e-mail.',
+  buttonText = 'Quero receber',
+}: {
+  source?: 'site_edu' | 'site_edu_aulas' | 'site_newsletter'
+  successText?: string
+  buttonText?: string
+}) {
   const [status, setStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle')
   const [message, setMessage] = useState('')
 
@@ -32,7 +40,7 @@ export default function NewsletterForm({ source = 'site_edu' }: { source?: 'site
   if (status === 'ok') {
     return (
       <p className={styles.formSuccess} role="status">
-        Pronto! Você vai receber as novidades do RPG Edu no seu e-mail.
+        {successText}
       </p>
     )
   }
@@ -48,7 +56,7 @@ export default function NewsletterForm({ source = 'site_edu' }: { source?: 'site
       </label>
       <input id={`nl-email-${source}`} name="email" type="email" required placeholder="Seu melhor e-mail" autoComplete="email" />
       <button type="submit" className={styles.btnYellow} disabled={status === 'sending'}>
-        {status === 'sending' ? 'Enviando…' : 'Quero receber'}
+        {status === 'sending' ? 'Enviando…' : buttonText}
       </button>
       {status === 'error' && (
         <p className={styles.formError} role="alert">

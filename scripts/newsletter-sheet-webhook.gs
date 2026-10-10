@@ -13,11 +13,12 @@ function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'json_invalido' }); }
   if (!body || body.secret !== segredo_()) return json_({ ok: false, error: 'nao_autorizado' });
-  const itens = Array.isArray(body.items) ? body.items : [body];
-  const modo = body.mode === 'missing-only' ? 'missing-only' : 'upsert';
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
   try {
+    if (body.action === 'unsubscribe') return json_(Object.assign({ ok: true }, descadastrar_(body.email, body.reason)));
+    const itens = Array.isArray(body.items) ? body.items : [body];
+    const modo = body.mode === 'missing-only' ? 'missing-only' : 'upsert';
     return json_(Object.assign({ ok: true }, sincronizar_(itens, modo)));
   } finally {
     lock.releaseLock();
@@ -57,6 +58,28 @@ function sincronizar_(itens, modo) {
   });
   if (novos.length) sh.getRange(sh.getLastRow() + 1, 1, novos.length, 12).setValues(novos);
   return { added: added, updated: updated, existing: existing };
+}
+
+// Descadastro pedido pela página /newsletter/sair: Descadastrado=SIM, data e motivo (opcional) em Observações.
+function descadastrar_(emailBruto, motivo) {
+  const email = norm_(emailBruto);
+  const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB);
+  const ultima = sh.getLastRow();
+  if (!email || ultima < 2) return { found: false };
+  const emails = sh.getRange(2, 3, ultima - 1, 1).getValues();
+  let found = false;
+  emails.forEach(function (r, i) {
+    if (norm_(r[0]) !== email) return;
+    const linha = i + 2;
+    found = true;
+    sh.getRange(linha, 9, 1, 2).setValues([['SIM', data_()]]);
+    const m = txt_(motivo);
+    if (m) {
+      const obs = String(sh.getRange(linha, 12).getDisplayValue()).trim();
+      sh.getRange(linha, 12).setValue(txt_((obs ? obs + ' | ' : '') + 'Saiu: ' + m));
+    }
+  });
+  return { found: found };
 }
 
 function norm_(v) { return String(v == null ? '' : v).trim().toLowerCase(); }

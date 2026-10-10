@@ -157,6 +157,27 @@ export default function EduPage() {
           <div className={styles.container}>
             <Reveal className={styles.creditBand}>
               <div>
+                <span className={styles.eyebrow}>Newsletter · Radar do Lojista</span>
+                <h2 className={styles.creditTitle} style={{ marginTop: 14 }}>
+                  O que mexe na sua loja hoje, <span>em 3 minutos.</span>
+                </h2>
+                <p className={styles.lead} style={{ marginTop: 16 }}>
+                  Mapa do varejo, gráfico do dia e uma dica de gestão no seu e-mail, de segunda a sexta às 6h.
+                </p>
+              </div>
+              <div className={styles.actions}>
+                <a className={styles.btnPrimary} href="/newsletter">
+                  Inscrever-se na newsletter
+                </a>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        <section className={styles.section} style={{ paddingTop: 0 }}>
+          <div className={styles.container}>
+            <Reveal className={styles.creditBand}>
+              <div>
                 <span className={styles.eyebrow}>A Rafa explica</span>
                 <h2 className={styles.creditTitle} style={{ marginTop: 14 }}>
                   Ficou dúvida? <span>Pergunte à Rafa.</span>

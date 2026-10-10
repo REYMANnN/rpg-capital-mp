@@ -15,6 +15,7 @@ const NAV = [
   { href: '/integracoes', label: 'Integrações' },
   { href: '/credito', label: 'Crédito' },
   { href: '/edu', label: 'RPG Edu' },
+  { href: '/newsletter', label: 'Newsletter' },
   { href: '/cultura', label: 'Cultura' },
 ]
 
@@ -83,6 +84,7 @@ export function SiteFooter() {
           <Link href="/sobre">Sobre a RPG</Link>
           <Link href="/credito">Crédito</Link>
           <Link href="/edu">RPG Edu</Link>
+          <Link href="/newsletter">Newsletter</Link>
           <Link href="/cultura">Cultura</Link>
         </div>
         <div className={styles.footerCol}>

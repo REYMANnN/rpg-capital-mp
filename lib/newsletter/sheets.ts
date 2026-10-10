@@ -9,7 +9,7 @@ function toSubscriber(row: SubscriberRow): NewsletterSubscriber {
   return { id: row.id, email: row.email, name: row.name, source: row.source, createdAt: row.created_at }
 }
 
-/** Recuperação Supabase → Sheets para todos os inscritos. Idempotente: só adiciona quem falta. */
+/** Recuperação Supabase → Sheets só da lista da newsletter (site_newsletter). Idempotente: só adiciona quem falta. */
 export async function syncAllNewsletterSubscribersToSheet(): Promise<SyncResult & { subscribers: number; via: string }> {
   const cfg = sheetConfigFromEnv()
   const useWebhook = sheetWebhookConfigured()
@@ -22,6 +22,7 @@ export async function syncAllNewsletterSubscribersToSheet(): Promise<SyncResult 
     const { data, error } = await supabase
       .from('rpg_newsletter_subscribers')
       .select('id, email, name, source, created_at')
+      .eq('source', 'site_newsletter')
       .order('created_at', { ascending: true })
       .range(from, from + pageSize - 1)
     if (error) throw new Error(`supabase_read_failed ${error.code ?? ''}`.trim())

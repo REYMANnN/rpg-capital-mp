@@ -14,7 +14,18 @@ export type SheetWebhookItem = {
   createdAt?: string | null
 }
 
-export type SheetWebhookResult = { ok: boolean; added?: number; updated?: number; existing?: number; error?: string }
+export type SheetWebhookResult = {
+  ok: boolean
+  added?: number
+  updated?: number
+  existing?: number
+  found?: boolean
+  error?: string
+}
+
+type WebhookPayload =
+  | { items: SheetWebhookItem[]; mode: 'upsert' | 'missing-only' }
+  | { action: 'unsubscribe'; email: string; reason?: string | null }
 
 /** App da Web publicado a partir de scripts/newsletter-sheet-webhook.gs (pode ser trocado por env). */
 const DEFAULT_WEBHOOK_URL =
@@ -29,7 +40,7 @@ export function sheetWebhookConfigured(): boolean {
 }
 
 export async function postToSheetWebhook(
-  payload: { items: SheetWebhookItem[]; mode: 'upsert' | 'missing-only' },
+  payload: WebhookPayload,
   timeoutMs = 10_000,
 ): Promise<SheetWebhookResult> {
   const url = webhookUrl()
@@ -60,6 +71,22 @@ export async function sendSignupToSheet(item: SheetWebhookItem): Promise<boolean
     return true
   } catch (error) {
     console.error('newsletter_sheet_webhook_failed', { error: error instanceof Error ? error.message : String(error) })
+    return false
+  }
+}
+
+/** Descadastro (página /newsletter/sair): Descadastrado=SIM, data e motivo na planilha. */
+export async function unsubscribeFromSheet(email: string, reason: string | null): Promise<boolean> {
+  try {
+    const result = await postToSheetWebhook({ action: 'unsubscribe', email, reason })
+    if (!result.ok) {
+      console.error('newsletter_unsubscribe_failed', { error: result.error })
+      return false
+    }
+    console.info('newsletter_unsubscribe_ok', { found: result.found })
+    return true
+  } catch (error) {
+    console.error('newsletter_unsubscribe_failed', { error: error instanceof Error ? error.message : String(error) })
     return false
   }
 }

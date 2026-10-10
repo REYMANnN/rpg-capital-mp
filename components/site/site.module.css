@@ -3786,3 +3786,658 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- Newsletter · Radar do Lojista ---------- */
+.nlHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: center;
+}
+.nlHero .lead {
+  max-width: 560px;
+  margin-top: 22px;
+}
+.nlHeroForm {
+  margin-top: 30px;
+  max-width: 560px;
+}
+.nlHeroForm .formSuccess {
+  background: #fff;
+}
+.nlFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  font-weight: 600;
+}
+.nlFacts li::before {
+  content: '✓';
+  margin-right: 6px;
+  color: var(--yellow);
+}
+.nlHeroArt {
+  display: flex;
+  justify-content: center;
+}
+
+/* Celular com a prévia da edição */
+.nlPhone {
+  position: relative;
+  width: min(330px, 100%);
+  padding: 14px;
+  border-radius: 44px;
+  background: #0b1220;
+  box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+.nlPhoneNotch {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  width: 92px;
+  height: 22px;
+  border-radius: 999px;
+  background: #0b1220;
+  transform: translateX(-50%);
+  z-index: 1;
+}
+.nlMail {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 50px 16px 18px;
+  border-radius: 32px;
+  background: #fff;
+  color: var(--ink);
+}
+.nlMailTop {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.nlMailTop b {
+  display: block;
+  font-size: 14px;
+}
+.nlMailTop small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.nlMailLogo {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--blue);
+  color: var(--yellow);
+  font-family: var(--display);
+  font-weight: 800;
+}
+.nlMail h4 {
+  margin: 4px 0 2px;
+  font-family: var(--display);
+  font-size: 18px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.nlMailBlock {
+  display: grid;
+  gap: 6px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+.nlMailBlock small {
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.nlMailBlock strong {
+  font-family: var(--display);
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+.nlMailBlock p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #3b4559;
+}
+.nlMailBlock svg {
+  width: 100%;
+  height: 34px;
+}
+.nlMailRow {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 8px;
+}
+.nlMiniDots {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 5px;
+}
+.nlMiniDots i {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #cfdcf2;
+}
+.nlMiniDots .nlMiniDotOn {
+  background: var(--blue);
+  animation: nlBlink 2.4s ease-in-out infinite;
+}
+.nlMiniLine {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nlMailTag {
+  justify-self: start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--yellow);
+  font-size: 11px;
+  font-weight: 800;
+}
+@keyframes nlBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Faixa de números */
+.nlStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.nlStat {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.nlStat strong {
+  display: block;
+  font-family: var(--display);
+  font-size: clamp(48px, 6vw, 72px);
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--blue);
+}
+.nlStat p {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+/* Bento de blocos da edição */
+.nlBento {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 40px;
+}
+.nlCard {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: clamp(22px, 3vw, 30px);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: #fff;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.nlCard:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 24px 50px -30px rgba(11, 18, 32, 0.35);
+}
+.nlCardWide {
+  grid-column: span 2;
+}
+.nlCardBlue {
+  border-color: transparent;
+  background: var(--blue);
+  color: #fff;
+}
+.nlCardBlue .nlCardHead small {
+  color: var(--yellow);
+}
+.nlCardBlue p {
+  color: rgba(255, 255, 255, 0.85);
+}
+.nlCardYellow {
+  border-color: transparent;
+  background: var(--yellow);
+}
+.nlCardYellow .nlCardHead small {
+  color: var(--ink);
+}
+.nlCardHead {
+  display: grid;
+  gap: 6px;
+}
+.nlCardHead small {
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.nlCardHead h3 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(20px, 2vw, 24px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.nlBig {
+  font-family: var(--display);
+  font-size: clamp(48px, 5vw, 64px);
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--yellow);
+}
+.nlLink {
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.nlNote {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Mapa */
+.nlMap {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 22px;
+  align-items: center;
+}
+.nlMap svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.nlDot,
+.nlDotActive {
+  fill: #c9d7ee;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.2);
+  transition: opacity 0.5s ease, transform 0.5s ease, fill 0.35s ease;
+}
+.nlDotActive {
+  fill: var(--blue);
+}
+.nlOn .nlDot,
+.nlOn .nlDotActive {
+  opacity: 1;
+  transform: scale(1);
+}
+.nlPin,
+.nlPinActive {
+  opacity: 0;
+  transition: opacity 0.4s ease 0.9s;
+}
+.nlOn .nlPin {
+  opacity: 0.35;
+}
+.nlOn .nlPinActive {
+  opacity: 1;
+}
+.nlPinCore {
+  fill: var(--yellow);
+  stroke: #0b1220;
+  stroke-width: 1.5;
+}
+.nlPinRing {
+  fill: none;
+  stroke: var(--yellow);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.nlPinActive .nlPinRing {
+  animation: nlPulse 1.8s ease-out infinite;
+}
+@keyframes nlPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+.nlMapPanel {
+  display: grid;
+  gap: 16px;
+}
+.nlChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.nlChip,
+.nlChipActive {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.nlChip:hover {
+  border-color: var(--blue);
+}
+.nlChipActive {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+.nlChip:focus-visible,
+.nlChipActive:focus-visible,
+.nlReason:focus-visible,
+.nlReasonActive:focus-visible {
+  outline: 3px solid var(--yellow);
+  outline-offset: 2px;
+}
+.nlMapText {
+  min-height: 96px;
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--soft);
+  color: #3b4559;
+  line-height: 1.5;
+}
+.nlMapText b {
+  color: var(--blue);
+}
+
+/* Gráfico de linha */
+.nlChart {
+  display: grid;
+  gap: 10px;
+}
+.nlChartHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.nlChartHead b {
+  color: var(--blue);
+}
+.nlChart svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.nlChart g {
+  cursor: pointer;
+  outline: none;
+}
+.nlGrid {
+  stroke: var(--line);
+  stroke-dasharray: 4 6;
+}
+.nlLine {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 1.4s cubic-bezier(0.65, 0, 0.35, 1);
+}
+.nlArea {
+  opacity: 0;
+  transition: opacity 0.8s ease 0.9s;
+}
+.nlOn .nlLine {
+  stroke-dashoffset: 0;
+}
+.nlOn .nlArea {
+  opacity: 1;
+}
+.nlPoint,
+.nlPointActive {
+  fill: #fff;
+  stroke: var(--blue);
+  stroke-width: 2.5;
+  transition: r 0.2s ease;
+}
+.nlPointActive {
+  fill: var(--yellow);
+  stroke: #0b1220;
+}
+.nlAxis {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Ranking */
+.nlBars {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: nl;
+}
+.nlBars li {
+  display: grid;
+  gap: 6px;
+  counter-increment: nl;
+  font-size: 14px;
+  font-weight: 600;
+}
+.nlBars li span::before {
+  content: counter(nl) '. ';
+  color: var(--blue);
+  font-weight: 800;
+}
+.nlBars i {
+  display: block;
+  height: 10px;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--blue), #4c95ff);
+  transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nlOn i {
+  width: var(--w);
+}
+
+/* Rodapé da página: sair */
+.nlLeave {
+  margin-top: 22px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+.nlLeave a {
+  color: var(--muted) !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Página /newsletter/sair */
+.nlLeaveWrap {
+  max-width: 760px;
+}
+.nlLeaveForm {
+  display: grid;
+  gap: 14px;
+  margin-top: 34px;
+}
+.nlLeaveForm fieldset {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+}
+.nlLeaveForm legend,
+.nlLeaveForm label {
+  margin-bottom: 12px;
+  font-weight: 800;
+}
+.nlReasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.nlReason,
+.nlReasonActive {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.nlReason:hover {
+  border-color: var(--blue);
+}
+.nlReasonActive {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.nlReasonActive::before {
+  content: '✓ ';
+}
+.nlLeaveRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.nlLeaveRow input {
+  min-height: 54px;
+  padding: 0 18px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+.nlLeaveRow input:focus {
+  outline: 3px solid var(--blue-soft);
+  border-color: var(--blue);
+}
+.nlLeaveForm .formError {
+  color: #b42318;
+}
+.nlBye {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin-top: 34px;
+  padding: clamp(24px, 4vw, 40px);
+  border-radius: 28px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+.nlBye span {
+  font-size: 40px;
+}
+.nlBye h2 {
+  font-family: var(--display);
+  font-size: clamp(28px, 3.4vw, 40px);
+  letter-spacing: -0.03em;
+}
+.nlBye p {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 18px;
+}
+
+@media (max-width: 1080px) {
+  .nlBento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .nlCardWide {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+}
+@media (max-width: 760px) {
+  .nlHero {
+    grid-template-columns: 1fr;
+  }
+  .nlHeroArt {
+    order: 2;
+  }
+  .nlStats {
+    gap: 10px;
+  }
+  .nlStat {
+    padding: 16px 12px;
+  }
+  .nlStat strong {
+    font-size: 34px;
+  }
+  .nlStat p {
+    font-size: 13px;
+  }
+  .nlBento {
+    grid-template-columns: 1fr;
+  }
+  .nlMap {
+    grid-template-columns: 1fr;
+  }
+  .nlMapText {
+    min-height: 0;
+  }
+  .nlLeaveRow {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nlDot,
+  .nlDotActive,
+  .nlLine,
+  .nlArea,
+  .nlBars i,
+  .nlPin,
+  .nlPinActive {
+    transition: none !important;
+  }
+  .nlPinActive .nlPinRing,
+  .nlMiniDots .nlMiniDotOn {
+    animation: none !important;
+  }
+}
+.nlLeaveWrap .heroSub {
+  margin-top: 22px;
+}
