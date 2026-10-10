@@ -32,6 +32,8 @@ import { commitRafaChanges, lastRafaOperations, rafaOperationRisks, undoLastRafa
 import { listPendingProducts, markPendingRegistered } from '@/lib/rafa-pending-products'
 import { changesForPrice, registerPendingPrice, remaining as remainingPendingPrices } from '@/lib/rafa-price-questions'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { connectCardUrl } from '@/lib/sumup/access'
+import { cancelCardCharge, createCardCharge, listReaders, pairReader } from '@/lib/sumup/charges'
 import { sendText } from '@/lib/whatsapp'
 import { FLOW_HINT, isBalcaoFlow } from '@/lib/whatsapp-flows'
 
@@ -94,6 +96,8 @@ function systemPrompt(storeName: string, otherStores: number) {
     '• Links do Balcão (vender, ler-codigo, prateleira, entrada): use gerar_link quando pedirem para abrir ou quando for claramente mais fácil pela tela.',
     '• BANCO NÃO CONECTADO (veja BANCO DA LOJA em EM ANDAMENTO): se perguntarem saldo, extrato, quanto entrou/saiu, Pix, pagamentos ou pedirem para conectar/trocar o banco, use gerar_link com fluxo banco: 1 linha dizendo que sem o banco você não vê isso + o link (entra com o mesmo Google do cadastro). Só mande quando o assunto for banco; não cobre do nada e não repita se já mandou o link na última hora. Se disserem "conectei", consulte saldo_banco antes de confirmar.',
     '• Número sozinho de 1 a 4 sem contexto é o menu: 1 vender, 2 ler código, 3 prateleira, 4 entrada (gerar_link).',
+    '• MAQUININHA (veja MAQUININHA em EM ANDAMENTO): com maquininha pareada, venda ou cobrança no cartão ("cobra 35 no crédito", "vende 2 coca no débito", "passa 120 em 3x") = cobrar_cartao. Débito ou crédito é obrigatório: se ele não disse, pergunte qual (e no crédito, quantas vezes, se não disse é à vista). Com itens, passe os produtos e a venda só entra no estoque quando o cartão for aprovado (a mensagem de aprovado sai sozinha, não prometa nada além de "te aviso quando passar"). "Cancela a cobrança" / "o cliente desistiu" = cancelar_cobranca_cartao.',
+    '• Sem SumUp conectada e ele quiser cobrar pela maquininha, conectar ou comprou a Solo: gerar_link fluxo maquininha. Conta conectada sem maquininha: peça o código que aparece na Solo (menu de cima → Conexões → API → Conectar, com a maquininha deslogada) e use parear_maquininha.',
     '',
     'COMO RESPONDER',
     '• Português do Brasil, simples, direto, gentil, como uma funcionária de confiança. Até 6 linhas. Sem markdown, sem asteriscos, sem títulos, sem assinatura.',
@@ -145,8 +149,13 @@ async function loadWorkingContext(input: { waId: string; storeId: string }) {
     admin.from('balcao_finance_connections').select('status').eq('store_id', input.storeId).eq('provider', 'malvo')
       .then(({ data }) => bankStatusFrom(data || []), () => 'conectado' as BankStatus),
   ])
+  const [cardMerchant, readers] = await Promise.all([
+    admin.from('rpg_tap_merchants').select('status').eq('store_id', input.storeId).maybeSingle().then(({ data }) => data?.status === 'active', () => false),
+    listReaders(input.storeId).catch(() => []),
+  ])
+  const card = { connected: cardMerchant, readers }
   const pendingValid = pendingAction && new Date(pendingAction.expires_at).getTime() > Date.now() ? pendingAction : null
-  return { pendingAction: pendingValid, pendingProducts, invoices, operations, memory, events, bank }
+  return { pendingAction: pendingValid, pendingProducts, invoices, operations, memory, events, bank, card }
 }
 
 type WorkingContext = Awaited<ReturnType<typeof loadWorkingContext>>
@@ -178,6 +187,11 @@ function workingBlock(ctx: WorkingContext) {
     : ctx.bank === 'precisa_reconectar'
       ? '• BANCO DA LOJA: a conexão caiu, precisa reconectar (gerar_link fluxo banco).'
       : '• BANCO DA LOJA: NÃO conectado (ele pulou no cadastro). Sem saldo/extrato até conectar (gerar_link fluxo banco).')
+  lines.push(!ctx.card.connected
+    ? '• MAQUININHA (SumUp): NÃO conectada. Venda no cartão é só registro manual (alterar_loja venda pagamento card).'
+    : ctx.card.readers.length
+      ? `• MAQUININHA (SumUp): conectada; maquininhas: ${ctx.card.readers.map((reader) => reader.name).join(', ')}. Cobrança no cartão vai direto pra ela (cobrar_cartao).`
+      : '• MAQUININHA (SumUp): conta conectada, mas nenhuma maquininha pareada ainda (parear_maquininha com o código da tela).')
   return lines.join('\n')
 }
 
@@ -267,7 +281,25 @@ const TOOLS: ClaudeTool[] = [
   { name: 'desfazer', description: 'Desfaz a última alteração aplicada pela Rafa (até 48 h), se nada mudou nesses produtos depois.', input_schema: { type: 'object', properties: {} } },
   { name: 'lembrar', description: 'Guarda na memória um fato que o lojista contou (na voz dele, curto).', input_schema: { type: 'object', properties: { fato: { type: 'string' } }, required: ['fato'] } },
   { name: 'esquecer_fato', description: 'Apaga um fato da memória (id da MEMÓRIA).', input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
-  { name: 'gerar_link', description: 'Manda o link do Balcão: vender (caixa), ler-codigo, prateleira (lista de produtos), entrada (subir estoque) ou banco (conectar/reconectar a conta bancária da loja). Encerra a resposta.', input_schema: { type: 'object', properties: { fluxo: { type: 'string', enum: ['vender', 'ler-codigo', 'prateleira', 'entrada', 'banco'] }, texto: { type: 'string', description: 'uma linha antes do link (opcional)' } }, required: ['fluxo'] } },
+  {
+    name: 'cobrar_cartao',
+    description: 'Manda a cobrança pra maquininha Solo da loja (crédito ou débito, parcelado no crédito). Com itens, registra a venda e baixa o estoque só quando o cartão for aprovado; sem itens, é só cobrança de valor. Encerra a resposta.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        tipo: { type: 'string', enum: ['credito', 'debito'] },
+        valor_reais: { type: 'number', description: 'obrigatório se não houver itens; com itens, vazio = soma pelo preço do catálogo' },
+        parcelas: { type: 'number', description: 'só crédito, 1 a 12 (1 = à vista)' },
+        itens: { type: 'array', items: { type: 'object', properties: { produto_id: { type: 'string' }, quantidade: { type: 'number' } }, required: ['produto_id', 'quantidade'] } },
+        descricao: { type: 'string' },
+        maquininha: { type: 'string', description: 'nome da maquininha, se houver mais de uma' },
+      },
+      required: ['tipo'],
+    },
+  },
+  { name: 'cancelar_cobranca_cartao', description: 'Cancela a cobrança que está aberta na maquininha (cliente desistiu, valor errado).', input_schema: { type: 'object', properties: {} } },
+  { name: 'parear_maquininha', description: 'Pareia uma maquininha Solo com o código que aparece na tela dela.', input_schema: { type: 'object', properties: { codigo: { type: 'string' }, nome: { type: 'string', description: 'ex.: Caixa 1' } }, required: ['codigo'] } },
+  { name: 'gerar_link', description: 'Manda o link do Balcão: vender (caixa), ler-codigo, prateleira (lista de produtos), entrada (subir estoque), banco (conectar/reconectar a conta bancária da loja) ou maquininha (conectar a SumUp e parear a Solo). Encerra a resposta.', input_schema: { type: 'object', properties: { fluxo: { type: 'string', enum: ['vender', 'ler-codigo', 'prateleira', 'entrada', 'banco', 'maquininha'] }, texto: { type: 'string', description: 'uma linha antes do link (opcional)' } }, required: ['fluxo'] } },
   { name: 'trocar_loja', description: 'Mostra as lojas deste número para o lojista escolher. Encerra a resposta.', input_schema: { type: 'object', properties: {} } },
 ]
 
@@ -726,6 +758,13 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
           await reply(`${[...appliedSummaries.length ? [`Feito: ${appliedSummaries.join('\n')}`] : [], intro].join('\n\n')}\n${connectBankUrl(input.storeId)}`, true)
           return { result: { ok: 'link do banco enviado' }, terminal: true }
         }
+        if (fluxo === 'maquininha') {
+          const intro = String(args.texto || '').trim() ? cleanReply(String(args.texto)) : ctx.card.connected
+            ? 'Pra parear ou ver suas maquininhas, entra aqui com o mesmo Google do cadastro:'
+            : 'Pra eu mandar a cobrança direto pra maquininha, conecta sua conta SumUp aqui (se ainda não tem, dá pra criar por lá). Entra com o mesmo Google do cadastro:'
+          await reply(`${[...appliedSummaries.length ? [`Feito: ${appliedSummaries.join('\n')}`] : [], intro].join('\n\n')}\n${connectCardUrl(input.storeId)}`, true)
+          return { result: { ok: 'link da maquininha enviado' }, terminal: true }
+        }
         if (!isBalcaoFlow(fluxo)) return { result: { erro: 'fluxo inválido' } }
         const link = await createBalcaoDeepLink({ waId: input.waId, storeId: input.storeId, fluxo })
         const intro = String(args.texto || '').trim() ? cleanReply(String(args.texto)) : FLOW_HINT[fluxo]
@@ -738,6 +777,51 @@ export async function runRafaBrain(input: RafaBrainInput): Promise<RafaBrainOutc
         const sent = await askStorePick(input.waId, stores, input.wamid)
         if (!sent.ok) throw new Error(sent.error)
         return { result: { ok: 'lista enviada' }, terminal: true }
+      }
+
+      case 'cobrar_cartao': {
+        const tipo = args.tipo === 'credito' || args.tipo === 'debito' ? args.tipo as 'credito' | 'debito' : null
+        if (!tipo) return { result: { erro: 'Pergunte se é crédito ou débito.' } }
+        const items = (Array.isArray(args.itens) ? args.itens : []).map((item: any) => {
+          const product = state.products.find((row) => row.id === String(item?.produto_id || '') && !row.deletedAt)
+          return product ? { productId: product.id, quantityMilli: Math.round(Number(item.quantidade) * 1000) } : null
+        })
+        if (items.some((item: unknown) => !item)) return { result: { erro: 'Produto não encontrado; use o id do catálogo.' } }
+        const reader = args.maquininha ? ctx.card.readers.find((row) => row.name.toLowerCase().includes(String(args.maquininha).toLowerCase())) : undefined
+        const charged = await createCardCharge({
+          storeId: input.storeId,
+          amountCents: args.valor_reais != null ? Math.round(Number(args.valor_reais) * 100) : undefined,
+          cardType: tipo,
+          installments: Number(args.parcelas || 1),
+          items: items as Array<{ productId: string; quantityMilli: number }>,
+          description: String(args.descricao || 'Venda pela Rafa'),
+          source: 'rafa',
+          waId: input.waId,
+          replyTo: input.wamid,
+          readerId: reader?.id,
+        })
+        if (!charged.ok) {
+          if (charged.code === 'not_connected') return { result: { erro: 'SumUp não conectada: use gerar_link fluxo maquininha.' } }
+          if (charged.code === 'no_reader') return { result: { erro: 'Nenhuma maquininha pareada: peça o código da tela da Solo e use parear_maquininha.' } }
+          return { result: { erro: charged.error } }
+        }
+        const parcelas = tipo === 'credito' && Number(args.parcelas || 1) > 1 ? ` em ${Math.min(12, Math.round(Number(args.parcelas)))}x` : ''
+        await reply(`Mandei ${money(charged.amountCents)} no ${tipo === 'credito' ? 'crédito' : 'débito'}${parcelas} pra maquininha ${charged.readerName}. É só o cliente passar o cartão, te aviso quando aprovar.`, true)
+        await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'action', text: `cobrança enviada pra maquininha: ${money(charged.amountCents)} ${tipo}${parcelas}${items.length ? ` (${items.length} item(ns), venda entra quando aprovar)` : ''}` })
+        return { result: { ok: 'cobrança enviada' }, terminal: true }
+      }
+
+      case 'cancelar_cobranca_cartao': {
+        const cancelled = await cancelCardCharge(input.storeId)
+        return { result: cancelled.ok ? { ok: 'cobrança cancelada na maquininha' } : { erro: cancelled.error } }
+      }
+
+      case 'parear_maquininha': {
+        if (!ctx.card.connected) return { result: { erro: 'SumUp não conectada: use gerar_link fluxo maquininha.' } }
+        const paired = await pairReader(input.storeId, String(args.codigo || ''), args.nome ? String(args.nome) : undefined)
+        if (!paired.ok) return { result: { erro: paired.error } }
+        await recordRafaEvent({ waId: input.waId, storeId: input.storeId, direction: 'system', kind: 'action', text: `maquininha pareada: ${paired.reader.name}` })
+        return { result: { feito: `Maquininha "${paired.reader.name}" pareada. Já dá pra cobrar no cartão por aqui.` } }
       }
 
       default: return { result: { erro: 'ferramenta desconhecida' } }

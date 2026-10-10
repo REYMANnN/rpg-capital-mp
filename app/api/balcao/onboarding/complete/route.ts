@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -30,6 +31,11 @@ export async function POST(request: Request) {
     console.error('BALCAO Open Finance onboarding completion failed', { code: error.code })
     return NextResponse.json({ error: 'Não conseguimos concluir o cadastro agora. Tente novamente.' }, { status: 500 })
   }
+
+  // Próxima etapa (opcional): maquininha. Marca como pendente para o login lembrar onde parou.
+  await createAdminClient().from('rpg_sumup_onboarding')
+    .upsert({ store_id: storeId, status: 'pending' }, { onConflict: 'store_id', ignoreDuplicates: true })
+    .then(() => null, () => null)
 
   return NextResponse.json({ ok: true })
 }
