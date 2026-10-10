@@ -44,6 +44,8 @@ export async function recordAiUsage(input: {
   outputTokens?: number
   audioSeconds?: number
   estimatedCostUsd: number
+  // Tempo da chamada de IA (ms), para medir onde a Rafa demora.
+  durationMs?: number
 }) {
   const admin = createAdminClient()
   const { error } = await admin.from('ai_usage').insert({
@@ -55,6 +57,7 @@ export async function recordAiUsage(input: {
     output_tokens: Math.max(0, Math.round(input.outputTokens || 0)),
     audio_seconds: Math.max(0, Number(input.audioSeconds || 0)),
     estimated_cost_usd: Math.max(0, input.estimatedCostUsd),
+    ...(input.durationMs != null ? { duration_ms: Math.max(0, Math.round(input.durationMs)) } : {}),
   })
   if (error) throw error
 }
